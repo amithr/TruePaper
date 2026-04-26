@@ -61,6 +61,7 @@ export async function PUT(request: Request, { params }: Params) {
     {
       form_id: formId,
       student_id: session.user.id,
+      anonymous_session_id: null,
       answers,
     },
     {

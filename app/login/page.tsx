@@ -25,7 +25,7 @@ export default function LoginPage() {
       if (!response.ok) {
         throw new Error(data.error ?? "Login failed.");
       }
-      router.push("/");
+      router.push("/dashboard");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed.");
@@ -37,8 +37,11 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-zinc-100 py-16 text-zinc-900">
       <main className="mx-auto w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
-        <h1 className="text-2xl font-bold">Log in</h1>
+        <h1 className="text-2xl font-bold">Teacher log in</h1>
         <p className="mt-1 text-sm text-zinc-600">
+          Students do not need an account to answer forms.
+        </p>
+        <p className="mt-2 text-sm text-zinc-600">
           No account?{" "}
           <Link href="/register" className="font-medium text-zinc-900 underline">
             Register

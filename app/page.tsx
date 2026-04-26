@@ -1,9 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { StudentExamTextarea } from "@/components/StudentExamTextarea";
+import { getOrCreateAnonymousSessionId } from "@/lib/anonymous-session";
 import type { Form, Question, QuestionType, StudentAnswers } from "@/lib/forms";
+import { isValidLiveSessionDisplayName, normalizeLiveSessionDisplayName } from "@/lib/live-session-display-name";
+import { parseLiveSessionStudentGet } from "@/lib/live-session-student-get";
+import { isValidJoinCodeFormat, normalizeJoinCode } from "@/lib/join-code";
+import { stableStringifyStudentAnswers } from "@/lib/student-answers-json";
 
 type ApiError = {
   error?: string;
@@ -25,6 +31,29 @@ type SessionData = {
   profile: SessionProfile | null;
 };
 
+type JoinApiResponse = {
+  liveSessionId: string;
+  formId: string;
+  opensAt: string;
+  closesAt: string;
+  form: Form;
+};
+
+type TeacherLiveBanner = {
+  joinCode: string;
+  liveSessionId: string;
+  opensAt: string;
+  closesAt: string;
+  formTitle: string;
+};
+
+type JoinedLiveSession = {
+  liveSessionId: string;
+  form: Form;
+  opensAt: string;
+  closesAt: string;
+};
+
 async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
   const response = await fetch(input, init);
   const data = (await response.json()) as T & ApiError;
@@ -36,45 +65,232 @@ async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Pro
   return data;
 }
 
+function formatCountdown(ms: number): string {
+  if (ms <= 0) {
+    return "0:00";
+  }
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+/** Best-effort: block common copy/cut paths during a live exam (not foolproof). */
+function examProtectionHandlers(enabled: boolean) {
+  if (!enabled) {
+    return {};
+  }
+  return {
+    onCopy: (e: { preventDefault: () => void }) => e.preventDefault(),
+    onCut: (e: { preventDefault: () => void }) => e.preventDefault(),
+    onContextMenu: (e: { preventDefault: () => void }) => e.preventDefault(),
+    onDragStart: (e: { preventDefault: () => void }) => e.preventDefault(),
+    onKeyDown: (e: { ctrlKey: boolean; metaKey: boolean; key: string; preventDefault: () => void }) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === "c" || e.key === "C" || e.key === "x" || e.key === "X")) {
+        e.preventDefault();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "p") {
+        e.preventDefault();
+      }
+    },
+  };
+}
+
 export default function Home() {
   const [session, setSession] = useState<SessionData | null | undefined>(undefined);
-  const [mode, setMode] = useState<"teacher" | "student">("teacher");
-  const [forms, setForms] = useState<Form[]>([]);
+  const [mode, setMode] = useState<"teacher" | "student">("student");
+  const [authForms, setAuthForms] = useState<Form[]>([]);
   const [activeFormId, setActiveFormId] = useState("");
+  const [joinCodeInput, setJoinCodeInput] = useState("");
+  const [joinDisplayNameInput, setJoinDisplayNameInput] = useState("");
+  const [activeExamDisplayName, setActiveExamDisplayName] = useState("");
+  const [joinedSession, setJoinedSession] = useState<JoinedLiveSession | null>(null);
+  const [teacherLiveBanner, setTeacherLiveBanner] = useState<TeacherLiveBanner | null>(null);
+  const [sessionDurationMinutes, setSessionDurationMinutes] = useState(45);
+  const [anonymousSessionId, setAnonymousSessionId] = useState("");
   const [studentAnswers, setStudentAnswers] = useState<StudentAnswers>({});
+  const [examSuspended, setExamSuspended] = useState(false);
+  const [examFinished, setExamFinished] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
+  const [autosaveBanner, setAutosaveBanner] = useState("");
+  const typingHeartbeatTimerRef = useRef<number | undefined>(undefined);
+  const lastPointerInteractionPingAtRef = useRef(0);
+  const loadedExamNamePrefillRef = useRef(false);
+  const latestStudentAnswersRef = useRef<StudentAnswers>({});
+  const lastPersistedAnswersJsonRef = useRef("");
+  const suspendAutosaveRef = useRef(false);
+  const autosaveTimerRef = useRef<number | undefined>(undefined);
+  const autosaveBannerClearRef = useRef<number | undefined>(undefined);
   const [isLoadingForms, setIsLoadingForms] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [urlAuthNotice, setUrlAuthNotice] = useState("");
+  const [nowTick, setNowTick] = useState(() => Date.now());
 
   const isTeacher = session?.profile?.role === "teacher";
 
+  latestStudentAnswersRef.current = studentAnswers;
+
+  const activeForm = useMemo(
+    () => authForms.find((form) => form.id === activeFormId),
+    [authForms, activeFormId],
+  );
+
+  const closesAtForStudent = joinedSession?.closesAt ?? null;
+  const sessionOpen =
+    closesAtForStudent && joinedSession
+      ? nowTick >= new Date(joinedSession.opensAt).getTime() &&
+        nowTick <= new Date(closesAtForStudent).getTime()
+      : false;
+
+  const studentMsLeft = closesAtForStudent ? new Date(closesAtForStudent).getTime() - nowTick : 0;
+
+  const scheduleTypingHeartbeat = useCallback(() => {
+    if (
+      !joinedSession ||
+      !anonymousSessionId ||
+      !activeExamDisplayName ||
+      !sessionOpen ||
+      examSuspended ||
+      examFinished
+    ) {
+      return;
+    }
+    const liveSessionId = joinedSession.liveSessionId;
+    const deviceId = anonymousSessionId;
+    const displayName = activeExamDisplayName;
+    window.clearTimeout(typingHeartbeatTimerRef.current);
+    typingHeartbeatTimerRef.current = window.setTimeout(() => {
+      typingHeartbeatTimerRef.current = undefined;
+      void (async () => {
+        try {
+          await fetch(`/api/public/live-sessions/${liveSessionId}/heartbeat`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              deviceId,
+              displayName,
+              isTyping: true,
+              interaction: true,
+            }),
+          });
+        } catch {
+          /* ignore */
+        }
+      })();
+    }, 450);
+  }, [
+    joinedSession,
+    anonymousSessionId,
+    activeExamDisplayName,
+    sessionOpen,
+    examSuspended,
+    examFinished,
+  ]);
+
+  const schedulePointerInteractionHeartbeat = useCallback(() => {
+    if (
+      !joinedSession ||
+      !anonymousSessionId ||
+      !activeExamDisplayName ||
+      !sessionOpen ||
+      examSuspended ||
+      examFinished
+    ) {
+      return;
+    }
+    const now = Date.now();
+    if (now - lastPointerInteractionPingAtRef.current < 1200) {
+      return;
+    }
+    lastPointerInteractionPingAtRef.current = now;
+    const liveSessionId = joinedSession.liveSessionId;
+    const deviceId = anonymousSessionId;
+    const displayName = activeExamDisplayName;
+    void (async () => {
+      try {
+        await fetch(`/api/public/live-sessions/${liveSessionId}/heartbeat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            deviceId,
+            displayName,
+            isTyping: false,
+            interaction: true,
+          }),
+        });
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [
+    joinedSession,
+    anonymousSessionId,
+    activeExamDisplayName,
+    sessionOpen,
+    examSuspended,
+    examFinished,
+  ]);
+
+  useEffect(() => {
+    if (!joinedSession && !teacherLiveBanner) {
+      return;
+    }
+    const id = window.setInterval(() => setNowTick(Date.now()), 1000);
+    return () => window.clearInterval(id);
+  }, [joinedSession, teacherLiveBanner]);
+
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      if (session && !isTeacher && mode === "teacher") {
-        setMode("student");
+      setAnonymousSessionId(getOrCreateAnonymousSessionId());
+    }, 0);
+    return () => clearTimeout(timeoutId);
+  }, []);
+
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (typeof window === "undefined" || loadedExamNamePrefillRef.current) {
+        return;
+      }
+      loadedExamNamePrefillRef.current = true;
+      try {
+        const saved = window.localStorage.getItem("truepaper_last_exam_display_name");
+        if (saved) {
+          setJoinDisplayNameInput(saved);
+        }
+      } catch {
+        /* ignore */
       }
     }, 0);
     return () => clearTimeout(timeoutId);
-  }, [session, isTeacher, mode]);
+  }, []);
 
-  const tabForms = useMemo(() => {
-    if (!session) {
-      return [];
-    }
-    if (mode === "teacher" && isTeacher) {
-      return forms.filter((form) => form.createdBy === session.user.id);
-    }
-    return forms;
-  }, [mode, isTeacher, forms, session]);
-
-  const activeForm = useMemo(
-    () => tabForms.find((form) => form.id === activeFormId),
-    [tabForms, activeFormId],
-  );
-
-  const canLoadStudentAnswers =
-    Boolean(session) && mode === "student" && Boolean(activeFormId);
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (typeof window === "undefined") {
+        return;
+      }
+      const params = new URLSearchParams(window.location.search);
+      const err = params.get("error");
+      const rawDesc = params.get("error_description");
+      if (!err && !rawDesc) {
+        return;
+      }
+      const desc = rawDesc
+        ? decodeURIComponent(rawDesc.replace(/\+/g, " "))
+        : "";
+      if (err === "access_denied" || params.get("error_code") === "otp_expired") {
+        setUrlAuthNotice(
+          desc ||
+            "That email link is invalid or has expired. Request a new confirmation email from the Supabase dashboard (Authentication → Users) or sign up again.",
+        );
+      } else {
+        setUrlAuthNotice(desc || err || "Something went wrong with email confirmation.");
+      }
+      window.history.replaceState({}, "", window.location.pathname);
+    }, 0);
+    return () => clearTimeout(timeoutId);
+  }, []);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -99,69 +315,119 @@ export default function Home() {
     return () => clearTimeout(timeoutId);
   }, []);
 
-  const fetchForms = async () => {
-    setIsLoadingForms(true);
-    setErrorMessage("");
-    try {
-      const data = await requestJson<{ forms: Form[] }>("/api/forms");
-      setForms(data.forms);
-      setActiveFormId((currentActiveId) => {
-        const pool = data.forms;
-        if (currentActiveId && pool.some((form) => form.id === currentActiveId)) {
-          return currentActiveId;
-        }
-        return pool[0]?.id ?? "";
-      });
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "Failed to load forms.");
-    } finally {
-      setIsLoadingForms(false);
-    }
-  };
-
   useEffect(() => {
-    if (session === undefined || session === null) {
-      return;
-    }
     const timeoutId = setTimeout(() => {
-      void fetchForms();
+      if (session === undefined) {
+        return;
+      }
+      if (!session) {
+        setMode("student");
+        return;
+      }
+      if (session.profile?.role === "teacher") {
+        setMode("teacher");
+      } else {
+        setMode("student");
+      }
     }, 0);
     return () => clearTimeout(timeoutId);
   }, [session]);
 
   useEffect(() => {
-    if (!session) {
+    if (session === undefined) {
       return;
     }
+
+    let cancelled = false;
     const timeoutId = setTimeout(() => {
-      const pool =
-        mode === "teacher" && session.profile?.role === "teacher"
-          ? forms.filter((form) => form.createdBy === session.user.id)
-          : forms;
-      if (pool.length === 0) {
-        setActiveFormId("");
-        return;
-      }
-      if (!activeFormId || !pool.some((form) => form.id === activeFormId)) {
-        setActiveFormId(pool[0].id);
-      }
+      void (async () => {
+        setIsLoadingForms(true);
+        setErrorMessage("");
+        try {
+          if (session?.profile?.role === "teacher") {
+            const auth = await requestJson<{ forms: Form[] }>("/api/forms");
+            if (cancelled) {
+              return;
+            }
+            setAuthForms(auth.forms);
+          } else {
+            if (!cancelled) {
+              setAuthForms([]);
+            }
+          }
+        } catch (error) {
+          if (!cancelled) {
+            setErrorMessage(error instanceof Error ? error.message : "Failed to load forms.");
+          }
+        } finally {
+          if (!cancelled) {
+            setIsLoadingForms(false);
+          }
+        }
+      })();
     }, 0);
-    return () => clearTimeout(timeoutId);
-  }, [mode, forms, session, activeFormId]);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [session]);
 
   useEffect(() => {
-    if (!canLoadStudentAnswers || !activeFormId) {
+    if (typeof window === "undefined" || session?.profile?.role !== "teacher") {
+      return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    const formId = params.get("form");
+    if (!formId) {
+      return;
+    }
+    if (!authForms.some((f) => f.id === formId)) {
+      return;
+    }
+    setActiveFormId(formId);
+    setMode("teacher");
+    window.history.replaceState({}, "", window.location.pathname);
+  }, [session, authForms]);
+
+  const syncListsAfterTeacherChange = async () => {
+    if (session?.profile?.role === "teacher") {
+      const auth = await requestJson<{ forms: Form[] }>("/api/forms");
+      setAuthForms(auth.forms);
+    }
+  };
+
+  useEffect(() => {
+    if (!joinedSession || !anonymousSessionId) {
       return;
     }
 
     const loadStudentResponse = async () => {
       try {
-        const data = await requestJson<{ answers: StudentAnswers }>(
-          `/api/forms/${activeFormId}/responses`,
+        const params = new URLSearchParams({ deviceId: anonymousSessionId });
+        const response = await fetch(
+          `/api/public/live-sessions/${joinedSession.liveSessionId}/responses?${params.toString()}`,
         );
-        setStudentAnswers(data.answers);
-        setStatusMessage("Loaded saved answers.");
+        const raw = (await response.json()) as unknown;
+        if (!response.ok) {
+          const err = raw as { error?: string };
+          throw new Error(err.error ?? "Request failed.");
+        }
+        const parsed = parseLiveSessionStudentGet(raw);
+        setStudentAnswers(parsed.answers);
+        lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(parsed.answers);
+        suspendAutosaveRef.current = false;
+        setExamSuspended(parsed.suspended);
+        setExamFinished(parsed.finished);
+        if (parsed.finished) {
+          setStatusMessage("You have submitted this exam.");
+        } else if (parsed.suspended) {
+          setStatusMessage("This exam is paused until your teacher allows you to continue.");
+        } else {
+          setStatusMessage("Loaded saved answers.");
+        }
       } catch (error) {
+        suspendAutosaveRef.current = false;
         setStatusMessage(error instanceof Error ? error.message : "Failed to load student answers.");
       }
     };
@@ -171,7 +437,276 @@ export default function Home() {
     }, 0);
 
     return () => clearTimeout(timeoutId);
-  }, [canLoadStudentAnswers, activeFormId]);
+  }, [joinedSession, anonymousSessionId]);
+
+  useEffect(() => {
+    if (!joinedSession || !anonymousSessionId) {
+      return;
+    }
+    const id = window.setInterval(() => {
+      void (async () => {
+        try {
+          const params = new URLSearchParams({ deviceId: anonymousSessionId });
+          const response = await fetch(
+            `/api/public/live-sessions/${joinedSession.liveSessionId}/responses?${params.toString()}`,
+          );
+          const raw = (await response.json()) as { answers?: unknown; suspended?: boolean; error?: string };
+          if (!response.ok) {
+            return;
+          }
+          const parsed = parseLiveSessionStudentGet(raw);
+          setExamSuspended((prevSuspended) => {
+            if (prevSuspended && !parsed.suspended) {
+              setStatusMessage("Your teacher allowed you to continue. You can answer again.");
+            }
+            return parsed.suspended;
+          });
+          setExamFinished((prevFinished) => {
+            if (!prevFinished && parsed.finished) {
+              setStatusMessage("You have submitted this exam.");
+            }
+            return parsed.finished;
+          });
+          if (parsed.suspended || parsed.finished) {
+            setStudentAnswers(parsed.answers);
+            lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(parsed.answers);
+          }
+        } catch {
+          /* ignore */
+        }
+      })();
+    }, 3000);
+    return () => window.clearInterval(id);
+  }, [joinedSession, anonymousSessionId]);
+
+  useEffect(() => {
+    if (
+      !joinedSession ||
+      !anonymousSessionId ||
+      !activeExamDisplayName ||
+      !sessionOpen ||
+      examSuspended ||
+      examFinished
+    ) {
+      if (autosaveTimerRef.current !== undefined) {
+        window.clearTimeout(autosaveTimerRef.current);
+        autosaveTimerRef.current = undefined;
+      }
+      return;
+    }
+    if (suspendAutosaveRef.current) {
+      return;
+    }
+
+    window.clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = window.setTimeout(() => {
+      if (suspendAutosaveRef.current) {
+        return;
+      }
+      const answers = latestStudentAnswersRef.current;
+      const nextJson = stableStringifyStudentAnswers(answers);
+      if (nextJson === lastPersistedAnswersJsonRef.current) {
+        return;
+      }
+
+      void (async () => {
+        try {
+          setAutosaveBanner("Saving…");
+          const res = await fetch(`/api/public/live-sessions/${joinedSession.liveSessionId}/responses`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              deviceId: anonymousSessionId,
+              displayName: activeExamDisplayName,
+              answers,
+            }),
+          });
+          const raw = (await res.json()) as { error?: string };
+          if (!res.ok) {
+            setAutosaveBanner(raw.error ?? "Autosave failed. Use Save answers.");
+            return;
+          }
+          lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(answers);
+          if (autosaveBannerClearRef.current !== undefined) {
+            window.clearTimeout(autosaveBannerClearRef.current);
+          }
+          setAutosaveBanner("All changes saved");
+          autosaveBannerClearRef.current = window.setTimeout(() => {
+            autosaveBannerClearRef.current = undefined;
+            setAutosaveBanner((prev) => (prev === "All changes saved" ? "" : prev));
+          }, 2600);
+        } catch {
+          setAutosaveBanner("Autosave failed. Use Save answers.");
+        }
+      })();
+    }, 1100);
+
+    return () => {
+      if (autosaveTimerRef.current !== undefined) {
+        window.clearTimeout(autosaveTimerRef.current);
+        autosaveTimerRef.current = undefined;
+      }
+    };
+  }, [
+    studentAnswers,
+    joinedSession,
+    sessionOpen,
+    examSuspended,
+    examFinished,
+    anonymousSessionId,
+    activeExamDisplayName,
+  ]);
+
+  useEffect(() => {
+    if (!joinedSession || !anonymousSessionId || !activeExamDisplayName) {
+      return;
+    }
+    void (async () => {
+      try {
+        await fetch(`/api/public/live-sessions/${joinedSession.liveSessionId}/register`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            deviceId: anonymousSessionId,
+            displayName: activeExamDisplayName,
+          }),
+        });
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [joinedSession?.liveSessionId, anonymousSessionId, activeExamDisplayName]);
+
+  useEffect(() => {
+    if (
+      !joinedSession ||
+      !anonymousSessionId ||
+      !activeExamDisplayName ||
+      !sessionOpen ||
+      examSuspended ||
+      examFinished
+    ) {
+      return;
+    }
+    const liveSessionId = joinedSession.liveSessionId;
+    const deviceId = anonymousSessionId;
+    const displayName = activeExamDisplayName;
+    const ping = () => {
+      void fetch(`/api/public/live-sessions/${liveSessionId}/heartbeat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          deviceId,
+          displayName,
+          isTyping: false,
+          interaction: false,
+        }),
+      });
+    };
+    ping();
+    const id = window.setInterval(ping, 25000);
+    return () => window.clearInterval(id);
+  }, [
+    joinedSession,
+    anonymousSessionId,
+    activeExamDisplayName,
+    sessionOpen,
+    examSuspended,
+    examFinished,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      if (typingHeartbeatTimerRef.current !== undefined) {
+        window.clearTimeout(typingHeartbeatTimerRef.current);
+      }
+      if (autosaveBannerClearRef.current !== undefined) {
+        window.clearTimeout(autosaveBannerClearRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (
+      !joinedSession ||
+      !sessionOpen ||
+      examSuspended ||
+      examFinished ||
+      !anonymousSessionId ||
+      !activeExamDisplayName
+    ) {
+      return;
+    }
+    let hiddenTimer: number | undefined;
+    const liveSessionId = joinedSession.liveSessionId;
+    const deviceId = anonymousSessionId;
+    const displayName = activeExamDisplayName;
+
+    const reportTabLeave = async () => {
+      try {
+        const res = await fetch(`/api/public/live-sessions/${liveSessionId}/tab-leave`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ deviceId, displayName }),
+        });
+        let errBody: { error?: string } = {};
+        try {
+          errBody = (await res.json()) as { error?: string };
+        } catch {
+          /* ignore */
+        }
+        if (!res.ok) {
+          setStatusMessage(errBody.error ?? "Could not record tab change.");
+          return;
+        }
+        setExamSuspended(true);
+        setStatusMessage(
+          "The exam was paused because this page was hidden. Wait for your teacher to let you continue.",
+        );
+      } catch {
+        setStatusMessage("Could not record tab change. Try again or contact your teacher.");
+      }
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        hiddenTimer = window.setTimeout(() => {
+          if (document.visibilityState === "hidden") {
+            void reportTabLeave();
+          }
+          hiddenTimer = undefined;
+        }, 200);
+      } else if (hiddenTimer !== undefined) {
+        window.clearTimeout(hiddenTimer);
+        hiddenTimer = undefined;
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (hiddenTimer !== undefined) {
+        window.clearTimeout(hiddenTimer);
+      }
+    };
+  }, [joinedSession, sessionOpen, examSuspended, examFinished, anonymousSessionId, activeExamDisplayName]);
+
+  useEffect(() => {
+    if (mode !== "teacher" || !isTeacher) {
+      return;
+    }
+    const timeoutId = setTimeout(() => {
+      const pool = authForms;
+      if (pool.length === 0) {
+        setActiveFormId("");
+        return;
+      }
+      if (!activeFormId || !pool.some((form) => form.id === activeFormId)) {
+        setActiveFormId(pool[0].id);
+      }
+    }, 0);
+    return () => clearTimeout(timeoutId);
+  }, [authForms, activeFormId, mode, isTeacher]);
 
   const logout = async () => {
     setIsMutating(true);
@@ -179,9 +714,13 @@ export default function Home() {
     try {
       await requestJson<{ ok: true }>("/api/auth/logout", { method: "POST" });
       setSession(null);
-      setForms([]);
-      setActiveFormId("");
-      setStudentAnswers({});
+      setAuthForms([]);
+      setMode("student");
+      setJoinedSession(null);
+      setExamSuspended(false);
+      setExamFinished(false);
+      setActiveExamDisplayName("");
+      setTeacherLiveBanner(null);
       setStatusMessage("Signed out.");
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Sign out failed.");
@@ -191,8 +730,8 @@ export default function Home() {
   };
 
   const updateActiveForm = (updater: (form: Form) => Form) => {
-    setForms((currentForms) =>
-      currentForms.map((form) => (form.id === activeFormId ? updater(form) : form)),
+    setAuthForms((current) =>
+      current.map((form) => (form.id === activeFormId ? updater(form) : form)),
     );
   };
 
@@ -205,8 +744,9 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
-      setForms((currentForms) => [...currentForms, data.form]);
+      setAuthForms((current) => [...current, data.form]);
       setActiveFormId(data.form.id);
+      await syncListsAfterTeacherChange();
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Failed to create form.");
     } finally {
@@ -231,6 +771,7 @@ export default function Home() {
         }),
       });
       setStatusMessage("Form saved.");
+      await syncListsAfterTeacherChange();
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Failed to save form.");
     } finally {
@@ -258,6 +799,7 @@ export default function Home() {
         ...form,
         questions: [...form.questions, data.question],
       }));
+      await syncListsAfterTeacherChange();
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Failed to add question.");
     } finally {
@@ -279,6 +821,7 @@ export default function Home() {
         }),
       });
       setStatusMessage("Question saved.");
+      await syncListsAfterTeacherChange();
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Failed to save question.");
     } finally {
@@ -302,6 +845,7 @@ export default function Home() {
         delete nextAnswers[questionId];
         return nextAnswers;
       });
+      await syncListsAfterTeacherChange();
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Failed to remove question.");
     } finally {
@@ -309,7 +853,137 @@ export default function Home() {
     }
   };
 
+  const joinWithCode = async (rawCode: string) => {
+    const code = normalizeJoinCode(rawCode);
+    if (!isValidJoinCodeFormat(code)) {
+      setStatusMessage("Enter the 6-character code (letters and numbers, no I/O/U/0/1).");
+      return;
+    }
+
+    const displayName = normalizeLiveSessionDisplayName(joinDisplayNameInput);
+    if (!isValidLiveSessionDisplayName(displayName)) {
+      setStatusMessage("Enter your name (1–120 characters) before joining the exam.");
+      return;
+    }
+
+    setIsMutating(true);
+    setStatusMessage("");
+    try {
+      suspendAutosaveRef.current = true;
+      const data = await requestJson<JoinApiResponse>(`/api/public/join?code=${encodeURIComponent(code)}`);
+      setJoinedSession({
+        liveSessionId: data.liveSessionId,
+        form: data.form,
+        opensAt: data.opensAt,
+        closesAt: data.closesAt,
+      });
+      setJoinCodeInput(code);
+      setActiveExamDisplayName(displayName);
+      try {
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem("truepaper_last_exam_display_name", displayName);
+        }
+      } catch {
+        /* ignore */
+      }
+      setStudentAnswers({});
+      setExamSuspended(false);
+      setExamFinished(false);
+      setStatusMessage("You are in the live session.");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Could not join that session.");
+    } finally {
+      setIsMutating(false);
+    }
+  };
+
+  const leaveJoinedSession = () => {
+    suspendAutosaveRef.current = true;
+    lastPersistedAnswersJsonRef.current = "";
+    if (autosaveTimerRef.current !== undefined) {
+      window.clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = undefined;
+    }
+    setAutosaveBanner("");
+    setJoinedSession(null);
+    setStudentAnswers({});
+    setExamSuspended(false);
+    setExamFinished(false);
+    setActiveExamDisplayName("");
+    setStatusMessage("Left the session.");
+  };
+
   const saveStudentAnswers = async () => {
+    if (!joinedSession || !anonymousSessionId || !activeExamDisplayName) {
+      return;
+    }
+
+    setIsMutating(true);
+    setStatusMessage("");
+    try {
+      await requestJson<{ ok: true }>(
+        `/api/public/live-sessions/${joinedSession.liveSessionId}/responses`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            deviceId: anonymousSessionId,
+            displayName: activeExamDisplayName,
+            answers: studentAnswers,
+          }),
+        },
+      );
+      lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(studentAnswers);
+      setStatusMessage("Answers saved.");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Failed to save answers.");
+    } finally {
+      setIsMutating(false);
+    }
+  };
+
+  const submitExam = async () => {
+    if (!joinedSession || !anonymousSessionId || !activeExamDisplayName) {
+      return;
+    }
+
+    setIsMutating(true);
+    setStatusMessage("");
+    try {
+      await requestJson<{ ok: true }>(
+        `/api/public/live-sessions/${joinedSession.liveSessionId}/responses`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            deviceId: anonymousSessionId,
+            displayName: activeExamDisplayName,
+            answers: studentAnswers,
+          }),
+        },
+      );
+      lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(studentAnswers);
+      await requestJson<{ ok: true }>(
+        `/api/public/live-sessions/${joinedSession.liveSessionId}/finish`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            deviceId: anonymousSessionId,
+            displayName: activeExamDisplayName,
+          }),
+        },
+      );
+      setExamFinished(true);
+      setStatusMessage("Exam submitted. You can still read your answers.");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Could not submit the exam.");
+    } finally {
+      setIsMutating(false);
+    }
+  };
+
+  const startLiveSession = async () => {
     if (!activeForm) {
       return;
     }
@@ -317,16 +991,30 @@ export default function Home() {
     setIsMutating(true);
     setStatusMessage("");
     try {
-      await requestJson<{ ok: true }>(`/api/forms/${activeForm.id}/responses`, {
-        method: "PUT",
+      const data = await requestJson<{
+        liveSessionId: string;
+        joinCode: string;
+        opensAt: string;
+        closesAt: string;
+        durationMinutes: number;
+      }>(`/api/forms/${activeForm.id}/live-sessions`, {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          answers: studentAnswers,
-        }),
+        body: JSON.stringify({ durationMinutes: sessionDurationMinutes }),
       });
-      setStatusMessage("Answers saved.");
+      setTeacherLiveBanner({
+        joinCode: data.joinCode,
+        liveSessionId: data.liveSessionId,
+        opensAt: data.opensAt,
+        closesAt: data.closesAt,
+        formTitle: activeForm.title || "Untitled form",
+      });
+      setJoinCodeInput(data.joinCode);
+      setStatusMessage(
+        `Timed session started (${data.durationMinutes} min). Students enter code ${data.joinCode}.`,
+      );
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Failed to save answers.");
+      setStatusMessage(error instanceof Error ? error.message : "Failed to start session.");
     } finally {
       setIsMutating(false);
     }
@@ -340,85 +1028,143 @@ export default function Home() {
     );
   }
 
-  if (session === null) {
-    return (
-      <div className="min-h-screen bg-zinc-100 py-16 text-zinc-900">
-        <main className="mx-auto max-w-lg rounded-2xl border border-zinc-200 bg-white p-8 text-center shadow-sm">
-          <h1 className="text-2xl font-bold">Classroom Form Builder</h1>
-          <p className="mt-2 text-zinc-600">Sign in to create forms or submit responses.</p>
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:justify-center">
-            <Link
-              href="/login"
-              className="rounded-md bg-zinc-900 px-5 py-2 text-sm font-medium text-white"
-            >
-              Log in
-            </Link>
-            <Link
-              href="/register"
-              className="rounded-md border border-zinc-300 px-5 py-2 text-sm font-medium text-zinc-900"
-            >
-              Register
-            </Link>
-          </div>
-        </main>
-      </div>
-    );
-  }
+  const showTeacherTools = mode === "teacher" && isTeacher;
+  const teacherBannerMsLeft = teacherLiveBanner
+    ? new Date(teacherLiveBanner.closesAt).getTime() - nowTick
+    : 0;
+
+  /** Teacher “Student view”: preview the selected form without a join code. Real students still join via code. */
+  const studentExamForm =
+    joinedSession?.form ??
+    (mode === "student" && isTeacher && activeForm && !joinedSession ? activeForm : null);
+  const isStudentExamPreview = Boolean(studentExamForm && !joinedSession);
 
   return (
     <div className="min-h-screen bg-zinc-100 py-10 text-zinc-900">
       <main className="mx-auto w-full max-w-5xl rounded-2xl bg-white p-8 shadow-sm">
+        {urlAuthNotice ? (
+          <div
+            className="mb-6 flex flex-wrap items-start justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+            role="alert"
+          >
+            <p>{urlAuthNotice}</p>
+            <button
+              type="button"
+              onClick={() => setUrlAuthNotice("")}
+              className="shrink-0 font-medium text-amber-900 underline"
+            >
+              Dismiss
+            </button>
+          </div>
+        ) : null}
         <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold">Classroom Form Builder</h1>
             <p className="text-zinc-600">
-              Teachers create forms, students complete and edit responses.
+              Teachers sign in to build forms and start timed sessions. Students enter the 6-character
+              session code and their name—no account required. Answers are tied to this browser (clear
+              site data to start over on this device).
             </p>
-            <p className="mt-2 text-sm text-zinc-500">
-              Signed in as {session.user.email ?? session.user.id}
-              {session.profile ? ` · ${session.profile.role}` : ""}
-            </p>
+            {session ? (
+              <p className="mt-2 text-sm text-zinc-500">
+                Signed in as {session.user.email ?? session.user.id}
+                {session.profile ? ` · ${session.profile.role}` : ""}
+              </p>
+            ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <div className="rounded-lg border border-zinc-300 p-1">
+            {session && isTeacher ? (
+              <Link
+                href="/dashboard"
+                className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800"
+              >
+                Dashboard
+              </Link>
+            ) : null}
+            {session && isTeacher ? (
+              <div className="rounded-lg border border-zinc-300 p-1">
+                <button
+                  type="button"
+                  onClick={() => setMode("teacher")}
+                  className={`rounded-md px-4 py-2 text-sm font-medium ${
+                    mode === "teacher" ? "bg-zinc-900 text-white" : "text-zinc-600"
+                  }`}
+                >
+                  Teacher view
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode("student")}
+                  className={`rounded-md px-4 py-2 text-sm font-medium ${
+                    mode === "student" ? "bg-zinc-900 text-white" : "text-zinc-600"
+                  }`}
+                >
+                  Student view
+                </button>
+              </div>
+            ) : null}
+            {session ? (
               <button
                 type="button"
-                onClick={() => setMode("teacher")}
-                disabled={!isTeacher}
-                className={`rounded-md px-4 py-2 text-sm font-medium ${
-                  mode === "teacher" ? "bg-zinc-900 text-white" : "text-zinc-600"
-                } ${!isTeacher ? "cursor-not-allowed opacity-50" : ""}`}
-                title={!isTeacher ? "Only teacher accounts can use teacher view." : undefined}
+                onClick={() => void logout()}
+                disabled={isMutating}
+                className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700"
               >
-                Teacher view
+                Log out
               </button>
-              <button
-                type="button"
-                onClick={() => setMode("student")}
-                className={`rounded-md px-4 py-2 text-sm font-medium ${
-                  mode === "student" ? "bg-zinc-900 text-white" : "text-zinc-600"
-                }`}
-              >
-                Student view
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={() => void logout()}
-              disabled={isMutating}
-              className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700"
-            >
-              Log out
-            </button>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                <Link
+                  href="/login"
+                  className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white"
+                >
+                  Teacher log in
+                </Link>
+                <Link
+                  href="/register"
+                  className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700"
+                >
+                  Teacher register
+                </Link>
+              </div>
+            )}
           </div>
         </div>
 
-        <section className="mb-8 rounded-xl border border-zinc-200 p-4">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-lg font-semibold">
-              {mode === "teacher" && isTeacher ? "My forms" : "Forms"}
-            </h2>
-            {mode === "teacher" && isTeacher ? (
+        {teacherLiveBanner && showTeacherTools ? (
+          <div className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+            <p className="font-semibold">Active session: {teacherLiveBanner.formTitle}</p>
+            <p className="mt-1">
+              Join code{" "}
+              <span className="rounded bg-white px-2 py-0.5 font-mono text-base tracking-widest">
+                {teacherLiveBanner.joinCode}
+              </span>{" "}
+              · Time left {formatCountdown(teacherBannerMsLeft)}
+            </p>
+            <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm">
+              <Link
+                href={`/live/${encodeURIComponent(teacherLiveBanner.joinCode)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-emerald-900 underline"
+              >
+                Class display (projector)
+              </Link>
+              <button
+                type="button"
+                className="font-medium text-emerald-900 underline"
+                onClick={() => setTeacherLiveBanner(null)}
+              >
+                Dismiss banner
+              </button>
+            </p>
+          </div>
+        ) : null}
+
+        {showTeacherTools ? (
+          <section className="mb-8 rounded-xl border border-zinc-200 p-4">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-lg font-semibold">My forms</h2>
               <button
                 type="button"
                 onClick={addForm}
@@ -427,41 +1173,135 @@ export default function Home() {
               >
                 New form
               </button>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              {authForms.map((form) => (
+                <button
+                  key={form.id}
+                  type="button"
+                  onClick={() => setActiveFormId(form.id)}
+                  className={`rounded-md border px-3 py-2 text-sm ${
+                    form.id === activeFormId
+                      ? "border-zinc-900 bg-zinc-900 text-white"
+                      : "border-zinc-300 bg-white text-zinc-700"
+                  }`}
+                >
+                  {form.title || "Untitled Form"}
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {!showTeacherTools ? (
+          <section className="mb-8 rounded-xl border border-zinc-200 p-4">
+            <h2 className="mb-3 text-lg font-semibold">Join a live session</h2>
+            <p className="mb-3 text-sm text-zinc-600">
+              Enter the code your teacher gives you (6 characters, no spaces) and your name as it
+              should appear to your teacher.
+            </p>
+            <label className="mb-3 block text-sm font-medium">
+              Your name for this exam
+              {joinedSession ? (
+                <p className="mt-1 text-base font-semibold text-zinc-900">{activeExamDisplayName}</p>
+              ) : (
+                <input
+                  type="text"
+                  autoComplete="name"
+                  spellCheck={false}
+                  maxLength={120}
+                  value={joinDisplayNameInput}
+                  onChange={(e) => setJoinDisplayNameInput(e.target.value)}
+                  className="mt-1 w-full max-w-md rounded-md border border-zinc-300 px-3 py-2"
+                  placeholder="e.g. Jordan Lee"
+                />
+              )}
+            </label>
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="block text-sm font-medium">
+                Session code
+                <input
+                  type="text"
+                  inputMode="text"
+                  autoCapitalize="characters"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  maxLength={8}
+                  value={joinCodeInput}
+                  onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+                  disabled={Boolean(joinedSession)}
+                  className="mt-1 w-48 rounded-md border border-zinc-300 px-3 py-2 font-mono tracking-widest"
+                  placeholder="ABCD12"
+                />
+              </label>
+              {!joinedSession ? (
+                <button
+                  type="button"
+                  onClick={() => void joinWithCode(joinCodeInput)}
+                  disabled={
+                    isMutating ||
+                    !isValidJoinCodeFormat(normalizeJoinCode(joinCodeInput)) ||
+                    !isValidLiveSessionDisplayName(normalizeLiveSessionDisplayName(joinDisplayNameInput))
+                  }
+                  className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                >
+                  Join
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={leaveJoinedSession}
+                  className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800"
+                >
+                  Leave session
+                </button>
+              )}
+            </div>
+            {isTeacher && mode === "student" ? (
+              <p className="mt-3 text-sm text-zinc-500">
+                You can scroll down to preview the exam as students see it—no code needed. Use a join code
+                when you want to test saving answers in a live session.
+              </p>
             ) : null}
-          </div>
+          </section>
+        ) : null}
 
-          <div className="flex flex-wrap gap-2">
-            {tabForms.map((form) => (
-              <button
-                key={form.id}
-                type="button"
-                onClick={() => setActiveFormId(form.id)}
-                className={`rounded-md border px-3 py-2 text-sm ${
-                  form.id === activeFormId
-                    ? "border-zinc-900 bg-zinc-900 text-white"
-                    : "border-zinc-300 bg-white text-zinc-700"
-                }`}
-              >
-                {form.title || "Untitled Form"}
-              </button>
-            ))}
-          </div>
-        </section>
-
-        {isLoadingForms ? (
+        {isLoadingForms && showTeacherTools ? (
           <p className="text-zinc-600">Loading forms...</p>
-        ) : errorMessage ? (
-          <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-red-700">
-            {errorMessage}
-          </p>
-        ) : !activeForm ? (
-          <p className="text-zinc-600">
-            {mode === "teacher" && isTeacher
-              ? "Create a form to get started."
-              : "No forms are available yet."}
-          </p>
-        ) : mode === "teacher" ? (
+        ) : errorMessage && showTeacherTools ? (
+          <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-red-700">{errorMessage}</p>
+        ) : showTeacherTools && !activeForm ? (
+          <p className="text-zinc-600">Create a form to get started.</p>
+        ) : showTeacherTools && activeForm ? (
           <section className="space-y-6">
+            <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4">
+              <h3 className="text-sm font-semibold text-zinc-800">Timed session for students</h3>
+              <p className="mt-1 text-sm text-zinc-600">
+                Starts now and stays open for the duration you choose. Share the join code on the board
+                or verbally.
+              </p>
+              <label className="mt-3 block text-sm font-medium">
+                Duration (minutes)
+                <input
+                  type="number"
+                  min={5}
+                  max={480}
+                  value={sessionDurationMinutes}
+                  onChange={(e) => setSessionDurationMinutes(Number(e.target.value) || 45)}
+                  className="mt-1 w-32 rounded-md border border-zinc-300 px-3 py-2"
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => void startLiveSession()}
+                disabled={isMutating}
+                className="mt-3 rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white"
+              >
+                Start timed session
+              </button>
+            </div>
+
             <div className="space-y-3 rounded-xl border border-zinc-200 p-4">
               <label className="block text-sm font-medium">
                 Form title
@@ -525,9 +1365,7 @@ export default function Home() {
                 activeForm.questions.map((question, index) => (
                   <article key={question.id} className="rounded-xl border border-zinc-200 p-4">
                     <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                      <h3 className="text-sm font-semibold text-zinc-500">
-                        Question {index + 1}
-                      </h3>
+                      <h3 className="text-sm font-semibold text-zinc-500">Question {index + 1}</h3>
                       <button
                         type="button"
                         onClick={() => void removeQuestion(question.id)}
@@ -629,22 +1467,86 @@ export default function Home() {
               )}
             </div>
           </section>
-        ) : (
-          <section className="space-y-5">
+        ) : studentExamForm && !showTeacherTools ? (
+          <section
+            className="relative space-y-5"
+            data-exam-protected={joinedSession ? "" : undefined}
+            onPointerMove={schedulePointerInteractionHeartbeat}
+            onPointerOver={schedulePointerInteractionHeartbeat}
+            onFocusCapture={schedulePointerInteractionHeartbeat}
+            {...examProtectionHandlers(Boolean(joinedSession && !examFinished))}
+          >
+            {joinedSession && examFinished ? (
+              <div
+                className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-xl border border-emerald-300 bg-white/95 p-6 text-center shadow-lg backdrop-blur-sm"
+                role="status"
+              >
+                <p className="text-lg font-semibold text-emerald-950">Exam submitted</p>
+                <p className="max-w-md text-sm text-emerald-900">
+                  Your answers are saved and marked complete. You can still read the form below; editing
+                  and saving are turned off.
+                </p>
+              </div>
+            ) : null}
+            {joinedSession && examSuspended ? (
+              <div
+                className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-xl border border-amber-300 bg-white/95 p-6 text-center shadow-lg backdrop-blur-sm"
+                role="alert"
+              >
+                <p className="text-lg font-semibold text-amber-950">Exam paused</p>
+                <p className="max-w-md text-sm text-amber-900">
+                  This page was hidden during the session. Only your teacher can allow you to continue.
+                  Keep this tab visible once you are allowed back in.
+                </p>
+              </div>
+            ) : null}
+            {joinedSession ? (
+              <div
+                className={`rounded-lg border px-4 py-3 text-sm ${
+                  sessionOpen
+                    ? "border-zinc-200 bg-zinc-50 text-zinc-800"
+                    : "border-amber-200 bg-amber-50 text-amber-950"
+                }`}
+              >
+                <p className="font-medium">
+                  {examFinished
+                    ? "You have submitted this exam. The timer below is for the class session window."
+                    : sessionOpen
+                      ? `Time remaining in this session: ${formatCountdown(studentMsLeft)}`
+                      : nowTick < new Date(joinedSession.opensAt).getTime()
+                        ? "This session has not opened yet."
+                        : "This session has ended. You can still read your answers; saving may be blocked."}
+                </p>
+                {activeExamDisplayName ? (
+                  <p className="mt-1 text-zinc-600">
+                    Answering as <span className="font-semibold text-zinc-900">{activeExamDisplayName}</span>
+                  </p>
+                ) : null}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950">
+                <p className="font-medium">Student preview (no join code)</p>
+                <p className="mt-1 text-sky-900">
+                  This is how the exam looks to the class. Answers you type here are only on this page
+                  until you join a live session with a code—then Save will store them for that session.
+                </p>
+              </div>
+            )}
+
             <header>
-              <h2 className="text-2xl font-bold">{activeForm.title || "Untitled Form"}</h2>
-              {activeForm.description ? (
-                <p className="mt-1 text-zinc-600">{activeForm.description}</p>
+              <h2 className="text-2xl font-bold">{studentExamForm.title || "Untitled Form"}</h2>
+              {studentExamForm.description ? (
+                <p className="mt-1 text-zinc-600">{studentExamForm.description}</p>
               ) : null}
             </header>
 
-            {activeForm.questions.length === 0 ? (
+            {studentExamForm.questions.length === 0 ? (
               <p className="rounded-lg border border-dashed border-zinc-300 p-4 text-zinc-600">
                 This form has no questions yet.
               </p>
             ) : (
               <form className="space-y-4">
-                {activeForm.questions.map((question, index) => (
+                {studentExamForm.questions.map((question, index) => (
                   <article key={question.id} className="rounded-xl border border-zinc-200 p-4">
                     <h3 className="mb-2 font-semibold">
                       {index + 1}. {question.prompt || "Untitled question"}
@@ -662,27 +1564,43 @@ export default function Home() {
                               name={question.id}
                               value={option}
                               checked={studentAnswers[question.id] === option}
-                              onChange={(event) =>
+                              disabled={
+                                (Boolean(joinedSession) && !sessionOpen) ||
+                                Boolean(examSuspended) ||
+                                Boolean(examFinished)
+                              }
+                              onChange={(event) => {
+                                scheduleTypingHeartbeat();
                                 setStudentAnswers((currentAnswers) => ({
                                   ...currentAnswers,
                                   [question.id]: event.target.value,
-                                }))
-                              }
+                                }));
+                              }}
                             />
                             <span>{option || `Option ${optionIndex + 1}`}</span>
                           </label>
                         ))}
                       </div>
                     ) : (
-                      <textarea
+                      <StudentExamTextarea
+                        id={question.id}
                         rows={4}
                         value={studentAnswers[question.id] ?? ""}
-                        onChange={(event) =>
+                        disabled={
+                          (Boolean(joinedSession) && !sessionOpen) ||
+                          Boolean(examSuspended) ||
+                          Boolean(examFinished)
+                        }
+                        protect={Boolean(
+                          joinedSession && sessionOpen && !examSuspended && !examFinished,
+                        )}
+                        onChange={(next) => {
+                          scheduleTypingHeartbeat();
                           setStudentAnswers((currentAnswers) => ({
                             ...currentAnswers,
-                            [question.id]: event.target.value,
-                          }))
-                        }
+                            [question.id]: next,
+                          }));
+                        }}
                         placeholder="Type your response..."
                         className="w-full rounded-md border border-zinc-300 px-3 py-2"
                       />
@@ -692,16 +1610,52 @@ export default function Home() {
               </form>
             )}
 
-            <button
-              type="button"
-              onClick={() => void saveStudentAnswers()}
-              disabled={isMutating}
-              className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white"
-            >
-              Save answers
-            </button>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <button
+                type="button"
+                onClick={() => void saveStudentAnswers()}
+                disabled={
+                  isMutating ||
+                  !anonymousSessionId ||
+                  !joinedSession ||
+                  !sessionOpen ||
+                  isStudentExamPreview ||
+                  examSuspended ||
+                  examFinished
+                }
+                className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+              >
+                Save answers
+              </button>
+              {joinedSession && sessionOpen && !examSuspended && !examFinished ? (
+                <button
+                  type="button"
+                  onClick={() => void submitExam()}
+                  disabled={isMutating || !anonymousSessionId || isStudentExamPreview}
+                  className="rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                >
+                  Submit exam
+                </button>
+              ) : null}
+              {isStudentExamPreview ? (
+                <p className="text-sm text-zinc-600">
+                  Join a live session with a code above to enable saving.
+                </p>
+              ) : null}
+            </div>
+            {autosaveBanner ? (
+              <p className="mt-2 text-xs text-zinc-600" aria-live="polite">
+                {autosaveBanner}
+              </p>
+            ) : null}
           </section>
-        )}
+        ) : !showTeacherTools ? (
+          <p className="text-zinc-600">
+            {isTeacher && mode === "student"
+              ? "Create a form in Teacher view to preview it here, or join with your session code."
+              : "Join with your code to see the form."}
+          </p>
+        ) : null}
 
         {statusMessage ? (
           <p className="mt-6 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700">

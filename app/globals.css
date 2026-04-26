@@ -24,3 +24,20 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Live student exam (joined session): best-effort copy/print discouragement. OS screenshots cannot be blocked in a browser. */
+[data-exam-protected] {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+[data-exam-protected] ::selection {
+  background: transparent;
+}
+
+@media print {
+  [data-exam-protected] {
+    display: none !important;
+  }
+}

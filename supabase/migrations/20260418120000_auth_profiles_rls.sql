@@ -1,5 +1,6 @@
 -- Auth profiles, form ownership, student responses by user id, and RLS.
--- Apply after the base tables from supabase/schema.sql exist.
+-- Requires public.forms, public.questions, and public.form_responses to exist.
+-- Run 20260418100000_base_forms_questions_responses.sql first (or apply supabase/schema.sql on a greenfield DB instead of piecemeal migrations).
 
 begin;
 
