@@ -31,6 +31,8 @@ function mapQuestions(rows: NonNullable<LookupPayload["questions"]>): Question[]
       options: Array.isArray(row.options)
         ? row.options.filter((o): o is string => typeof o === "string")
         : [],
+      correctAnswer: null,
+      points: 1,
       displayOrder: Number(row.displayOrder) || 0,
     }))
     .sort((a, b) => a.displayOrder - b.displayOrder);

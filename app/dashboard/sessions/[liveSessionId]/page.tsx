@@ -4,7 +4,9 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { SessionJoinShare } from "@/components/SessionJoinShare";
 import type { LiveParticipantUiStatus } from "@/lib/participant-status";
+import { isNoTimeLimitSession } from "@/lib/session-window";
 
 type ApiError = { error?: string };
 
@@ -84,6 +86,11 @@ export default function LiveSessionDetailPage() {
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [loadError, setLoadError] = useState("");
   const [actionBusy, setActionBusy] = useState(false);
+  const [lastOverviewSyncAt, setLastOverviewSyncAt] = useState<number | null>(null);
+  const [participantHelpOpen, setParticipantHelpOpen] = useState(false);
+
+  const focusRing =
+    "focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2";
 
   const refreshOverview = useCallback(async () => {
     if (!liveSessionId) {
@@ -96,6 +103,7 @@ export default function LiveSessionDetailPage() {
         participants: OverviewParticipant[];
       }>(`/api/forms/live-sessions/${liveSessionId}/overview`);
       setOverview(data);
+      setLastOverviewSyncAt(Date.now());
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to load session.");
       setOverview(null);
@@ -150,6 +158,13 @@ export default function LiveSessionDetailPage() {
     if (!liveSessionId) {
       return;
     }
+    if (
+      !window.confirm(
+        "Stop this live session? Students will not be able to join or save answers in this session window anymore.",
+      )
+    ) {
+      return;
+    }
     setActionBusy(true);
     setLoadError("");
     try {
@@ -184,10 +199,18 @@ export default function LiveSessionDetailPage() {
     }
   };
 
+
   if (session === undefined) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-100 text-zinc-600">
-        Loading…
+      <div className="min-h-screen bg-zinc-100 py-10 text-zinc-900">
+        <main className="mx-auto w-full max-w-5xl px-4 sm:px-6">
+          <div className="animate-pulse space-y-3 rounded-xl border border-zinc-200 bg-white p-6">
+            <div className="h-6 w-48 rounded bg-zinc-200" />
+            <div className="h-4 w-32 rounded bg-zinc-100" />
+            <div className="h-24 rounded-lg bg-zinc-100" />
+          </div>
+          <p className="mt-4 text-sm text-zinc-500">Loading…</p>
+        </main>
       </div>
     );
   }
@@ -214,20 +237,23 @@ export default function LiveSessionDetailPage() {
   const s = overview.session;
   const msLeft = new Date(s.closesAt).getTime() - nowTick;
   const sessionRunning = s.sessionOpen;
+  const noTimeLimit = isNoTimeLimitSession(s.opensAt, s.closesAt);
 
   return (
     <div className="min-h-screen bg-zinc-100 py-10 text-zinc-900">
       <main className="mx-auto w-full max-w-5xl space-y-6 px-4 sm:px-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <Link href="/dashboard" className="text-sm font-medium text-zinc-700 underline">
-              ← Dashboard
+          <div className="min-w-0 flex-1">
+            <Link href="/dashboard" className={`text-sm font-medium text-zinc-700 underline ${focusRing}`}>
+            ← Dashboard
             </Link>
-            <h1 className="mt-2 text-2xl font-bold tracking-tight">{s.formTitle}</h1>
+            <h1 className="mt-4 text-2xl font-bold tracking-tight">{s.formTitle}</h1>
             <p className="mt-1 font-mono text-sm tracking-widest text-zinc-700">Code {s.joinCode}</p>
             <p className="mt-2 text-sm text-zinc-600">
               {sessionRunning
-                ? `Session open · Time left ${formatCountdown(msLeft)}`
+                ? noTimeLimit
+                  ? "Live session open · No time limit"
+                  : `Live session open · Time left ${formatCountdown(msLeft)}`
                 : "This session window is closed."}
             </p>
             {sessionRunning ? (
@@ -236,29 +262,38 @@ export default function LiveSessionDetailPage() {
                   href={`/live/${encodeURIComponent(s.joinCode)}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="font-medium text-emerald-800 underline"
+                  className={`font-medium text-emerald-800 underline ${focusRing}`}
                 >
                   Open class display for projector (new tab)
                 </Link>
               </p>
             ) : null}
+            <div className="mt-3">
+              <SessionJoinShare joinCode={s.joinCode} />
+            </div>
+            <p className="mt-2 text-xs text-zinc-500">
+              Last updated{" "}
+              {lastOverviewSyncAt ? new Date(lastOverviewSyncAt).toLocaleTimeString() : "—"}
+            </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex flex-wrap gap-2">
             <button
               type="button"
               disabled={actionBusy || !sessionRunning}
               onClick={() => void stopSession()}
-              className="rounded-md border border-red-300 bg-white px-3 py-2 text-sm font-medium text-red-800 disabled:opacity-50"
+              className={`rounded-md border border-red-300 bg-white px-3 py-2 text-sm font-medium text-red-800 disabled:opacity-50 ${focusRing}`}
             >
               Stop session
             </button>
             <button
               type="button"
               onClick={() => void refreshOverview()}
-              className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800"
+              className={`rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 ${focusRing}`}
             >
               Refresh now
             </button>
+            </div>
           </div>
         </div>
 
@@ -271,9 +306,25 @@ export default function LiveSessionDetailPage() {
         <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
           <h2 className="text-lg font-semibold">Students in this session</h2>
           <p className="mt-1 text-sm text-zinc-600">
-            Idle means no pointer activity and no typing for about 45 seconds. Typing shows as typing
-            briefly. This list refreshes automatically.
+            Status and activity for each student device in this live session. The list refreshes
+            automatically.
           </p>
+          <button
+            type="button"
+            onClick={() => setParticipantHelpOpen((o) => !o)}
+            className={`mt-2 text-sm font-medium text-emerald-800 underline ${focusRing}`}
+            aria-expanded={participantHelpOpen}
+          >
+            {participantHelpOpen ? "Hide status details" : "What do these statuses mean?"}
+          </button>
+          {participantHelpOpen ? (
+            <p className="mt-2 max-w-2xl text-sm text-zinc-600">
+              <span className="font-medium text-zinc-800">Idle</span> means no pointer activity and no
+              typing for about 45 seconds. <span className="font-medium text-zinc-800">Typing</span> shows
+              briefly when the student is typing. Other badges reflect blocked (tab left) or finished
+              states.
+            </p>
+          ) : null}
           {overview.participants.length === 0 ? (
             <p className="mt-4 rounded-lg border border-dashed border-zinc-200 bg-zinc-50 px-4 py-6 text-sm text-zinc-600">
               No devices have joined yet.
@@ -293,7 +344,25 @@ export default function LiveSessionDetailPage() {
                 </thead>
                 <tbody>
                   {overview.participants.map((p) => (
-                    <tr key={p.anonymousSessionId} className="border-b border-zinc-100 last:border-0">
+                    <tr
+                      key={p.anonymousSessionId}
+                      role="link"
+                      tabIndex={0}
+                      onClick={() =>
+                        router.push(
+                          `/dashboard/sessions/${liveSessionId}/watch/${encodeURIComponent(p.anonymousSessionId)}`,
+                        )
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          router.push(
+                            `/dashboard/sessions/${liveSessionId}/watch/${encodeURIComponent(p.anonymousSessionId)}`,
+                          );
+                        }
+                      }}
+                      className="cursor-pointer border-b border-zinc-100 last:border-0 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-inset"
+                    >
                       <td className="py-3 pr-4 text-zinc-900">
                         {p.displayName ? p.displayName : <span className="text-zinc-400">—</span>}
                       </td>
@@ -315,6 +384,7 @@ export default function LiveSessionDetailPage() {
                           href={`/dashboard/sessions/${liveSessionId}/watch/${encodeURIComponent(p.anonymousSessionId)}`}
                           target="_blank"
                           rel="noopener noreferrer"
+                          onClick={(event) => event.stopPropagation()}
                           className="text-sm font-medium text-sky-800 underline decoration-sky-300 underline-offset-2 hover:decoration-sky-600"
                         >
                           Watch live
@@ -325,7 +395,10 @@ export default function LiveSessionDetailPage() {
                           <button
                             type="button"
                             disabled={actionBusy}
-                            onClick={() => void resumeStudent(p.anonymousSessionId)}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void resumeStudent(p.anonymousSessionId);
+                            }}
                             className="rounded-md bg-amber-900 px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
                           >
                             Allow to continue

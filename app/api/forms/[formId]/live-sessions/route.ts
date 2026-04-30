@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { generateJoinCode } from "@/lib/join-code";
 import { getSessionUser } from "@/lib/request-auth";
+import { UNLIMITED_SESSION_YEARS } from "@/lib/session-window";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type Params = {
@@ -10,6 +11,7 @@ type Params = {
 
 type Body = {
   durationMinutes?: number;
+  noTimeLimit?: boolean;
 };
 
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
@@ -23,14 +25,17 @@ export async function POST(request: Request, { params }: Params) {
   }
 
   if (authSession.profile?.role !== "teacher") {
-    return NextResponse.json({ error: "Only teachers can start a timed session." }, { status: 403 });
+    return NextResponse.json({ error: "Only teachers can start sessions." }, { status: 403 });
   }
 
   const { formId } = await params;
   const body = (await request.json()) as Body;
-  const durationMinutes = clamp(Math.round(Number(body.durationMinutes) || 45), 5, 480);
+  const noTimeLimit = body.noTimeLimit === true;
+  const durationMinutes = noTimeLimit ? null : clamp(Math.round(Number(body.durationMinutes) || 45), 5, 480);
   const opensAt = new Date();
-  const closesAt = new Date(opensAt.getTime() + durationMinutes * 60 * 1000);
+  const closesAt = noTimeLimit
+    ? new Date(opensAt.getTime() + UNLIMITED_SESSION_YEARS * 365 * 24 * 60 * 60 * 1000)
+    : new Date(opensAt.getTime() + (durationMinutes ?? 45) * 60 * 1000);
 
   for (let attempt = 0; attempt < 24; attempt += 1) {
     const joinCode = generateJoinCode();
@@ -53,6 +58,7 @@ export async function POST(request: Request, { params }: Params) {
         opensAt: data.opens_at,
         closesAt: data.closes_at,
         durationMinutes,
+        noTimeLimit,
       });
     }
 

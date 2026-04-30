@@ -80,7 +80,7 @@ export default function RegisterPage() {
         setInfo("Check your email to confirm your account, then log in.");
         return;
       }
-      router.push("/dashboard");
+      router.replace("/dashboard");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed.");
@@ -98,8 +98,20 @@ export default function RegisterPage() {
         </p>
         <p className="mt-2 text-sm text-zinc-600">
           Already have an account?{" "}
-          <Link href="/login" className="font-medium text-zinc-900 underline">
+          <Link
+            href="/login"
+            className="font-medium text-zinc-900 underline focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2"
+          >
             Log in
+          </Link>
+        </p>
+        <p className="mt-3 text-sm text-zinc-600">
+          Joining a class with a code?{" "}
+          <Link
+            href="/#join-session"
+            className="font-medium text-zinc-900 underline focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2"
+          >
+            Student join
           </Link>
         </p>
 

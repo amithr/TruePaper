@@ -1,14 +1,17 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { SessionJoinShare } from "@/components/SessionJoinShare";
 import { StudentExamTextarea } from "@/components/StudentExamTextarea";
 import { getOrCreateAnonymousSessionId } from "@/lib/anonymous-session";
 import type { Form, Question, QuestionType, StudentAnswers } from "@/lib/forms";
 import { isValidLiveSessionDisplayName, normalizeLiveSessionDisplayName } from "@/lib/live-session-display-name";
 import { parseLiveSessionStudentGet } from "@/lib/live-session-student-get";
 import { isValidJoinCodeFormat, normalizeJoinCode } from "@/lib/join-code";
+import { isNoTimeLimitSession } from "@/lib/session-window";
 import { stableStringifyStudentAnswers } from "@/lib/student-answers-json";
 
 type ApiError = {
@@ -96,17 +99,55 @@ function examProtectionHandlers(enabled: boolean) {
   };
 }
 
+function seedFromString(input: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function makeSeededRandom(seed: number): () => number {
+  let state = seed || 0x9e3779b9;
+  return () => {
+    state += 0x6d2b79f5;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function shuffleQuestionsDeterministically(questions: Question[], seedKey: string): Question[] {
+  const seededRandom = makeSeededRandom(seedFromString(seedKey));
+  const result = [...questions];
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(seededRandom() * (index + 1));
+    [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+  }
+  return result;
+}
+
 export default function Home() {
+  const router = useRouter();
   const [session, setSession] = useState<SessionData | null | undefined>(undefined);
   const [mode, setMode] = useState<"teacher" | "student">("student");
   const [authForms, setAuthForms] = useState<Form[]>([]);
   const [activeFormId, setActiveFormId] = useState("");
+  const [documentToGenerate, setDocumentToGenerate] = useState<File | null>(null);
+  const [isGeneratingFormFromDocument, setIsGeneratingFormFromDocument] = useState(false);
+  const [templateToImport, setTemplateToImport] = useState<File | null>(null);
+  const [isImportingTemplate, setIsImportingTemplate] = useState(false);
+  const [generateMultipleChoiceCount, setGenerateMultipleChoiceCount] = useState(5);
+  const [generateShortAnswerCount, setGenerateShortAnswerCount] = useState(3);
+  const [generateLongAnswerCount, setGenerateLongAnswerCount] = useState(2);
+  const [pendingAutoJoinCode, setPendingAutoJoinCode] = useState("");
   const [joinCodeInput, setJoinCodeInput] = useState("");
   const [joinDisplayNameInput, setJoinDisplayNameInput] = useState("");
   const [activeExamDisplayName, setActiveExamDisplayName] = useState("");
   const [joinedSession, setJoinedSession] = useState<JoinedLiveSession | null>(null);
   const [teacherLiveBanner, setTeacherLiveBanner] = useState<TeacherLiveBanner | null>(null);
-  const [sessionDurationMinutes, setSessionDurationMinutes] = useState(45);
   const [anonymousSessionId, setAnonymousSessionId] = useState("");
   const [studentAnswers, setStudentAnswers] = useState<StudentAnswers>({});
   const [examSuspended, setExamSuspended] = useState(false);
@@ -126,6 +167,8 @@ export default function Home() {
   const [errorMessage, setErrorMessage] = useState("");
   const [urlAuthNotice, setUrlAuthNotice] = useState("");
   const [nowTick, setNowTick] = useState(() => Date.now());
+  const teacherHomeRedirectDoneRef = useRef(false);
+  const joinIntentFromUrlRef = useRef(false);
 
   const isTeacher = session?.profile?.role === "teacher";
 
@@ -144,6 +187,8 @@ export default function Home() {
       : false;
 
   const studentMsLeft = closesAtForStudent ? new Date(closesAtForStudent).getTime() - nowTick : 0;
+  const joinedSessionNoTimeLimit =
+    joinedSession ? isNoTimeLimitSession(joinedSession.opensAt, joinedSession.closesAt) : false;
 
   const scheduleTypingHeartbeat = useCallback(() => {
     if (
@@ -293,6 +338,41 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get("code") ?? params.get("join");
+    if (raw) {
+      const normalized = normalizeJoinCode(raw);
+      if (isValidJoinCodeFormat(normalized)) {
+        setJoinCodeInput(normalized);
+        setPendingAutoJoinCode(normalized);
+        joinIntentFromUrlRef.current = true;
+      }
+    }
+    const u = new URL(window.location.href);
+    if (u.searchParams.has("code") || u.searchParams.has("join")) {
+      u.searchParams.delete("code");
+      u.searchParams.delete("join");
+      window.history.replaceState({}, "", u.pathname + u.search + u.hash);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!pendingAutoJoinCode || joinedSession || isMutating) {
+      return;
+    }
+    const normalizedDisplayName = normalizeLiveSessionDisplayName(joinDisplayNameInput);
+    if (!isValidLiveSessionDisplayName(normalizedDisplayName)) {
+      setStatusMessage("Join code loaded from link. Enter your name, then tap Join.");
+      return;
+    }
+    void joinWithCode(pendingAutoJoinCode);
+    setPendingAutoJoinCode("");
+  }, [pendingAutoJoinCode, joinDisplayNameInput, joinedSession, isMutating]);
+
+  useEffect(() => {
     const timeoutId = setTimeout(() => {
       void (async () => {
         try {
@@ -387,8 +467,48 @@ export default function Home() {
     }
     setActiveFormId(formId);
     setMode("teacher");
-    window.history.replaceState({}, "", window.location.pathname);
+    const { pathname, hash } = window.location;
+    window.history.replaceState(
+      {},
+      "",
+      `${pathname}?form=${encodeURIComponent(formId)}${hash}`,
+    );
   }, [session, authForms]);
+
+  /**
+   * Teachers opening `/` without `?form=` (or join/code params) go to the dashboard — forms are opened
+   * here via Form library → Edit in builder (`?form=…`).
+   */
+  useEffect(() => {
+    if (session === undefined) {
+      return;
+    }
+    if (session === null) {
+      teacherHomeRedirectDoneRef.current = false;
+      return;
+    }
+    if (session.profile?.role !== "teacher") {
+      return;
+    }
+    if (teacherHomeRedirectDoneRef.current) {
+      return;
+    }
+    if (typeof window === "undefined") {
+      return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("form") || params.has("code") || params.has("join") || joinIntentFromUrlRef.current) {
+      teacherHomeRedirectDoneRef.current = true;
+      return;
+    }
+    const h = window.location.hash;
+    if (h === "#join-session" || h.startsWith("#join-session")) {
+      teacherHomeRedirectDoneRef.current = true;
+      return;
+    }
+    teacherHomeRedirectDoneRef.current = true;
+    router.replace("/dashboard");
+  }, [session, router]);
 
   const syncListsAfterTeacherChange = async () => {
     if (session?.profile?.role === "teacher") {
@@ -701,8 +821,8 @@ export default function Home() {
         setActiveFormId("");
         return;
       }
-      if (!activeFormId || !pool.some((form) => form.id === activeFormId)) {
-        setActiveFormId(pool[0].id);
+      if (activeFormId && !pool.some((form) => form.id === activeFormId)) {
+        setActiveFormId("");
       }
     }, 0);
     return () => clearTimeout(timeoutId);
@@ -733,25 +853,6 @@ export default function Home() {
     setAuthForms((current) =>
       current.map((form) => (form.id === activeFormId ? updater(form) : form)),
     );
-  };
-
-  const addForm = async () => {
-    setIsMutating(true);
-    setStatusMessage("");
-    try {
-      const data = await requestJson<{ form: Form }>("/api/forms", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      setAuthForms((current) => [...current, data.form]);
-      setActiveFormId(data.form.id);
-      await syncListsAfterTeacherChange();
-    } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Failed to create form.");
-    } finally {
-      setIsMutating(false);
-    }
   };
 
   const saveActiveFormDetails = async () => {
@@ -807,6 +908,96 @@ export default function Home() {
     }
   };
 
+  const createFormFromDocument = async () => {
+    if (!documentToGenerate) {
+      setStatusMessage("Choose a document first.");
+      return;
+    }
+    setIsGeneratingFormFromDocument(true);
+    setStatusMessage("");
+    try {
+      const payload = new FormData();
+      payload.set("document", documentToGenerate);
+      payload.set("multipleChoiceCount", String(Math.max(0, Math.min(20, generateMultipleChoiceCount))));
+      payload.set("shortAnswerCount", String(Math.max(0, Math.min(20, generateShortAnswerCount))));
+      payload.set("longAnswerCount", String(Math.max(0, Math.min(20, generateLongAnswerCount))));
+      const data = await requestJson<{ form: Form }>("/api/forms/generate-from-document", {
+        method: "POST",
+        body: payload,
+      });
+      setAuthForms((current) => [...current, data.form]);
+      setActiveFormId(data.form.id);
+      setDocumentToGenerate(null);
+      if (typeof window !== "undefined") {
+        window.history.replaceState({}, "", `/?form=${encodeURIComponent(data.form.id)}`);
+      }
+      setStatusMessage("Form generated from document.");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Could not generate form from document.");
+    } finally {
+      setIsGeneratingFormFromDocument(false);
+    }
+  };
+
+  const downloadExamTemplate = () => {
+    const template = {
+      title: "Exam title",
+      description: "Brief description/instructions",
+      questions: [
+        {
+          prompt: "Multiple choice question prompt",
+          type: "multipleChoice",
+          options: ["Option A", "Option B", "Option C", "Option D"],
+          correctAnswer: "Option A",
+          points: 1,
+        },
+        {
+          prompt: "Short answer question prompt (3-4 sentence response)",
+          type: "text",
+          options: [],
+          correctAnswer: null,
+          points: 2,
+        },
+      ],
+    };
+    const blob = new Blob([JSON.stringify(template, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "truepaper-exam-template.json";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importExamTemplate = async () => {
+    if (!templateToImport) {
+      setStatusMessage("Choose a JSON template file first.");
+      return;
+    }
+    setIsImportingTemplate(true);
+    setStatusMessage("");
+    try {
+      const text = await templateToImport.text();
+      const parsed = JSON.parse(text) as unknown;
+      const data = await requestJson<{ form: Form }>("/api/forms/create-from-template", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(parsed),
+      });
+      setAuthForms((current) => [...current, data.form]);
+      setActiveFormId(data.form.id);
+      setTemplateToImport(null);
+      if (typeof window !== "undefined") {
+        window.history.replaceState({}, "", `/?form=${encodeURIComponent(data.form.id)}`);
+      }
+      setStatusMessage("Form created from JSON template.");
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Could not import JSON template.");
+    } finally {
+      setIsImportingTemplate(false);
+    }
+  };
+
   const saveQuestion = async (question: Question) => {
     setIsMutating(true);
     setStatusMessage("");
@@ -818,6 +1009,8 @@ export default function Home() {
           prompt: question.prompt,
           type: question.type,
           options: question.options,
+          correctAnswer: question.type === "multipleChoice" ? question.correctAnswer : null,
+          points: question.points,
         }),
       });
       setStatusMessage("Question saved.");
@@ -983,47 +1176,35 @@ export default function Home() {
     }
   };
 
-  const startLiveSession = async () => {
-    if (!activeForm) {
-      return;
+  /** Teacher “Student view”: preview the selected form without a join code. Real students still join via code. */
+  const studentExamForm =
+    joinedSession?.form ??
+    (mode === "student" && isTeacher && activeForm && !joinedSession ? activeForm : null);
+  const isStudentExamPreview = Boolean(studentExamForm && !joinedSession);
+  const studentExamQuestions = useMemo(() => {
+    if (!studentExamForm) {
+      return [];
     }
-
-    setIsMutating(true);
-    setStatusMessage("");
-    try {
-      const data = await requestJson<{
-        liveSessionId: string;
-        joinCode: string;
-        opensAt: string;
-        closesAt: string;
-        durationMinutes: number;
-      }>(`/api/forms/${activeForm.id}/live-sessions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ durationMinutes: sessionDurationMinutes }),
-      });
-      setTeacherLiveBanner({
-        joinCode: data.joinCode,
-        liveSessionId: data.liveSessionId,
-        opensAt: data.opensAt,
-        closesAt: data.closesAt,
-        formTitle: activeForm.title || "Untitled form",
-      });
-      setJoinCodeInput(data.joinCode);
-      setStatusMessage(
-        `Timed session started (${data.durationMinutes} min). Students enter code ${data.joinCode}.`,
-      );
-    } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Failed to start session.");
-    } finally {
-      setIsMutating(false);
+    // Randomize joined exam question order per student/session, but keep it stable for that student.
+    if (joinedSession && anonymousSessionId) {
+      const seedKey = `${joinedSession.liveSessionId}:${anonymousSessionId}:${activeExamDisplayName}`;
+      return shuffleQuestionsDeterministically(studentExamForm.questions, seedKey);
     }
-  };
+    return studentExamForm.questions;
+  }, [studentExamForm, joinedSession, anonymousSessionId, activeExamDisplayName]);
 
   if (session === undefined) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-100 text-zinc-600">
-        Checking session…
+      <div className="min-h-screen bg-zinc-100 py-10 text-zinc-900">
+        <main className="mx-auto w-full max-w-5xl rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
+          <div className="animate-pulse space-y-4" aria-hidden="true">
+            <div className="h-9 w-72 max-w-full rounded-md bg-zinc-200" />
+            <div className="h-4 max-w-2xl rounded bg-zinc-100" />
+            <div className="h-4 max-w-xl rounded bg-zinc-100" />
+            <div className="mt-8 h-48 rounded-xl bg-zinc-100" />
+          </div>
+          <p className="mt-6 text-sm text-zinc-500">Loading…</p>
+        </main>
       </div>
     );
   }
@@ -1032,12 +1213,83 @@ export default function Home() {
   const teacherBannerMsLeft = teacherLiveBanner
     ? new Date(teacherLiveBanner.closesAt).getTime() - nowTick
     : 0;
+  const teacherBannerNoTimeLimit = teacherLiveBanner
+    ? isNoTimeLimitSession(teacherLiveBanner.opensAt, teacherLiveBanner.closesAt)
+    : false;
 
-  /** Teacher “Student view”: preview the selected form without a join code. Real students still join via code. */
-  const studentExamForm =
-    joinedSession?.form ??
-    (mode === "student" && isTeacher && activeForm && !joinedSession ? activeForm : null);
-  const isStudentExamPreview = Boolean(studentExamForm && !joinedSession);
+  const joinSessionSection = (
+    <section id="join-session" className="mb-8 rounded-xl border border-zinc-200 p-4">
+      <h2 className="mb-3 text-lg font-semibold">Join a live session</h2>
+      <p className="mb-3 text-sm text-zinc-600">
+        Enter the code your teacher gives you (6 characters, no spaces) and your name as it should
+        appear to your teacher. If your teacher shared a join link, the code may already be filled in.
+      </p>
+      <div className="mb-3 grid gap-2 sm:grid-cols-[12rem_minmax(0,1fr)] sm:items-center">
+        <label className="text-sm font-medium">Your name for this session</label>
+        {joinedSession ? (
+          <p className="text-base font-semibold text-zinc-900">{activeExamDisplayName}</p>
+        ) : (
+          <input
+            type="text"
+            autoComplete="name"
+            spellCheck={false}
+            maxLength={120}
+            value={joinDisplayNameInput}
+            onChange={(e) => setJoinDisplayNameInput(e.target.value)}
+            className="w-full max-w-md rounded-md border border-zinc-300 px-3 py-2"
+            placeholder="e.g. Jordan Lee"
+          />
+        )}
+      </div>
+      <div className="grid gap-2 sm:grid-cols-[12rem_minmax(0,1fr)_auto] sm:items-end">
+        <label className="text-sm font-medium">Session code</label>
+        <input
+          type="text"
+          inputMode="text"
+          autoCapitalize="characters"
+          autoCorrect="off"
+          spellCheck={false}
+          maxLength={8}
+          value={joinCodeInput}
+          onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+          disabled={Boolean(joinedSession)}
+          className="w-48 rounded-md border border-zinc-300 px-3 py-2 font-mono tracking-widest"
+          placeholder="ABCD12"
+        />
+        {!joinedSession ? (
+          <button
+            type="button"
+            onClick={() => void joinWithCode(joinCodeInput)}
+            disabled={
+              isMutating ||
+              !isValidJoinCodeFormat(normalizeJoinCode(joinCodeInput)) ||
+              !isValidLiveSessionDisplayName(normalizeLiveSessionDisplayName(joinDisplayNameInput))
+            }
+            className="justify-self-start rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 disabled:opacity-50"
+          >
+            Join
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={leaveJoinedSession}
+            className="justify-self-start rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2"
+          >
+            Leave session
+          </button>
+        )}
+      </div>
+      {isTeacher && mode === "student" ? (
+        <p className="mt-3 text-sm text-zinc-500">
+          You can scroll down to preview the form as students see it—no code needed. Use a join code when
+          you want to test saving answers in a live session.
+        </p>
+      ) : null}
+    </section>
+  );
+
+  const focusRing =
+    "focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2";
 
   return (
     <div className="min-h-screen bg-zinc-100 py-10 text-zinc-900">
@@ -1051,85 +1303,90 @@ export default function Home() {
             <button
               type="button"
               onClick={() => setUrlAuthNotice("")}
-              className="shrink-0 font-medium text-amber-900 underline"
+              className={`shrink-0 font-medium text-amber-900 underline ${focusRing}`}
             >
               Dismiss
             </button>
           </div>
         ) : null}
-        <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold">Classroom Form Builder</h1>
-            <p className="text-zinc-600">
-              Teachers sign in to build forms and start timed sessions. Students enter the 6-character
-              session code and their name—no account required. Answers are tied to this browser (clear
-              site data to start over on this device).
-            </p>
-            {session ? (
-              <p className="mt-2 text-sm text-zinc-500">
-                Signed in as {session.user.email ?? session.user.id}
-                {session.profile ? ` · ${session.profile.role}` : ""}
+        {session === null ? (
+          <div className="mb-8 space-y-8">
+            {joinSessionSection}
+            <div className="rounded-xl border border-zinc-200 bg-zinc-50/80 p-6">
+              <h1 className="text-2xl font-bold text-zinc-900">Truepaper</h1>
+              <p className="mt-2 max-w-2xl text-sm text-zinc-600">
+                Teachers build forms and run timed live sessions. Students join on this page with a
+                code—no account needed. Answers stay on this browser until you clear site data.
               </p>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {session && isTeacher ? (
-              <Link
-                href="/dashboard"
-                className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800"
-              >
-                Dashboard
-              </Link>
-            ) : null}
-            {session && isTeacher ? (
-              <div className="rounded-lg border border-zinc-300 p-1">
-                <button
-                  type="button"
-                  onClick={() => setMode("teacher")}
-                  className={`rounded-md px-4 py-2 text-sm font-medium ${
-                    mode === "teacher" ? "bg-zinc-900 text-white" : "text-zinc-600"
-                  }`}
-                >
-                  Teacher view
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMode("student")}
-                  className={`rounded-md px-4 py-2 text-sm font-medium ${
-                    mode === "student" ? "bg-zinc-900 text-white" : "text-zinc-600"
-                  }`}
-                >
-                  Student view
-                </button>
-              </div>
-            ) : null}
-            {session ? (
-              <button
-                type="button"
-                onClick={() => void logout()}
-                disabled={isMutating}
-                className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700"
-              >
-                Log out
-              </button>
-            ) : (
-              <div className="flex flex-wrap gap-2">
+              <div className="mt-4 flex flex-wrap gap-2">
                 <Link
                   href="/login"
-                  className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white"
+                  className={`rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white ${focusRing}`}
                 >
                   Teacher log in
                 </Link>
                 <Link
                   href="/register"
-                  className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700"
+                  className={`rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 ${focusRing}`}
                 >
                   Teacher register
                 </Link>
               </div>
-            )}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0 flex-1">
+              {isTeacher ? (
+                <Link href="/dashboard" className={`text-sm font-medium text-zinc-700 underline ${focusRing}`}>
+                  ← Dashboard
+                </Link>
+              ) : null}
+              <h1 className="text-3xl font-bold">Classroom Form Builder</h1>
+              <p className="text-zinc-600">
+                Teachers sign in to build forms and start live sessions. Students enter the 6-character
+                session code and their name—no account required. Answers are tied to this browser (clear
+                site data to start over on this device).
+              </p>
+              <p className="mt-2 text-sm text-zinc-500">
+                Signed in as {session.user.email ?? session.user.id}
+                {session.profile ? ` · ${session.profile.role}` : ""}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {session && isTeacher ? (
+                <div className={`rounded-lg border border-zinc-300 p-1 ${focusRing}`}>
+                  <button
+                    type="button"
+                    onClick={() => setMode("teacher")}
+                    className={`rounded-md px-4 py-2 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-0 ${
+                      mode === "teacher" ? "bg-zinc-900 text-white" : "text-zinc-600"
+                    }`}
+                  >
+                    Teacher view
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMode("student")}
+                    className={`rounded-md px-4 py-2 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-0 ${
+                      mode === "student" ? "bg-zinc-900 text-white" : "text-zinc-600"
+                    }`}
+                  >
+                    Student view
+                  </button>
+                </div>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => void logout()}
+                disabled={isMutating}
+                className={`rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 ${focusRing} disabled:opacity-50`}
+              >
+                Log out
+              </button>
+            </div>
+          </div>
+        )}
 
         {teacherLiveBanner && showTeacherTools ? (
           <div className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
@@ -1139,170 +1396,178 @@ export default function Home() {
               <span className="rounded bg-white px-2 py-0.5 font-mono text-base tracking-widest">
                 {teacherLiveBanner.joinCode}
               </span>{" "}
-              · Time left {formatCountdown(teacherBannerMsLeft)}
+              · {teacherBannerNoTimeLimit ? "No time limit" : `Time left ${formatCountdown(teacherBannerMsLeft)}`}
             </p>
             <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm">
               <Link
                 href={`/live/${encodeURIComponent(teacherLiveBanner.joinCode)}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="font-medium text-emerald-900 underline"
+                className={`font-medium text-emerald-900 underline ${focusRing}`}
               >
                 Class display (projector)
               </Link>
               <button
                 type="button"
-                className="font-medium text-emerald-900 underline"
+                className={`font-medium text-emerald-900 underline ${focusRing}`}
                 onClick={() => setTeacherLiveBanner(null)}
               >
                 Dismiss banner
               </button>
             </p>
+            <div className="mt-3">
+              <SessionJoinShare joinCode={teacherLiveBanner.joinCode} />
+            </div>
           </div>
         ) : null}
 
-        {showTeacherTools ? (
-          <section className="mb-8 rounded-xl border border-zinc-200 p-4">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-lg font-semibold">My forms</h2>
-              <button
-                type="button"
-                onClick={addForm}
-                disabled={isMutating}
-                className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white"
-              >
-                New form
-              </button>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              {authForms.map((form) => (
-                <button
-                  key={form.id}
-                  type="button"
-                  onClick={() => setActiveFormId(form.id)}
-                  className={`rounded-md border px-3 py-2 text-sm ${
-                    form.id === activeFormId
-                      ? "border-zinc-900 bg-zinc-900 text-white"
-                      : "border-zinc-300 bg-white text-zinc-700"
-                  }`}
-                >
-                  {form.title || "Untitled Form"}
-                </button>
-              ))}
-            </div>
-          </section>
-        ) : null}
-
-        {!showTeacherTools ? (
-          <section className="mb-8 rounded-xl border border-zinc-200 p-4">
-            <h2 className="mb-3 text-lg font-semibold">Join a live session</h2>
-            <p className="mb-3 text-sm text-zinc-600">
-              Enter the code your teacher gives you (6 characters, no spaces) and your name as it
-              should appear to your teacher.
-            </p>
-            <label className="mb-3 block text-sm font-medium">
-              Your name for this exam
-              {joinedSession ? (
-                <p className="mt-1 text-base font-semibold text-zinc-900">{activeExamDisplayName}</p>
-              ) : (
-                <input
-                  type="text"
-                  autoComplete="name"
-                  spellCheck={false}
-                  maxLength={120}
-                  value={joinDisplayNameInput}
-                  onChange={(e) => setJoinDisplayNameInput(e.target.value)}
-                  className="mt-1 w-full max-w-md rounded-md border border-zinc-300 px-3 py-2"
-                  placeholder="e.g. Jordan Lee"
-                />
-              )}
-            </label>
-            <div className="flex flex-wrap items-end gap-2">
-              <label className="block text-sm font-medium">
-                Session code
-                <input
-                  type="text"
-                  inputMode="text"
-                  autoCapitalize="characters"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  maxLength={8}
-                  value={joinCodeInput}
-                  onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
-                  disabled={Boolean(joinedSession)}
-                  className="mt-1 w-48 rounded-md border border-zinc-300 px-3 py-2 font-mono tracking-widest"
-                  placeholder="ABCD12"
-                />
-              </label>
-              {!joinedSession ? (
-                <button
-                  type="button"
-                  onClick={() => void joinWithCode(joinCodeInput)}
-                  disabled={
-                    isMutating ||
-                    !isValidJoinCodeFormat(normalizeJoinCode(joinCodeInput)) ||
-                    !isValidLiveSessionDisplayName(normalizeLiveSessionDisplayName(joinDisplayNameInput))
-                  }
-                  className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
-                >
-                  Join
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={leaveJoinedSession}
-                  className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800"
-                >
-                  Leave session
-                </button>
-              )}
-            </div>
-            {isTeacher && mode === "student" ? (
-              <p className="mt-3 text-sm text-zinc-500">
-                You can scroll down to preview the exam as students see it—no code needed. Use a join code
-                when you want to test saving answers in a live session.
-              </p>
-            ) : null}
-          </section>
-        ) : null}
+        {session && !showTeacherTools ? joinSessionSection : null}
 
         {isLoadingForms && showTeacherTools ? (
           <p className="text-zinc-600">Loading forms...</p>
         ) : errorMessage && showTeacherTools ? (
           <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-red-700">{errorMessage}</p>
         ) : showTeacherTools && !activeForm ? (
-          <p className="text-zinc-600">Create a form to get started.</p>
+          <div className="py-10 text-center text-sm text-zinc-600">
+            <p className="font-medium text-zinc-800">No form open</p>
+            <p className="mt-2 max-w-md mx-auto">
+              In the{" "}
+              <Link href="/dashboard" className={`font-medium text-emerald-800 underline ${focusRing}`}>
+                form library
+              </Link>
+              , click <span className="font-medium text-zinc-800">Edit in builder</span> on a form to open it
+              here.
+            </p>
+          </div>
         ) : showTeacherTools && activeForm ? (
-          <section className="space-y-6">
-            <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4">
-              <h3 className="text-sm font-semibold text-zinc-800">Timed session for students</h3>
-              <p className="mt-1 text-sm text-zinc-600">
-                Starts now and stays open for the duration you choose. Share the join code on the board
-                or verbally.
-              </p>
-              <label className="mt-3 block text-sm font-medium">
-                Duration (minutes)
-                <input
-                  type="number"
-                  min={5}
-                  max={480}
-                  value={sessionDurationMinutes}
-                  onChange={(e) => setSessionDurationMinutes(Number(e.target.value) || 45)}
-                  className="mt-1 w-32 rounded-md border border-zinc-300 px-3 py-2"
-                />
-              </label>
-              <button
-                type="button"
-                onClick={() => void startLiveSession()}
-                disabled={isMutating}
-                className="mt-3 rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white"
-              >
-                Start timed session
-              </button>
-            </div>
+          <section className="space-y-8">
+            <div className="space-y-3">
+              <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
+                  Generate from document (AI)
+                </p>
+                <div className="mb-3 grid gap-2 sm:grid-cols-3">
+                  <label className="text-xs font-medium text-zinc-700">
+                    Multiple choice
+                    <input
+                      type="number"
+                      min={0}
+                      max={20}
+                      value={generateMultipleChoiceCount}
+                      onChange={(event) =>
+                        setGenerateMultipleChoiceCount(Math.max(0, Math.min(20, Number(event.target.value) || 0)))
+                      }
+                      className="mt-1 w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm"
+                    />
+                  </label>
+                  <label className="text-xs font-medium text-zinc-700">
+                    Short answer (3-4 sentences)
+                    <input
+                      type="number"
+                      min={0}
+                      max={20}
+                      value={generateShortAnswerCount}
+                      onChange={(event) =>
+                        setGenerateShortAnswerCount(Math.max(0, Math.min(20, Number(event.target.value) || 0)))
+                      }
+                      className="mt-1 w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm"
+                    />
+                  </label>
+                  <label className="text-xs font-medium text-zinc-700">
+                    Long answer (1-2 paragraphs)
+                    <input
+                      type="number"
+                      min={0}
+                      max={20}
+                      value={generateLongAnswerCount}
+                      onChange={(event) =>
+                        setGenerateLongAnswerCount(Math.max(0, Math.min(20, Number(event.target.value) || 0)))
+                      }
+                      className="mt-1 w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm"
+                    />
+                  </label>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    type="file"
+                    accept=".txt,.md,.markdown,.csv,.rtf,text/plain,text/markdown,text/csv"
+                    onChange={(event) => setDocumentToGenerate(event.target.files?.[0] ?? null)}
+                    className="max-w-xs text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void createFormFromDocument()}
+                    disabled={!documentToGenerate || isGeneratingFormFromDocument}
+                    className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {isGeneratingFormFromDocument ? "Generating…" : "Generate form"}
+                  </button>
+                </div>
+              </div>
+              <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
+                  AI template workflow
+                </p>
+                <ol className="mb-3 list-decimal space-y-1 pl-5 text-sm text-zinc-700">
+                  <li>Download the AI template file.</li>
+                  <li>
+                    Upload it to your AI tool and fill in the exam content.
+                    <span className="relative ml-2 inline-flex items-center align-middle">
+                      <button
+                        type="button"
+                        aria-label="Show suggested AI prompts"
+                        className="group inline-flex h-5 w-5 items-center justify-center rounded-full border border-zinc-400 bg-white text-xs font-semibold text-zinc-700"
+                      >
+                        ?
+                        <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 hidden w-[26rem] -translate-x-1/2 rounded-md border border-zinc-200 bg-white p-3 text-left text-xs text-zinc-700 shadow-lg group-hover:block group-focus-visible:block">
+                          <p className="font-semibold text-zinc-900">Suggested prompts</p>
+                          <p className="mt-2 font-medium text-zinc-800">General fill</p>
+                          <p>
+                            "Fill this JSON template for a [grade level] [subject] exam on [topic]. Keep
+                            the same JSON keys and output valid JSON only."
+                          </p>
+                          <p className="mt-2 font-medium text-zinc-800">Difficulty + distribution</p>
+                          <p>
+                            "Set difficulty to [easy/moderate/challenging]. Include a balanced mix across
+                            knowledge recall, understanding, and application."
+                          </p>
+                          <p className="mt-2 font-medium text-zinc-800">Text response expectations</p>
+                          <p>
+                            "For short answers, prompts should target 3-4 sentence responses. For long
+                            answers, prompts should target 1-2 paragraph responses."
+                          </p>
+                        </span>
+                      </button>
+                    </span>
+                  </li>
+                  <li>Save the JSON file and upload it here using Add Populated AI Template.</li>
+                </ol>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={downloadExamTemplate}
+                    title="Download a template, paste/fill it in any AI platform, then upload the completed JSON with 'Import JSON as form'."
+                    className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-900"
+                  >
+                    Download AI template
+                  </button>
+                  <input
+                    type="file"
+                    accept="application/json,.json"
+                    onChange={(event) => setTemplateToImport(event.target.files?.[0] ?? null)}
+                    className="max-w-xs text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void importExamTemplate()}
+                    disabled={!templateToImport || isImportingTemplate}
+                    className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {isImportingTemplate ? "Adding…" : "Add Populated AI Template"}
+                  </button>
+                </div>
+              </div>
 
-            <div className="space-y-3 rounded-xl border border-zinc-200 p-4">
               <label className="block text-sm font-medium">
                 Form title
                 <input
@@ -1337,7 +1602,7 @@ export default function Home() {
               </button>
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2 border-t border-zinc-200 pt-6">
               <button
                 type="button"
                 onClick={() => void addQuestion("multipleChoice")}
@@ -1356,14 +1621,15 @@ export default function Home() {
               </button>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-0 border-t border-zinc-200 pt-8">
               {activeForm.questions.length === 0 ? (
-                <p className="rounded-lg border border-dashed border-zinc-300 p-4 text-zinc-600">
-                  Add questions to this form.
-                </p>
+                <p className="py-2 text-sm text-zinc-600">Add questions to this form.</p>
               ) : (
                 activeForm.questions.map((question, index) => (
-                  <article key={question.id} className="rounded-xl border border-zinc-200 p-4">
+                  <article
+                    key={question.id}
+                    className="border-b border-zinc-200 py-6 last:border-b-0"
+                  >
                     <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                       <h3 className="text-sm font-semibold text-zinc-500">Question {index + 1}</h3>
                       <button
@@ -1394,6 +1660,29 @@ export default function Home() {
                         className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2"
                       />
                     </label>
+                    <label className="mt-3 block text-sm font-medium">
+                      Points
+                      <input
+                        type="number"
+                        min={1}
+                        max={1000}
+                        value={question.points}
+                        onChange={(event) =>
+                          updateActiveForm((form) => ({
+                            ...form,
+                            questions: form.questions.map((formQuestion) =>
+                              formQuestion.id === question.id
+                                ? {
+                                    ...formQuestion,
+                                    points: Math.max(1, Math.min(1000, Number(event.target.value) || 1)),
+                                  }
+                                : formQuestion,
+                            ),
+                          }))
+                        }
+                        className="mt-1 w-28 rounded-md border border-zinc-300 px-3 py-2"
+                      />
+                    </label>
 
                     {question.type === "multipleChoice" ? (
                       <div className="mt-4 space-y-2">
@@ -1419,6 +1708,16 @@ export default function Home() {
                                       options: formQuestion.options.map((currentOption, i) =>
                                         i === optionIndex ? event.target.value : currentOption,
                                       ),
+                                      correctAnswer:
+                                        formQuestion.correctAnswer &&
+                                        formQuestion.options.some(
+                                          (existingOption, i) =>
+                                            i !== optionIndex && existingOption === formQuestion.correctAnswer,
+                                        )
+                                          ? formQuestion.correctAnswer
+                                          : formQuestion.options[optionIndex] === formQuestion.correctAnswer
+                                            ? event.target.value
+                                            : formQuestion.correctAnswer,
                                     };
                                   }),
                                 }))
@@ -1451,6 +1750,33 @@ export default function Home() {
                         >
                           Add option
                         </button>
+                        <label className="block text-sm font-medium">
+                          Correct answer (optional)
+                          <select
+                            value={question.correctAnswer ?? ""}
+                            onChange={(event) =>
+                              updateActiveForm((form) => ({
+                                ...form,
+                                questions: form.questions.map((formQuestion) =>
+                                  formQuestion.id === question.id
+                                    ? {
+                                        ...formQuestion,
+                                        correctAnswer: event.target.value || null,
+                                      }
+                                    : formQuestion,
+                                ),
+                              }))
+                            }
+                            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2"
+                          >
+                            <option value="">No correct answer selected</option>
+                            {question.options.map((option, optionIndex) => (
+                              <option key={`${question.id}-correct-${optionIndex}`} value={option}>
+                                {option || `Option ${optionIndex + 1}`}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
                       </div>
                     ) : null}
 
@@ -1481,7 +1807,7 @@ export default function Home() {
                 className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-xl border border-emerald-300 bg-white/95 p-6 text-center shadow-lg backdrop-blur-sm"
                 role="status"
               >
-                <p className="text-lg font-semibold text-emerald-950">Exam submitted</p>
+                <p className="text-lg font-semibold text-emerald-950">Submitted</p>
                 <p className="max-w-md text-sm text-emerald-900">
                   Your answers are saved and marked complete. You can still read the form below; editing
                   and saving are turned off.
@@ -1493,10 +1819,10 @@ export default function Home() {
                 className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-xl border border-amber-300 bg-white/95 p-6 text-center shadow-lg backdrop-blur-sm"
                 role="alert"
               >
-                <p className="text-lg font-semibold text-amber-950">Exam paused</p>
+                <p className="text-lg font-semibold text-amber-950">Paused</p>
                 <p className="max-w-md text-sm text-amber-900">
-                  This page was hidden during the session. Only your teacher can allow you to continue.
-                  Keep this tab visible once you are allowed back in.
+                  This page was hidden during the live session. Only your teacher can allow you to
+                  continue. Keep this tab visible once you are allowed back in.
                 </p>
               </div>
             ) : null}
@@ -1510,9 +1836,11 @@ export default function Home() {
               >
                 <p className="font-medium">
                   {examFinished
-                    ? "You have submitted this exam. The timer below is for the class session window."
+                    ? "You have submitted. The timer below is for the class session window."
                     : sessionOpen
-                      ? `Time remaining in this session: ${formatCountdown(studentMsLeft)}`
+                      ? joinedSessionNoTimeLimit
+                        ? "This session has no time limit."
+                        : `Time remaining in this session: ${formatCountdown(studentMsLeft)}`
                       : nowTick < new Date(joinedSession.opensAt).getTime()
                         ? "This session has not opened yet."
                         : "This session has ended. You can still read your answers; saving may be blocked."}
@@ -1527,7 +1855,7 @@ export default function Home() {
               <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950">
                 <p className="font-medium">Student preview (no join code)</p>
                 <p className="mt-1 text-sky-900">
-                  This is how the exam looks to the class. Answers you type here are only on this page
+                  This is how the form looks to the class. Answers you type here are only on this page
                   until you join a live session with a code—then Save will store them for that session.
                 </p>
               </div>
@@ -1540,13 +1868,13 @@ export default function Home() {
               ) : null}
             </header>
 
-            {studentExamForm.questions.length === 0 ? (
+            {studentExamQuestions.length === 0 ? (
               <p className="rounded-lg border border-dashed border-zinc-300 p-4 text-zinc-600">
                 This form has no questions yet.
               </p>
             ) : (
               <form className="space-y-4">
-                {studentExamForm.questions.map((question, index) => (
+                {studentExamQuestions.map((question, index) => (
                   <article key={question.id} className="rounded-xl border border-zinc-200 p-4">
                     <h3 className="mb-2 font-semibold">
                       {index + 1}. {question.prompt || "Untitled question"}
@@ -1634,7 +1962,7 @@ export default function Home() {
                   disabled={isMutating || !anonymousSessionId || isStudentExamPreview}
                   className="rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
                 >
-                  Submit exam
+                  Submit
                 </button>
               ) : null}
               {isStudentExamPreview ? (
@@ -1658,9 +1986,14 @@ export default function Home() {
         ) : null}
 
         {statusMessage ? (
-          <p className="mt-6 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700">
+          <div
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            className="mt-6 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700"
+          >
             {statusMessage}
-          </p>
+          </div>
         ) : null}
       </main>
     </div>

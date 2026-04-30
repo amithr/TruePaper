@@ -5,6 +5,7 @@ import { buildForms } from "@/lib/forms-api";
 import type { Form } from "@/lib/forms";
 import { isMissingColumnError } from "@/lib/is-missing-db-column";
 import { parseStudentAnswersJson } from "@/lib/student-answers-json";
+import { parseTextQuestionGrades } from "@/lib/text-grades";
 import { getSessionUser } from "@/lib/request-auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -13,8 +14,9 @@ type Params = {
 };
 
 const RESPONSE_SELECT_WITH_NAME =
-  "answers, student_display_name, suspended_at, finished_at, last_activity_at, updated_at";
-const RESPONSE_SELECT_LEGACY = "answers, suspended_at, finished_at, last_activity_at, updated_at";
+  "answers, student_display_name, suspended_at, finished_at, last_activity_at, updated_at, text_grades, text_graded_at";
+const RESPONSE_SELECT_LEGACY =
+  "answers, suspended_at, finished_at, last_activity_at, updated_at, text_grades, text_graded_at";
 
 function sessionWindowOpen(opensAt: string, closesAt: string, nowMs: number): boolean {
   return nowMs >= new Date(opensAt).getTime() && nowMs <= new Date(closesAt).getTime();
@@ -72,7 +74,7 @@ export async function GET(_request: Request, { params }: Params) {
 
   const { data: questionRows, error: qError } = await supabase
     .from("questions")
-    .select("id, form_id, prompt, question_type, options, display_order")
+    .select("id, form_id, prompt, question_type, options, correct_answer, points, display_order")
     .eq("form_id", formId)
     .order("display_order", { ascending: true });
 
@@ -136,6 +138,8 @@ export async function GET(_request: Request, { params }: Params) {
     },
     form: form as Form,
     answers,
+    textGrades: parseTextQuestionGrades(row?.text_grades),
+    textGradedAt: typeof row?.text_graded_at === "string" ? row.text_graded_at : null,
     updatedAt,
   });
 }

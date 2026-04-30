@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { isValidJoinCodeFormat, normalizeJoinCode } from "@/lib/join-code";
 import type { LivePublicBoardPayload } from "@/lib/live-public-board";
+import { isNoTimeLimitSession } from "@/lib/session-window";
 
 function formatCountdown(ms: number): string {
   if (ms <= 0) {
@@ -114,6 +115,7 @@ export default function LiveClassDisplayPage() {
 
   const msLeft = board ? new Date(board.closesAt).getTime() - nowTick : 0;
   const sessionOpen = board ? msLeft > 0 && nowTick >= new Date(board.opensAt).getTime() : false;
+  const noTimeLimit = board ? isNoTimeLimitSession(board.opensAt, board.closesAt) : false;
 
   const engagementLine = board
     ? board.assignedCount <= 0
@@ -162,12 +164,16 @@ export default function LiveClassDisplayPage() {
               <p className="mt-4 text-lg text-zinc-300">
                 Time limit:{" "}
                 <span className="font-semibold text-white">
-                  {board.durationMinutes} minute{board.durationMinutes === 1 ? "" : "s"}
+                  {noTimeLimit
+                    ? "No time limit"
+                    : `${board.durationMinutes} minute${board.durationMinutes === 1 ? "" : "s"}`}
                 </span>
               </p>
-              <p className="mt-2 text-2xl font-semibold tabular-nums text-emerald-400">
-                Time remaining {formatCountdown(msLeft)}
-              </p>
+              {!noTimeLimit ? (
+                <p className="mt-2 text-2xl font-semibold tabular-nums text-emerald-400">
+                  Time remaining {formatCountdown(msLeft)}
+                </p>
+              ) : null}
             </div>
 
             <div className="rounded-2xl border border-zinc-700 bg-zinc-900/60 px-6 py-8 text-left sm:text-center">

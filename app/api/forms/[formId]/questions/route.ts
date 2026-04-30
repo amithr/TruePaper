@@ -12,6 +12,8 @@ type CreateQuestionBody = {
   type?: QuestionType;
   prompt?: string;
   options?: string[];
+  correctAnswer?: string | null;
+  points?: number;
 };
 
 export async function POST(request: Request, { params }: Params) {
@@ -25,6 +27,7 @@ export async function POST(request: Request, { params }: Params) {
   const { formId } = await params;
   const body = (await request.json()) as CreateQuestionBody;
   const type = body.type;
+  const points = Math.max(1, Math.min(1000, Math.floor(Number(body.points) || 1)));
 
   if (type !== "multipleChoice" && type !== "text") {
     return NextResponse.json({ error: "Invalid question type." }, { status: 400 });
@@ -47,7 +50,17 @@ export async function POST(request: Request, { params }: Params) {
     body.prompt?.trim() ||
     (type === "multipleChoice" ? "New multiple choice question" : "New text response question");
   const options =
-    type === "multipleChoice" ? (body.options && body.options.length > 0 ? body.options : ["Option 1", "Option 2"]) : [];
+    type === "multipleChoice"
+      ? body.options && body.options.length > 0
+        ? body.options.map((value) => value.trim())
+        : ["Option 1", "Option 2"]
+      : [];
+  const requestedCorrectAnswer =
+    type === "multipleChoice" ? (typeof body.correctAnswer === "string" ? body.correctAnswer.trim() : "") : "";
+  const correctAnswer =
+    type === "multipleChoice" && requestedCorrectAnswer && options.includes(requestedCorrectAnswer)
+      ? requestedCorrectAnswer
+      : null;
 
   const { data, error } = await supabase
     .from("questions")
@@ -56,9 +69,11 @@ export async function POST(request: Request, { params }: Params) {
       prompt,
       question_type: type,
       options,
+      correct_answer: correctAnswer,
+      points,
       display_order: displayOrder,
     })
-    .select("id, prompt, question_type, options, display_order")
+    .select("id, prompt, question_type, options, correct_answer, points, display_order")
     .single();
 
   if (error || !data) {
@@ -76,6 +91,8 @@ export async function POST(request: Request, { params }: Params) {
       options: Array.isArray(data.options)
         ? data.options.filter((value): value is string => typeof value === "string")
         : [],
+      correctAnswer: data.question_type === "multipleChoice" ? data.correct_answer : null,
+      points: Math.max(1, Math.floor(Number(data.points) || 1)),
       displayOrder: data.display_order,
     } satisfies Question,
   });

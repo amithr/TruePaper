@@ -4,7 +4,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { SessionJoinShare } from "@/components/SessionJoinShare";
 import type { Form } from "@/lib/forms";
+import { isNoTimeLimitSession } from "@/lib/session-window";
 import type { TeacherSessionSummary } from "@/lib/teacher-sessions";
 
 type ApiError = { error?: string };
@@ -60,6 +62,7 @@ function welcomeName(profile: SessionProfile | null, email: string | null | unde
 }
 
 const PAST_SESSIONS_PAGE_SIZE = 5;
+const FORM_LIBRARY_PAGE_SIZE = 5;
 
 export default function TeacherDashboardPage() {
   const router = useRouter();
@@ -69,12 +72,19 @@ export default function TeacherDashboardPage() {
   const [loadError, setLoadError] = useState("");
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [sessionDurations, setSessionDurations] = useState<Record<string, number>>({});
+  const [noTimeLimitByForm, setNoTimeLimitByForm] = useState<Record<string, boolean>>({});
   const [startingFormId, setStartingFormId] = useState<string | null>(null);
+  const [deletingFormId, setDeletingFormId] = useState<string | null>(null);
   const [suspensionsBySession, setSuspensionsBySession] = useState<Record<string, SuspendedStudentRow[]>>(
     {},
   );
   const [pastSessionsPage, setPastSessionsPage] = useState(0);
+  const [formLibraryPage, setFormLibraryPage] = useState(0);
   const [formLibrarySearch, setFormLibrarySearch] = useState("");
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
+
+  const focusRing =
+    "focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2";
 
   const refreshData = useCallback(async () => {
     setLoadError("");
@@ -120,6 +130,7 @@ export default function TeacherDashboardPage() {
         }),
       );
       setSuspensionsBySession(nextSusp);
+      setLastSyncedAt(Date.now());
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to load dashboard.");
     }
@@ -178,10 +189,33 @@ export default function TeacherDashboardPage() {
     });
   }, [forms, formLibrarySearch]);
 
+  const formLibraryTotalPages = Math.max(1, Math.ceil(filteredForms.length / FORM_LIBRARY_PAGE_SIZE));
+
+  useEffect(() => {
+    const maxPage = Math.max(0, formLibraryTotalPages - 1);
+    setFormLibraryPage((p) => Math.min(p, maxPage));
+  }, [formLibraryTotalPages]);
+
+  const formLibraryPageSlice = useMemo(() => {
+    const start = formLibraryPage * FORM_LIBRARY_PAGE_SIZE;
+    return filteredForms.slice(start, start + FORM_LIBRARY_PAGE_SIZE);
+  }, [filteredForms, formLibraryPage]);
+
   const logout = async () => {
     await requestJson<{ ok: true }>("/api/auth/logout", { method: "POST" });
     router.replace("/");
     router.refresh();
+  };
+
+  const scrollToSection = (sectionId: "running-sessions" | "past-sessions" | "form-library") => {
+    if (typeof document === "undefined") {
+      return;
+    }
+    const target = document.getElementById(sectionId);
+    if (!target) {
+      return;
+    }
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const resumeStudent = async (liveSessionId: string, deviceId: string) => {
@@ -199,6 +233,13 @@ export default function TeacherDashboardPage() {
   };
 
   const stopRunningSession = async (liveSessionId: string) => {
+    if (
+      !window.confirm(
+        "Stop this live session? Students will not be able to join or save answers in this session window anymore.",
+      )
+    ) {
+      return;
+    }
     setLoadError("");
     try {
       await requestJson<{ ok: true }>(`/api/forms/live-sessions/${liveSessionId}/stop`, {
@@ -210,18 +251,45 @@ export default function TeacherDashboardPage() {
     }
   };
 
+  const deleteForm = async (formId: string, title: string) => {
+    const label = title.trim() || "Untitled form";
+    if (
+      !window.confirm(
+        `Delete “${label}”? This cannot be undone. Questions, past live sessions tied to this form, and saved responses for those sessions will be removed.`,
+      )
+    ) {
+      return;
+    }
+    setDeletingFormId(formId);
+    setLoadError("");
+    try {
+      await requestJson<{ ok: true }>(`/api/forms/${formId}`, { method: "DELETE" });
+      setForms((prev) => prev.filter((f) => f.id !== formId));
+      setSessionDurations((d) => {
+        const next = { ...d };
+        delete next[formId];
+        return next;
+      });
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "Could not delete form.");
+    } finally {
+      setDeletingFormId(null);
+    }
+  };
+
   const startSessionForForm = async (formId: string) => {
     const minutes = sessionDurations[formId] ?? 45;
+    const noTimeLimit = noTimeLimitByForm[formId] === true;
     setStartingFormId(formId);
     setLoadError("");
     try {
-      const data = await requestJson<{
+      await requestJson<{
         joinCode: string;
         closesAt: string;
       }>(`/api/forms/${formId}/live-sessions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ durationMinutes: minutes }),
+        body: JSON.stringify(noTimeLimit ? { noTimeLimit: true } : { durationMinutes: minutes }),
       });
       await refreshData();
     } catch (e) {
@@ -233,8 +301,15 @@ export default function TeacherDashboardPage() {
 
   if (session === undefined) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-100 text-zinc-600">
-        Loading your dashboard…
+      <div className="min-h-screen bg-zinc-100 py-10 text-zinc-900">
+        <main className="mx-auto w-full max-w-5xl px-4 sm:px-6">
+          <div className="animate-pulse space-y-4 rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
+            <div className="h-8 w-56 rounded-md bg-zinc-200" />
+            <div className="h-4 max-w-md rounded bg-zinc-100" />
+            <div className="h-40 rounded-xl bg-zinc-100" />
+          </div>
+          <p className="mt-4 text-sm text-zinc-500">Loading your dashboard…</p>
+        </main>
       </div>
     );
   }
@@ -253,30 +328,57 @@ export default function TeacherDashboardPage() {
     <div className="min-h-screen bg-zinc-100 py-10 text-zinc-900">
       <main className="mx-auto w-full max-w-5xl space-y-10 px-4 sm:px-6">
         <header className="flex flex-wrap items-start justify-between gap-4 rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
-          <div>
+          <div className="min-w-0 flex-1">
             <p className="text-sm font-medium text-emerald-700">Welcome to Truepaper</p>
             <h1 className="mt-1 text-3xl font-bold tracking-tight">Hello, {name}</h1>
             <p className="mt-2 max-w-2xl text-zinc-600">
-              Run timed sessions so students join with a 6-character code—each session is one form
-              window where many students can submit answers on their own devices.
+              Run live sessions so students join with a 6-character code—each session is one form window
+              where many students can submit answers on their own devices.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Link
-              href="/"
-              className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800"
+              href="/#join-session"
+              className={`rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 ${focusRing}`}
             >
               Student join page
             </Link>
             <button
               type="button"
               onClick={() => void logout()}
-              className="rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700"
+              className={`rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 ${focusRing}`}
             >
               Log out
             </button>
           </div>
         </header>
+
+        <nav
+          aria-label="Dashboard sections"
+          className="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-200 bg-white p-2 shadow-sm"
+        >
+          <button
+            type="button"
+            onClick={() => scrollToSection("running-sessions")}
+            className={`rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 ${focusRing}`}
+          >
+            Currently running
+          </button>
+          <button
+            type="button"
+            onClick={() => scrollToSection("past-sessions")}
+            className={`rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 ${focusRing}`}
+          >
+            Past sessions
+          </button>
+          <button
+            type="button"
+            onClick={() => scrollToSection("form-library")}
+            className={`rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 ${focusRing}`}
+          >
+            Form library
+          </button>
+        </nav>
 
         {loadError ? (
           <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
@@ -284,23 +386,27 @@ export default function TeacherDashboardPage() {
           </p>
         ) : null}
 
-        <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+        <section
+          id="running-sessions"
+          className="scroll-mt-6 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm"
+        >
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-            <div>
+            <div className="min-w-0 flex-1">
               <h2 className="text-xl font-semibold">Currently running sessions</h2>
-              <p className="mt-1 text-sm text-zinc-600">
-                Open windows. Assigned is every device with a session row. In progress counts devices
-                with recent pointer/hover/move or typing (idle after ~45s with no pointer and no typing).
-                Counts refresh automatically every few seconds.
+            </div>
+            <div className="flex flex-col items-end gap-1 text-right">
+              <button
+                type="button"
+                onClick={() => void refreshData()}
+                className={`text-sm font-medium text-zinc-700 underline ${focusRing}`}
+              >
+                Refresh now
+              </button>
+              <p className="text-xs text-zinc-500">
+                Last updated{" "}
+                {lastSyncedAt ? new Date(lastSyncedAt).toLocaleTimeString() : "—"}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => void refreshData()}
-              className="text-sm font-medium text-zinc-700 underline"
-            >
-              Refresh now
-            </button>
           </div>
           {running.length === 0 ? (
             <p className="rounded-lg border border-dashed border-zinc-200 bg-zinc-50 px-4 py-6 text-sm text-zinc-600">
@@ -311,13 +417,14 @@ export default function TeacherDashboardPage() {
               {running.map((s) => {
                 const msLeft = new Date(s.closesAt).getTime() - nowTick;
                 const suspended = suspensionsBySession[s.id] ?? [];
+                const noTimeLimit = isNoTimeLimitSession(s.opensAt, s.closesAt);
                 return (
                   <li key={s.id} className="px-4 py-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
                         <Link
                           href={`/dashboard/sessions/${s.id}`}
-                          className="font-medium text-zinc-900 underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600"
+                          className={`font-medium text-zinc-900 underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600 ${focusRing}`}
                         >
                           {s.formTitle}
                         </Link>
@@ -325,18 +432,24 @@ export default function TeacherDashboardPage() {
                           {s.joinCode}
                         </p>
                         <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-zinc-500">
-                          <Link href={`/dashboard/sessions/${s.id}`} className="font-medium text-zinc-700 underline">
+                          <Link
+                            href={`/dashboard/sessions/${s.id}`}
+                            className={`font-medium text-zinc-700 underline ${focusRing}`}
+                          >
                             Open session board
                           </Link>
                           <Link
                             href={`/live/${encodeURIComponent(s.joinCode)}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="font-medium text-emerald-800 underline"
+                            className={`font-medium text-emerald-800 underline ${focusRing}`}
                           >
                             Class display (projector)
                           </Link>
                         </p>
+                        <div className="mt-3">
+                          <SessionJoinShare joinCode={s.joinCode} />
+                        </div>
                       </div>
                       <div className="flex flex-col items-end gap-2 text-right text-sm text-zinc-600">
                         <div>
@@ -346,12 +459,14 @@ export default function TeacherDashboardPage() {
                             <span className="font-semibold text-zinc-900">{s.inProgressCount}</span> in
                             progress
                           </p>
-                          <p className="mt-0.5">Time left {formatCountdown(msLeft)}</p>
+                          <p className="mt-0.5">
+                            {noTimeLimit ? "No time limit" : `Time left ${formatCountdown(msLeft)}`}
+                          </p>
                         </div>
                         <button
                           type="button"
                           onClick={() => void stopRunningSession(s.id)}
-                          className="rounded-md border border-red-200 bg-white px-2 py-1 text-xs font-medium text-red-800"
+                          className={`rounded-md border border-red-200 bg-white px-2 py-1 text-xs font-medium text-red-800 ${focusRing}`}
                         >
                           Stop session
                         </button>
@@ -392,12 +507,8 @@ export default function TeacherDashboardPage() {
           )}
         </section>
 
-        <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+        <section id="past-sessions" className="scroll-mt-6 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
           <h2 className="text-xl font-semibold">Past sessions</h2>
-          <p className="mt-1 text-sm text-zinc-600">
-            Completed or expired windows; same join code history for your records. Showing{" "}
-            {PAST_SESSIONS_PAGE_SIZE} per page.
-          </p>
           {past.length === 0 ? (
             <p className="mt-4 rounded-lg border border-dashed border-zinc-200 bg-zinc-50 px-4 py-6 text-sm text-zinc-600">
               No past sessions yet.
@@ -417,8 +528,22 @@ export default function TeacherDashboardPage() {
                   </thead>
                   <tbody>
                     {pastSessionsPageSlice.map((s) => (
-                      <tr key={s.id} className="border-b border-zinc-100 last:border-0">
-                        <td className="py-3 pr-4 font-medium text-zinc-900">{s.formTitle}</td>
+                      <tr
+                        key={s.id}
+                        role="link"
+                        tabIndex={0}
+                        onClick={() => router.push(`/dashboard/sessions/${s.id}`)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            router.push(`/dashboard/sessions/${s.id}`);
+                          }
+                        }}
+                        className="cursor-pointer border-b border-zinc-100 last:border-0 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-inset"
+                      >
+                        <td className="py-3 pr-4 font-medium text-zinc-900 underline decoration-zinc-300 underline-offset-2">
+                          {s.formTitle}
+                        </td>
                         <td className="py-3 pr-4 font-mono tracking-widest">{s.joinCode}</td>
                         <td className="py-3 pr-4 text-zinc-600">
                           {new Date(s.opensAt).toLocaleString()}
@@ -467,8 +592,8 @@ export default function TeacherDashboardPage() {
           )}
         </section>
 
-        <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <section id="form-library" className="scroll-mt-6 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-xl font-semibold">Form library</h2>
               <p className="mt-1 text-sm text-zinc-600">
@@ -518,53 +643,105 @@ export default function TeacherDashboardPage() {
               No forms match “{formLibrarySearch.trim()}”. Try a different search.
             </p>
           ) : (
-            <ul className="space-y-4">
-              {filteredForms.map((form) => (
-                <li
-                  key={form.id}
-                  className="flex flex-wrap items-end justify-between gap-4 rounded-xl border border-zinc-100 bg-zinc-50/80 px-4 py-4"
-                >
-                  <div>
-                    <p className="font-semibold text-zinc-900">{form.title || "Untitled form"}</p>
-                    <p className="mt-1 text-sm text-zinc-600">
-                      {form.questions.length} question{form.questions.length === 1 ? "" : "s"}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <label className="flex items-center gap-2 text-sm text-zinc-600">
-                      Minutes
-                      <input
-                        type="number"
-                        min={5}
-                        max={480}
-                        value={sessionDurations[form.id] ?? 45}
-                        onChange={(e) =>
-                          setSessionDurations((d) => ({
-                            ...d,
-                            [form.id]: Number(e.target.value) || 45,
-                          }))
-                        }
-                        className="w-20 rounded-md border border-zinc-300 px-2 py-1"
-                      />
-                    </label>
+            <div className="space-y-4">
+              <ul className="space-y-4">
+                {formLibraryPageSlice.map((form) => (
+                  <li
+                    key={form.id}
+                    className="flex flex-wrap items-end justify-between gap-4 rounded-xl border border-zinc-100 bg-zinc-50/80 px-4 py-4"
+                  >
+                    <div>
+                      <p className="font-semibold text-zinc-900">{form.title || "Untitled form"}</p>
+                      <p className="mt-1 text-sm text-zinc-600">
+                        {form.questions.length} question{form.questions.length === 1 ? "" : "s"}
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label className="flex items-center gap-2 text-sm text-zinc-600">
+                        Minutes
+                        <input
+                          type="number"
+                          min={5}
+                          max={480}
+                          value={sessionDurations[form.id] ?? 45}
+                          onChange={(e) =>
+                            setSessionDurations((d) => ({
+                              ...d,
+                              [form.id]: Number(e.target.value) || 45,
+                            }))
+                          }
+                          disabled={noTimeLimitByForm[form.id] === true}
+                          className="w-20 rounded-md border border-zinc-300 px-2 py-1"
+                        />
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-zinc-700">
+                        <input
+                          type="checkbox"
+                          checked={noTimeLimitByForm[form.id] === true}
+                          onChange={(e) =>
+                            setNoTimeLimitByForm((current) => ({
+                              ...current,
+                              [form.id]: e.target.checked,
+                            }))
+                          }
+                        />
+                        No time limit
+                      </label>
+                      <button
+                        type="button"
+                        disabled={startingFormId === form.id}
+                        onClick={() => void startSessionForForm(form.id)}
+                        className="rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                      >
+                        {startingFormId === form.id ? "Starting…" : "Start session"}
+                      </button>
+                      <Link
+                        href={`/?form=${form.id}`}
+                        className={`rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 ${focusRing}`}
+                      >
+                        Edit in builder
+                      </Link>
+                      <button
+                        type="button"
+                        disabled={deletingFormId === form.id || startingFormId === form.id}
+                        onClick={() => void deleteForm(form.id, form.title)}
+                        className={`rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-800 disabled:opacity-50 ${focusRing}`}
+                      >
+                        {deletingFormId === form.id ? "Deleting…" : "Delete"}
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+              {filteredForms.length > FORM_LIBRARY_PAGE_SIZE ? (
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-100 pt-3 text-sm text-zinc-600">
+                  <p>
+                    Page <span className="font-medium text-zinc-900">{formLibraryPage + 1}</span> of{" "}
+                    <span className="font-medium text-zinc-900">{formLibraryTotalPages}</span>
+                    <span className="text-zinc-400"> · </span>
+                    {filteredForms.length} form{filteredForms.length === 1 ? "" : "s"}
+                  </p>
+                  <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      disabled={startingFormId === form.id}
-                      onClick={() => void startSessionForForm(form.id)}
-                      className="rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                      disabled={formLibraryPage <= 0}
+                      onClick={() => setFormLibraryPage((p) => Math.max(0, p - 1))}
+                      className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      {startingFormId === form.id ? "Starting…" : "Start session"}
+                      Previous
                     </button>
-                    <Link
-                      href={`/?form=${form.id}`}
-                      className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800"
+                    <button
+                      type="button"
+                      disabled={formLibraryPage >= formLibraryTotalPages - 1}
+                      onClick={() => setFormLibraryPage((p) => Math.min(formLibraryTotalPages - 1, p + 1))}
+                      className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      Edit in builder
-                    </Link>
+                      Next
+                    </button>
                   </div>
-                </li>
-              ))}
-            </ul>
+                </div>
+              ) : null}
+            </div>
           )}
         </section>
       </main>

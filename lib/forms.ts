@@ -5,6 +5,10 @@ export type Question = {
   prompt: string;
   type: QuestionType;
   options: string[];
+  /** Teacher-authored answer key for multiple choice; never used for student rendering. */
+  correctAnswer: string | null;
+  /** Teacher-defined points awarded for this question. */
+  points: number;
   displayOrder: number;
 };
 

@@ -13,6 +13,8 @@ type QuestionRow = {
   prompt: string;
   question_type: QuestionType;
   options: unknown;
+  correct_answer: string | null;
+  points: number | null;
   display_order: number;
 };
 
@@ -23,6 +25,8 @@ export const mapQuestionRow = (row: QuestionRow): Question => ({
   options: Array.isArray(row.options)
     ? row.options.filter((value): value is string => typeof value === "string")
     : [],
+  correctAnswer: row.question_type === "multipleChoice" ? row.correct_answer : null,
+  points: Math.max(1, Math.floor(Number(row.points) || 1)),
   displayOrder: row.display_order,
 });
 

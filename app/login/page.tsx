@@ -25,7 +25,7 @@ export default function LoginPage() {
       if (!response.ok) {
         throw new Error(data.error ?? "Login failed.");
       }
-      router.push("/dashboard");
+      router.replace("/dashboard");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed.");
@@ -43,8 +43,20 @@ export default function LoginPage() {
         </p>
         <p className="mt-2 text-sm text-zinc-600">
           No account?{" "}
-          <Link href="/register" className="font-medium text-zinc-900 underline">
+          <Link
+            href="/register"
+            className="font-medium text-zinc-900 underline focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2"
+          >
             Register
+          </Link>
+        </p>
+        <p className="mt-3 text-sm text-zinc-600">
+          Joining a class with a code?{" "}
+          <Link
+            href="/#join-session"
+            className="font-medium text-zinc-900 underline focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2"
+          >
+            Student join
           </Link>
         </p>
 
