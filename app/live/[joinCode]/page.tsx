@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { LoadingBar } from "@/components/LoadingBar";
 import { isValidJoinCodeFormat, normalizeJoinCode } from "@/lib/join-code";
 import type { LivePublicBoardPayload } from "@/lib/live-public-board";
 import { isNoTimeLimitSession } from "@/lib/session-window";
@@ -131,7 +132,7 @@ export default function LiveClassDisplayPage() {
         </p>
 
         {loading && !error && codeOk ? (
-          <p className="text-center text-lg text-zinc-400">Loading session…</p>
+          <LoadingBar className="mx-auto max-w-xs" variant="dark" label="Loading session" />
         ) : null}
 
         {!loading && error ? (

@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 
+import {
+  isValidLiveSessionDisplayName,
+  normalizeLiveSessionDisplayName,
+} from "@/lib/live-session-display-name";
 import { validatePasswordStrength } from "@/lib/password-policy";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -15,10 +19,17 @@ export async function POST(request: Request) {
   const email = body.email?.trim().toLowerCase();
   const password = body.password ?? "";
   const confirmPassword = body.confirmPassword ?? "";
-  const displayName = body.displayName?.trim();
+  const displayName = normalizeLiveSessionDisplayName(body.displayName ?? "");
 
   if (!email || !password) {
     return NextResponse.json({ error: "Email and password are required." }, { status: 400 });
+  }
+
+  if (!isValidLiveSessionDisplayName(displayName)) {
+    return NextResponse.json(
+      { error: "Your name is required (1–120 characters)." },
+      { status: 400 },
+    );
   }
 
   if (password !== confirmPassword) {
@@ -42,7 +53,7 @@ export async function POST(request: Request) {
       emailRedirectTo,
       data: {
         role: "teacher",
-        display_name: displayName ?? null,
+        display_name: displayName,
       },
     },
   });

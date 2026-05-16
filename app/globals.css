@@ -24,6 +24,20 @@ body {
   color: var(--foreground);
 }
 
+@keyframes tp-loading-bar-move {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(350%);
+  }
+}
+
+.tp-loading-bar-segment {
+  width: 38%;
+  animation: tp-loading-bar-move 1.15s ease-in-out infinite;
+}
+
 /* Live student exam (joined session): best-effort copy/print discouragement. OS screenshots cannot be blocked in a browser. */
 [data-exam-protected] {
   -webkit-user-select: none;

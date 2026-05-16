@@ -10,6 +10,8 @@ export type TeacherSessionSummary = {
   assignedCount: number;
   /** Devices actively engaged while the session window is open: recent pointer/hover/move or typing (see LIVE_INTERACTION_IDLE_MS). */
   inProgressCount: number;
+  /** Devices that have submitted (finished_at set). */
+  finishedCount: number;
   /** @deprecated alias for assignedCount */
   responseCount: number;
 };

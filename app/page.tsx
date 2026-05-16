@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { LoadingBar } from "@/components/LoadingBar";
 import { SessionJoinShare } from "@/components/SessionJoinShare";
 import { StudentExamTextarea } from "@/components/StudentExamTextarea";
 import { getOrCreateAnonymousSessionId } from "@/lib/anonymous-session";
@@ -1176,9 +1177,11 @@ export default function Home() {
     }
   };
 
-  /** Teacher “Student view”: preview the selected form without a join code. Real students still join via code. */
+  const hasVerifiedExamName = isValidLiveSessionDisplayName(activeExamDisplayName);
+
+  /** Teacher “Student view”: preview the selected form without a join code. Real students join via code + name. */
   const studentExamForm =
-    joinedSession?.form ??
+    (joinedSession && hasVerifiedExamName ? joinedSession.form : null) ??
     (mode === "student" && isTeacher && activeForm && !joinedSession ? activeForm : null);
   const isStudentExamPreview = Boolean(studentExamForm && !joinedSession);
   const studentExamQuestions = useMemo(() => {
@@ -1203,7 +1206,7 @@ export default function Home() {
             <div className="h-4 max-w-xl rounded bg-zinc-100" />
             <div className="mt-8 h-48 rounded-xl bg-zinc-100" />
           </div>
-          <p className="mt-6 text-sm text-zinc-500">Loading…</p>
+          <LoadingBar className="mt-6 max-w-md" />
         </main>
       </div>
     );
@@ -1225,20 +1228,29 @@ export default function Home() {
         appear to your teacher. If your teacher shared a join link, the code may already be filled in.
       </p>
       <div className="mb-3 grid gap-2 sm:grid-cols-[12rem_minmax(0,1fr)] sm:items-center">
-        <label className="text-sm font-medium">Your name for this session</label>
+        <label className="text-sm font-medium">
+          Your name for this session <span className="text-red-600">*</span>
+        </label>
         {joinedSession ? (
           <p className="text-base font-semibold text-zinc-900">{activeExamDisplayName}</p>
         ) : (
-          <input
-            type="text"
-            autoComplete="name"
-            spellCheck={false}
-            maxLength={120}
-            value={joinDisplayNameInput}
-            onChange={(e) => setJoinDisplayNameInput(e.target.value)}
-            className="w-full max-w-md rounded-md border border-zinc-300 px-3 py-2"
-            placeholder="e.g. Jordan Lee"
-          />
+          <div className="max-w-md">
+            <input
+              type="text"
+              autoComplete="name"
+              required
+              spellCheck={false}
+              maxLength={120}
+              value={joinDisplayNameInput}
+              onChange={(e) => setJoinDisplayNameInput(e.target.value)}
+              className="w-full rounded-md border border-zinc-300 px-3 py-2"
+              placeholder="e.g. Jordan Lee"
+              aria-describedby="join-display-name-hint"
+            />
+            <p id="join-display-name-hint" className="mt-1 text-xs text-zinc-500">
+              Required before you can join and begin the exam.
+            </p>
+          </div>
         )}
       </div>
       <div className="grid gap-2 sm:grid-cols-[12rem_minmax(0,1fr)_auto] sm:items-end">
@@ -1424,7 +1436,7 @@ export default function Home() {
         {session && !showTeacherTools ? joinSessionSection : null}
 
         {isLoadingForms && showTeacherTools ? (
-          <p className="text-zinc-600">Loading forms...</p>
+          <LoadingBar className="max-w-xs" label="Loading forms" />
         ) : errorMessage && showTeacherTools ? (
           <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-red-700">{errorMessage}</p>
         ) : showTeacherTools && !activeForm ? (

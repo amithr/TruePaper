@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { LoadingBar } from "@/components/LoadingBar";
 import { SessionJoinShare } from "@/components/SessionJoinShare";
 import type { LiveParticipantUiStatus } from "@/lib/participant-status";
 import { isNoTimeLimitSession } from "@/lib/session-window";
@@ -209,7 +210,7 @@ export default function LiveSessionDetailPage() {
             <div className="h-4 w-32 rounded bg-zinc-100" />
             <div className="h-24 rounded-lg bg-zinc-100" />
           </div>
-          <p className="mt-4 text-sm text-zinc-500">Loading…</p>
+          <LoadingBar className="mt-4 max-w-md" />
         </main>
       </div>
     );
@@ -227,7 +228,7 @@ export default function LiveSessionDetailPage() {
               {loadError}
             </p>
           ) : (
-            <p className="mt-6 text-zinc-600">Loading session…</p>
+            <LoadingBar className="mt-6 max-w-md" label="Loading session" />
           )}
         </main>
       </div>

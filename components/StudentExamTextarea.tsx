@@ -262,7 +262,6 @@ export function StudentExamTextarea({
       rows={rows}
       value={value}
       disabled={disabled}
-      inputMode="none"
       spellCheck={false}
       autoComplete="off"
       autoCorrect="off"

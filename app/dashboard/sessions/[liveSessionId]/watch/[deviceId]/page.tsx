@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { LoadingBar } from "@/components/LoadingBar";
 import type { Form, StudentAnswers } from "@/lib/forms";
 import { isNoTimeLimitSession } from "@/lib/session-window";
 import { parseStudentAnswersJson } from "@/lib/student-answers-json";
@@ -337,8 +338,8 @@ export default function WatchStudentExamPage() {
 
   if (session === undefined) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-100 text-zinc-600">
-        Loading…
+      <div className="flex min-h-screen items-center justify-center bg-zinc-100 px-6 text-zinc-600">
+        <LoadingBar className="max-w-xs" />
       </div>
     );
   }
@@ -358,7 +359,7 @@ export default function WatchStudentExamPage() {
               {loadError}
             </p>
           ) : (
-            <p className="mt-6 text-zinc-600">Loading student exam…</p>
+            <LoadingBar className="mt-6 max-w-md" label="Loading student exam" />
           )}
         </main>
       </div>

@@ -5,6 +5,10 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState, type FormEvent } from "react";
 
 import {
+  isValidLiveSessionDisplayName,
+  normalizeLiveSessionDisplayName,
+} from "@/lib/live-session-display-name";
+import {
   getPasswordRequirementLabels,
   getPasswordRequirementStatus,
   isPasswordStrong,
@@ -60,6 +64,12 @@ export default function RegisterPage() {
       return;
     }
 
+    const name = normalizeLiveSessionDisplayName(displayName);
+    if (!isValidLiveSessionDisplayName(name)) {
+      setError("Enter your name (1–120 characters).");
+      return;
+    }
+
     setPending(true);
     try {
       const response = await fetch("/api/auth/register", {
@@ -69,7 +79,7 @@ export default function RegisterPage() {
           email,
           password,
           confirmPassword,
-          displayName: displayName.trim() || undefined,
+          displayName: name,
         }),
       });
       const data = (await response.json()) as { error?: string; needsEmailConfirmation?: boolean };
@@ -116,6 +126,20 @@ export default function RegisterPage() {
         </p>
 
         <form className="mt-6 space-y-4" onSubmit={onSubmit}>
+          <label className="block text-sm font-medium">
+            Your name
+            <input
+              type="text"
+              autoComplete="name"
+              required
+              spellCheck={false}
+              maxLength={120}
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2"
+              placeholder="e.g. Alex Morgan"
+            />
+          </label>
           <label className="block text-sm font-medium">
             Email
             <input
@@ -182,15 +206,6 @@ export default function RegisterPage() {
                   : "Meet all password requirements above first, then match that password."}
               </p>
             ) : null}
-          </label>
-          <label className="block text-sm font-medium">
-            Display name (optional)
-            <input
-              type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2"
-            />
           </label>
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
           {info ? <p className="text-sm text-zinc-700">{info}</p> : null}

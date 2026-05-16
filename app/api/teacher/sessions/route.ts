@@ -54,6 +54,7 @@ export async function GET() {
   const ids = sessions.map((s) => s.id);
   const assigned = new Map<string, number>();
   const inProgress = new Map<string, number>();
+  const finished = new Map<string, number>();
   const nowMs = Date.now();
   const windowOpenBySessionId = new Map(
     sessions.map((s) => [s.id, sessionWindowOpen(s.opens_at, s.closes_at, nowMs)]),
@@ -76,6 +77,9 @@ export async function GET() {
         continue;
       }
       assigned.set(lid, (assigned.get(lid) ?? 0) + 1);
+      if (row.finished_at) {
+        finished.set(lid, (finished.get(lid) ?? 0) + 1);
+      }
       const windowOpen = windowOpenBySessionId.get(lid) ?? false;
       if (
         isLiveParticipantActivelyEngaged(
@@ -97,6 +101,7 @@ export async function GET() {
   const summaries: TeacherSessionSummary[] = sessions.map((s) => {
     const a = assigned.get(s.id) ?? 0;
     const ip = inProgress.get(s.id) ?? 0;
+    const fin = finished.get(s.id) ?? 0;
     return {
       id: s.id,
       formId: s.form_id,
@@ -107,6 +112,7 @@ export async function GET() {
       createdAt: s.created_at,
       assignedCount: a,
       inProgressCount: ip,
+      finishedCount: fin,
       responseCount: a,
     };
   });

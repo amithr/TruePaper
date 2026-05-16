@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { LoadingBar } from "@/components/LoadingBar";
 import { SessionJoinShare } from "@/components/SessionJoinShare";
 import type { Form } from "@/lib/forms";
 import { isNoTimeLimitSession } from "@/lib/session-window";
@@ -283,7 +284,8 @@ export default function TeacherDashboardPage() {
     setStartingFormId(formId);
     setLoadError("");
     try {
-      await requestJson<{
+      const created = await requestJson<{
+        liveSessionId: string;
         joinCode: string;
         closesAt: string;
       }>(`/api/forms/${formId}/live-sessions`, {
@@ -291,7 +293,8 @@ export default function TeacherDashboardPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(noTimeLimit ? { noTimeLimit: true } : { durationMinutes: minutes }),
       });
-      await refreshData();
+      router.push(`/dashboard/sessions/${created.liveSessionId}`);
+      void refreshData();
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Could not start session.");
     } finally {
@@ -308,7 +311,7 @@ export default function TeacherDashboardPage() {
             <div className="h-4 max-w-md rounded bg-zinc-100" />
             <div className="h-40 rounded-xl bg-zinc-100" />
           </div>
-          <p className="mt-4 text-sm text-zinc-500">Loading your dashboard…</p>
+          <LoadingBar className="mt-4 max-w-md" label="Loading your dashboard" />
         </main>
       </div>
     );
@@ -458,6 +461,8 @@ export default function TeacherDashboardPage() {
                             <span className="mx-1 text-zinc-400">·</span>
                             <span className="font-semibold text-zinc-900">{s.inProgressCount}</span> in
                             progress
+                            <span className="mx-1 text-zinc-400">·</span>
+                            <span className="font-semibold text-zinc-900">{s.finishedCount}</span> finished
                           </p>
                           <p className="mt-0.5">
                             {noTimeLimit ? "No time limit" : `Time left ${formatCountdown(msLeft)}`}
