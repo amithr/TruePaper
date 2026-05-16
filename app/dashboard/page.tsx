@@ -76,6 +76,7 @@ export default function TeacherDashboardPage() {
   const [sessionDurations, setSessionDurations] = useState<Record<string, number>>({});
   const [noTimeLimitByForm, setNoTimeLimitByForm] = useState<Record<string, boolean>>({});
   const [startingFormId, setStartingFormId] = useState<string | null>(null);
+  const [stoppingSessionId, setStoppingSessionId] = useState<string | null>(null);
   const [deletingFormId, setDeletingFormId] = useState<string | null>(null);
   const [suspensionsBySession, setSuspensionsBySession] = useState<Record<string, SuspendedStudentRow[]>>(
     {},
@@ -240,6 +241,7 @@ export default function TeacherDashboardPage() {
       return;
     }
     setLoadError("");
+    setStoppingSessionId(liveSessionId);
     try {
       await requestJson<{ ok: true }>(`/api/forms/live-sessions/${liveSessionId}/stop`, {
         method: "POST",
@@ -247,6 +249,8 @@ export default function TeacherDashboardPage() {
       await refreshData();
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Could not stop session.");
+    } finally {
+      setStoppingSessionId(null);
     }
   };
 
@@ -455,9 +459,21 @@ export default function TeacherDashboardPage() {
                         <button
                           type="button"
                           onClick={() => void stopRunningSession(s.id)}
-                          className={`rounded-md border border-red-200 bg-white px-2 py-1 text-xs font-medium text-red-800 ${focusRing}`}
+                          disabled={stoppingSessionId === s.id}
+                          aria-busy={stoppingSessionId === s.id}
+                          className={`inline-flex min-w-[7.5rem] items-center justify-center gap-1.5 rounded-md border border-red-200 bg-white px-2 py-1 text-xs font-medium text-red-800 disabled:opacity-70 ${focusRing}`}
                         >
-                          {buttonLabel("Stop session")}
+                          {stoppingSessionId === s.id ? (
+                            <>
+                              <span
+                                className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-red-200 border-t-red-800"
+                                aria-hidden
+                              />
+                              {buttonLabel("Stopping…")}
+                            </>
+                          ) : (
+                            buttonLabel("Stop session")
+                          )}
                         </button>
                       </div>
                     </div>

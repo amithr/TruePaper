@@ -62,8 +62,11 @@ export function parseLiveSessionStudentGet(data: unknown): {
       suspended: Boolean(obj.suspended),
       finished: Boolean(obj.finished),
       displayName: typeof dn === "string" ? dn : "",
-      liveTeacherFeedback: parseLiveTeacherFeedback(obj.liveTeacherFeedback),
-      liveTeacherFeedbackEnabled: obj.liveTeacherFeedbackEnabled === true,
+      liveTeacherFeedback: parseLiveTeacherFeedback(
+        obj.liveTeacherFeedback ?? obj.live_teacher_feedback,
+      ),
+      liveTeacherFeedbackEnabled:
+        obj.liveTeacherFeedbackEnabled === true || obj.live_teacher_feedback_enabled === true,
       resumeCode: resumeCodeFromObject(obj),
     };
   }

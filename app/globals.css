@@ -79,6 +79,38 @@ body {
   gap: 1rem;
 }
 
+.tp-teacher-feedback-card {
+  border: 1px solid #7dd3fc;
+  border-radius: var(--tp-radius-sm);
+  background: linear-gradient(180deg, #f0f9ff 0%, #e0f2fe 100%);
+  padding: 0.875rem 1rem;
+  box-shadow: var(--tp-shadow-sm);
+}
+
+.tp-teacher-feedback-card__title {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #0369a1;
+}
+
+.tp-teacher-feedback-card__body {
+  margin: 0.5rem 0 0;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  color: #0c4a6e;
+}
+
+.tp-teacher-feedback-card__placeholder {
+  margin: 0.5rem 0 0;
+  font-size: 0.875rem;
+  line-height: 1.45;
+  color: #0369a1;
+  opacity: 0.85;
+}
+
 .tp-card-header {
   display: flex;
   flex-wrap: wrap;

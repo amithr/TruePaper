@@ -45,8 +45,6 @@ export function StudentExamTextarea({
 }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const lastGoodRef = useRef(value);
-  const lastKeyDownAtRef = useRef(0);
-  const insertStreakRef = useRef(0);
   const [domKey, setDomKey] = useState(0);
 
   useEffect(() => {
@@ -90,22 +88,15 @@ export function StudentExamTextarea({
         revertToLastGood();
         return;
       }
-      if (inputType === "insertReplacementText" && Math.abs(next.length - prev.length) > 24) {
+      if (inputType === "insertReplacementText" && Math.abs(next.length - prev.length) > 48) {
         revertToLastGood();
         return;
       }
 
       const delta = next.length - prev.length;
-      if (delta > 18) {
+      if (Math.abs(delta) > 64) {
         revertToLastGood();
         return;
-      }
-      if (inputType === "insertText" && delta > 3) {
-        const ms = Date.now() - lastKeyDownAtRef.current;
-        if (ms > 90 && insertStreakRef.current < 2) {
-          revertToLastGood();
-          return;
-        }
       }
 
       onChange(next);
@@ -182,15 +173,6 @@ export function StudentExamTextarea({
         e.preventDefault();
         return;
       }
-      if (e.key.length === 1 && !mod && !e.altKey) {
-        lastKeyDownAtRef.current = Date.now();
-        insertStreakRef.current += 1;
-        window.setTimeout(() => {
-          insertStreakRef.current = Math.max(0, insertStreakRef.current - 1);
-        }, 120);
-      } else if (e.key === "Backspace" || e.key === "Delete" || e.key === "Enter") {
-        lastKeyDownAtRef.current = Date.now();
-      }
     },
     [protect, disabled],
   );
@@ -220,23 +202,6 @@ export function StudentExamTextarea({
     },
     [protect, disabled, onChange],
   );
-
-  useEffect(() => {
-    if (!protect || disabled) {
-      return;
-    }
-    const idInterval = window.setInterval(() => {
-      const el = ref.current;
-      if (!el) {
-        return;
-      }
-      if (el.value !== value) {
-        onChange(value);
-        bumpRemount();
-      }
-    }, 350);
-    return () => window.clearInterval(idInterval);
-  }, [protect, disabled, value, onChange, bumpRemount]);
 
   if (!protect) {
     return (
@@ -276,7 +241,6 @@ export function StudentExamTextarea({
       onKeyDown={handleKeyDown}
       onInput={handleInput}
       onCompositionEnd={(e: CompositionEvent<HTMLTextAreaElement>) => {
-        lastKeyDownAtRef.current = Date.now();
         applyFromDom(e.currentTarget.value, "insertFromComposition");
       }}
     />
