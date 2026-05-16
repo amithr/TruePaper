@@ -5,7 +5,7 @@ import { buildForms } from "@/lib/forms-api";
 import type { Form } from "@/lib/forms";
 import { isMissingColumnError } from "@/lib/is-missing-db-column";
 import { parseStudentAnswersJson } from "@/lib/student-answers-json";
-import { parseTextQuestionGrades } from "@/lib/text-grades";
+import { parseLiveTeacherFeedback } from "@/lib/live-teacher-feedback";
 import { getSessionUser } from "@/lib/request-auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -14,9 +14,11 @@ type Params = {
 };
 
 const RESPONSE_SELECT_WITH_NAME =
-  "answers, student_display_name, suspended_at, finished_at, last_activity_at, updated_at, text_grades, text_graded_at";
+  "answers, student_display_name, suspended_at, finished_at, last_activity_at, updated_at, live_teacher_feedback";
 const RESPONSE_SELECT_LEGACY =
-  "answers, suspended_at, finished_at, last_activity_at, updated_at, text_grades, text_graded_at";
+  "answers, suspended_at, finished_at, last_activity_at, updated_at";
+const FORM_SELECT = "id, title, description, created_by, live_teacher_feedback_enabled";
+const FORM_SELECT_LEGACY = "id, title, description, created_by";
 
 function sessionWindowOpen(opensAt: string, closesAt: string, nowMs: number): boolean {
   return nowMs >= new Date(opensAt).getTime() && nowMs <= new Date(closesAt).getTime();
@@ -58,14 +60,18 @@ export async function GET(_request: Request, { params }: Params) {
 
   const formId = fs.form_id as string;
 
-  const { data: formRow, error: formError } = await supabase
-    .from("forms")
-    .select("id, title, description, created_by")
-    .eq("id", formId)
-    .maybeSingle();
-
-  if (formError) {
-    return NextResponse.json({ error: formError.message }, { status: 500 });
+  let formRow: Record<string, unknown> | null = null;
+  const formPrimary = await supabase.from("forms").select(FORM_SELECT).eq("id", formId).maybeSingle();
+  if (formPrimary.error && isMissingColumnError(formPrimary.error, "live_teacher_feedback_enabled")) {
+    const formRetry = await supabase.from("forms").select(FORM_SELECT_LEGACY).eq("id", formId).maybeSingle();
+    if (formRetry.error) {
+      return NextResponse.json({ error: formRetry.error.message }, { status: 500 });
+    }
+    formRow = formRetry.data as Record<string, unknown> | null;
+  } else if (formPrimary.error) {
+    return NextResponse.json({ error: formPrimary.error.message }, { status: 500 });
+  } else {
+    formRow = formPrimary.data as Record<string, unknown> | null;
   }
 
   if (!formRow) {
@@ -82,7 +88,14 @@ export async function GET(_request: Request, { params }: Params) {
     return NextResponse.json({ error: qError.message }, { status: 500 });
   }
 
-  const [form] = buildForms([formRow], questionRows ?? []);
+  const formRowTyped = {
+    id: formRow!.id as string,
+    title: formRow!.title as string,
+    description: (formRow!.description as string | null) ?? "",
+    created_by: (formRow!.created_by as string | null) ?? null,
+    live_teacher_feedback_enabled: formRow!.live_teacher_feedback_enabled === true,
+  };
+  const [form] = buildForms([formRowTyped], questionRows ?? []);
 
   const primary = await supabase
     .from("form_responses")
@@ -96,6 +109,18 @@ export async function GET(_request: Request, { params }: Params) {
   let rowError = primary.error;
 
   if (rowError && isMissingColumnError(rowError, "student_display_name")) {
+    const retry = await supabase
+      .from("form_responses")
+      .select(RESPONSE_SELECT_LEGACY)
+      .eq("live_session_id", liveSessionId)
+      .eq("anonymous_session_id", deviceId)
+      .is("student_id", null)
+      .maybeSingle();
+    row = retry.data as Record<string, unknown> | null;
+    rowError = retry.error;
+  }
+
+  if (rowError && isMissingColumnError(rowError, "live_teacher_feedback")) {
     const retry = await supabase
       .from("form_responses")
       .select(RESPONSE_SELECT_LEGACY)
@@ -138,8 +163,7 @@ export async function GET(_request: Request, { params }: Params) {
     },
     form: form as Form,
     answers,
-    textGrades: parseTextQuestionGrades(row?.text_grades),
-    textGradedAt: typeof row?.text_graded_at === "string" ? row.text_graded_at : null,
+    liveTeacherFeedback: parseLiveTeacherFeedback(row?.live_teacher_feedback),
     updatedAt,
   });
 }

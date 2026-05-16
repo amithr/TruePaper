@@ -1,4 +1,5 @@
 import type { StudentAnswers } from "@/lib/forms";
+import { parseLiveTeacherFeedback, type LiveTeacherFeedbackByQuestionId } from "@/lib/live-teacher-feedback";
 
 function answersFromJsonObject(raw: Record<string, unknown>): StudentAnswers {
   return Object.fromEntries(
@@ -12,21 +13,40 @@ export function parseLiveSessionStudentGet(data: unknown): {
   suspended: boolean;
   finished: boolean;
   displayName: string;
+  liveTeacherFeedback: LiveTeacherFeedbackByQuestionId;
 } {
   if (data === null || data === undefined) {
-    return { answers: {}, suspended: false, finished: false, displayName: "" };
+    return {
+      answers: {},
+      suspended: false,
+      finished: false,
+      displayName: "",
+      liveTeacherFeedback: {},
+    };
   }
 
   if (typeof data === "string") {
     try {
       return parseLiveSessionStudentGet(JSON.parse(data) as unknown);
     } catch {
-      return { answers: {}, suspended: false, finished: false, displayName: "" };
+      return {
+        answers: {},
+        suspended: false,
+        finished: false,
+        displayName: "",
+        liveTeacherFeedback: {},
+      };
     }
   }
 
   if (typeof data !== "object" || Array.isArray(data)) {
-    return { answers: {}, suspended: false, finished: false, displayName: "" };
+    return {
+      answers: {},
+      suspended: false,
+      finished: false,
+      displayName: "",
+      liveTeacherFeedback: {},
+    };
   }
 
   const obj = data as Record<string, unknown>;
@@ -43,8 +63,15 @@ export function parseLiveSessionStudentGet(data: unknown): {
       suspended: Boolean(obj.suspended),
       finished: Boolean(obj.finished),
       displayName: typeof dn === "string" ? dn : "",
+      liveTeacherFeedback: parseLiveTeacherFeedback(obj.liveTeacherFeedback),
     };
   }
 
-  return { answers: answersFromJsonObject(obj), suspended: false, finished: false, displayName: "" };
+  return {
+    answers: answersFromJsonObject(obj),
+    suspended: false,
+    finished: false,
+    displayName: "",
+    liveTeacherFeedback: {},
+  };
 }

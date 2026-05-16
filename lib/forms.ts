@@ -18,6 +18,8 @@ export type Form = {
   description: string;
   /** Owning teacher user id, or null for legacy rows */
   createdBy: string | null;
+  /** When true, teachers can send live comments visible to students under text questions. */
+  liveTeacherFeedbackEnabled: boolean;
   questions: Question[];
 };
 

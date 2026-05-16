@@ -5,6 +5,7 @@ type FormRow = {
   title: string;
   description: string | null;
   created_by: string | null;
+  live_teacher_feedback_enabled?: boolean | null;
 };
 
 type QuestionRow = {
@@ -44,6 +45,7 @@ export const buildForms = (forms: FormRow[], questions: QuestionRow[]): Form[] =
     title: form.title,
     description: form.description ?? "",
     createdBy: form.created_by,
+    liveTeacherFeedbackEnabled: form.live_teacher_feedback_enabled === true,
     questions: (questionByFormId.get(form.id) ?? []).sort(
       (left, right) => left.displayOrder - right.displayOrder,
     ),

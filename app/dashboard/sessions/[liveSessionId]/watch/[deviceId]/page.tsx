@@ -2,15 +2,17 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { LoadingBar } from "@/components/LoadingBar";
 import type { Form, StudentAnswers } from "@/lib/forms";
 import { isNoTimeLimitSession } from "@/lib/session-window";
 import { parseStudentAnswersJson } from "@/lib/student-answers-json";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
-import type { TextQuestionGradesByQuestionId } from "@/lib/text-grades";
-
+import {
+  parseLiveTeacherFeedback,
+  type LiveTeacherFeedbackByQuestionId,
+} from "@/lib/live-teacher-feedback";
 type ApiError = { error?: string };
 
 type SnapshotJson = {
@@ -31,8 +33,7 @@ type SnapshotJson = {
   };
   form: Form;
   answers: StudentAnswers;
-  textGrades: TextQuestionGradesByQuestionId;
-  textGradedAt: string | null;
+  liveTeacherFeedback: LiveTeacherFeedbackByQuestionId;
   updatedAt: string | null;
 };
 
@@ -76,6 +77,7 @@ function mergeSnapshotFromRow(prev: SnapshotJson, row: Record<string, unknown>):
   return {
     ...prev,
     answers,
+    liveTeacherFeedback: parseLiveTeacherFeedback(row.live_teacher_feedback),
     student: {
       ...prev.student,
       hasJoined: true,
@@ -88,7 +90,7 @@ function mergeSnapshotFromRow(prev: SnapshotJson, row: Record<string, unknown>):
   };
 }
 
-const FALLBACK_POLL_MS = 8000;
+const FALLBACK_POLL_MS = 2000;
 
 export default function WatchStudentExamPage() {
   const router = useRouter();
@@ -104,12 +106,16 @@ export default function WatchStudentExamPage() {
   const [statusMessage, setStatusMessage] = useState("");
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [realtimeMode, setRealtimeMode] = useState<RealtimeMode>("connecting");
-  const [feedbackDraftsByQuestionId, setFeedbackDraftsByQuestionId] = useState<Record<string, string>>({});
-  const [scoreDraftsByQuestionId, setScoreDraftsByQuestionId] = useState<Record<string, number>>({});
-  const [savingFeedbackQuestionId, setSavingFeedbackQuestionId] = useState<string | null>(null);
-  const [autogradeBusy, setAutogradeBusy] = useState(false);
   const [pointsDraftsByQuestionId, setPointsDraftsByQuestionId] = useState<Record<string, number>>({});
   const [savingPointsQuestionId, setSavingPointsQuestionId] = useState<string | null>(null);
+  const [expandedLiveFeedbackQuestionIds, setExpandedLiveFeedbackQuestionIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [liveFeedbackDraftsByQuestionId, setLiveFeedbackDraftsByQuestionId] = useState<
+    Record<string, string>
+  >({});
+  const liveFeedbackSaveTimerRef = useRef<Record<string, number>>({});
+  const latestLiveFeedbackDraftsRef = useRef<Record<string, string>>({});
 
   const refresh = useCallback(async () => {
     if (!liveSessionId || !deviceId) {
@@ -164,20 +170,6 @@ export default function WatchStudentExamPage() {
     if (!snapshot) {
       return;
     }
-    const nextFeedback: Record<string, string> = {};
-    const nextScores: Record<string, number> = {};
-    for (const [questionId, grade] of Object.entries(snapshot.textGrades)) {
-      nextFeedback[questionId] = grade.feedback;
-      nextScores[questionId] = grade.score;
-    }
-    setFeedbackDraftsByQuestionId(nextFeedback);
-    setScoreDraftsByQuestionId(nextScores);
-  }, [snapshot?.updatedAt, snapshot?.textGradedAt]);
-
-  useEffect(() => {
-    if (!snapshot) {
-      return;
-    }
     const nextPoints: Record<string, number> = {};
     for (const question of snapshot.form.questions) {
       nextPoints[question.id] = Math.max(1, Math.min(1000, Number(question.points) || 1));
@@ -185,67 +177,53 @@ export default function WatchStudentExamPage() {
     setPointsDraftsByQuestionId(nextPoints);
   }, [snapshot?.form.id, snapshot?.updatedAt]);
 
-  const saveTextFeedback = async (questionId: string) => {
-    if (!liveSessionId || !deviceId) {
+  useEffect(() => {
+    if (!snapshot) {
       return;
     }
-    const feedback = (feedbackDraftsByQuestionId[questionId] ?? "").trim();
-    const score = scoreDraftsByQuestionId[questionId] ?? 0;
-    if (!feedback) {
-      setLoadError("Feedback cannot be empty.");
-      return;
-    }
-    setSavingFeedbackQuestionId(questionId);
-    setLoadError("");
-    try {
-      await requestJson<{ ok: true }>(
-        `/api/forms/live-sessions/${liveSessionId}/participants/${encodeURIComponent(deviceId)}/text-feedback`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            questionId,
-            feedback,
-            score,
-          }),
-        },
-      );
-      await refresh();
-    } catch (e) {
-      setLoadError(e instanceof Error ? e.message : "Could not save feedback.");
-    } finally {
-      setSavingFeedbackQuestionId(null);
-    }
-  };
+    setLiveFeedbackDraftsByQuestionId((prev) => {
+      const next = { ...snapshot.liveTeacherFeedback };
+      for (const questionId of Object.keys(prev)) {
+        if (liveFeedbackSaveTimerRef.current[questionId] !== undefined) {
+          next[questionId] = prev[questionId];
+        }
+      }
+      return next;
+    });
+  }, [snapshot?.updatedAt, snapshot?.liveTeacherFeedback]);
 
-  const runAutogradeForThisExam = async () => {
-    if (!liveSessionId || !deviceId) {
-      return;
-    }
-    setAutogradeBusy(true);
-    setLoadError("");
-    setStatusMessage("");
-    try {
-      const result = await requestJson<{ ok: true; gradedCount: number }>(
-        `/api/forms/live-sessions/${liveSessionId}/autograde-text`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ deviceId }),
-        },
-      );
-      await refresh();
-      setStatusMessage(
-        result.gradedCount > 0
-          ? "Autograding complete for this student's text answers."
-          : "No text answers were available to autograde for this student.",
-      );
-    } catch (e) {
-      setLoadError(e instanceof Error ? e.message : "Could not run autograding.");
-    } finally {
-      setAutogradeBusy(false);
-    }
-  };
+  latestLiveFeedbackDraftsRef.current = liveFeedbackDraftsByQuestionId;
+
+  const scheduleLiveFeedbackSave = useCallback(
+    (questionId: string) => {
+      const existing = liveFeedbackSaveTimerRef.current[questionId];
+      if (existing !== undefined) {
+        window.clearTimeout(existing);
+      }
+      liveFeedbackSaveTimerRef.current[questionId] = window.setTimeout(() => {
+        delete liveFeedbackSaveTimerRef.current[questionId];
+        void (async () => {
+          if (!liveSessionId || !deviceId) {
+            return;
+          }
+          const message = (latestLiveFeedbackDraftsRef.current[questionId] ?? "").trim();
+          try {
+            await requestJson<{ ok: true }>(
+              `/api/forms/live-sessions/${liveSessionId}/participants/${encodeURIComponent(deviceId)}/live-feedback`,
+              {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ questionId, message }),
+              },
+            );
+          } catch {
+            /* ignore — teacher can retry by typing */
+          }
+        })();
+      }, 350);
+    },
+    [liveSessionId, deviceId],
+  );
 
   const saveQuestionPoints = async (question: Form["questions"][number]) => {
     const nextPoints = Math.max(1, Math.min(1000, pointsDraftsByQuestionId[question.id] ?? question.points));
@@ -371,21 +349,13 @@ export default function WatchStudentExamPage() {
   const msLeft = new Date(s.closesAt).getTime() - nowTick;
   const titleName = st.displayName || maskDeviceId(st.anonymousSessionId);
   const noTimeLimit = isNoTimeLimitSession(s.opensAt, s.closesAt);
-  const canAutogradeThisExam = st.finished && !s.sessionOpen;
 
   const autoAwardedPointsForQuestion = (question: Form["questions"][number]): number | null => {
-    const maxPoints = pointsDraftsByQuestionId[question.id] ?? question.points;
-    if (question.type === "multipleChoice") {
-      if (!question.correctAnswer) {
-        return null;
-      }
-      return snapshot.answers[question.id] === question.correctAnswer ? maxPoints : 0;
-    }
-    const textGrade = snapshot.textGrades[question.id];
-    if (!textGrade) {
+    if (question.type !== "multipleChoice" || !question.correctAnswer) {
       return null;
     }
-    return Math.max(0, Math.min(maxPoints, Math.round((textGrade.score / 5) * maxPoints)));
+    const maxPoints = pointsDraftsByQuestionId[question.id] ?? question.points;
+    return snapshot.answers[question.id] === question.correctAnswer ? maxPoints : 0;
   };
 
   const streamLine =
@@ -436,7 +406,7 @@ export default function WatchStudentExamPage() {
             <p className="font-medium">Student has submitted. Answers are read-only.</p>
           ) : (
             <p className="font-medium">
-              Live view — answers update as they work; responses autosave shortly after each change.
+              Live view — text answers update as the student types (autosave every few hundred ms).
             </p>
           )}
           {st.lastActivityAt ? (
@@ -444,21 +414,6 @@ export default function WatchStudentExamPage() {
               Last activity on device: {new Date(st.lastActivityAt).toLocaleString()}
             </p>
           ) : null}
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => void runAutogradeForThisExam()}
-              disabled={!canAutogradeThisExam || autogradeBusy}
-              className="rounded-md border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-900 disabled:opacity-50"
-            >
-              {autogradeBusy ? "Autograding…" : "Autograde this exam"}
-            </button>
-            {!canAutogradeThisExam ? (
-              <p className="text-xs text-zinc-600">
-                Available after this student submits and the session window closes.
-              </p>
-            ) : null}
-          </div>
         </div>
         {statusMessage ? (
           <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
@@ -574,59 +529,44 @@ export default function WatchStudentExamPage() {
                         placeholder="No response yet."
                         className="w-full resize-y rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
                       />
-                      {snapshot.textGrades[question.id] ? (
-                        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
-                          <p className="font-medium text-emerald-900">
-                            AI score: {snapshot.textGrades[question.id].score}/5
-                          </p>
-                          <p className="mt-1 text-emerald-900/90">
-                            {snapshot.textGrades[question.id].feedback}
-                          </p>
-                          <p className="mt-1 text-xs text-emerald-800/80">
-                            Graded {new Date(snapshot.textGrades[question.id].gradedAt).toLocaleString()}
-                          </p>
-                        </div>
-                      ) : null}
-                      {st.finished ? (
-                        <div className="rounded-md border border-zinc-200 bg-white px-3 py-3 text-sm">
-                          <p className="font-medium text-zinc-900">Teacher-editable feedback</p>
-                          <div className="mt-2 flex items-center gap-2">
-                            <label className="text-xs text-zinc-600">Score</label>
-                            <input
-                              type="number"
-                              min={0}
-                              max={5}
-                              value={scoreDraftsByQuestionId[question.id] ?? snapshot.textGrades[question.id]?.score ?? 0}
-                              onChange={(event) =>
-                                setScoreDraftsByQuestionId((current) => ({
-                                  ...current,
-                                  [question.id]: Math.max(0, Math.min(5, Number(event.target.value) || 0)),
-                                }))
-                              }
-                              className="w-16 rounded-md border border-zinc-300 px-2 py-1 text-sm"
-                            />
-                            <span className="text-xs text-zinc-500">/ 5</span>
-                          </div>
-                          <textarea
-                            rows={3}
-                            value={feedbackDraftsByQuestionId[question.id] ?? snapshot.textGrades[question.id]?.feedback ?? ""}
-                            onChange={(event) =>
-                              setFeedbackDraftsByQuestionId((current) => ({
-                                ...current,
-                                [question.id]: event.target.value,
-                              }))
-                            }
-                            placeholder="1-2 short sentences explaining score."
-                            className="mt-2 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
-                          />
+                      {snapshot.form.liveTeacherFeedbackEnabled ? (
+                        <div className="rounded-md border border-sky-200 bg-sky-50/80 px-3 py-3">
                           <button
                             type="button"
-                            onClick={() => void saveTextFeedback(question.id)}
-                            disabled={savingFeedbackQuestionId === question.id}
-                            className="mt-2 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-900 disabled:opacity-50"
+                            onClick={() =>
+                              setExpandedLiveFeedbackQuestionIds((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(question.id)) {
+                                  next.delete(question.id);
+                                } else {
+                                  next.add(question.id);
+                                }
+                                return next;
+                              })
+                            }
+                            className="flex w-full items-center justify-between gap-2 text-left text-sm font-medium text-sky-950"
                           >
-                            {savingFeedbackQuestionId === question.id ? "Saving…" : "Save feedback"}
+                            <span>Live feedback to student</span>
+                            <span className="text-xs font-normal text-sky-800">
+                              {expandedLiveFeedbackQuestionIds.has(question.id) ? "Hide" : "Show"}
+                            </span>
                           </button>
+                          {expandedLiveFeedbackQuestionIds.has(question.id) ? (
+                            <textarea
+                              rows={3}
+                              value={liveFeedbackDraftsByQuestionId[question.id] ?? ""}
+                              onChange={(event) => {
+                                const next = event.target.value;
+                                setLiveFeedbackDraftsByQuestionId((current) => ({
+                                  ...current,
+                                  [question.id]: next,
+                                }));
+                                scheduleLiveFeedbackSave(question.id);
+                              }}
+                              placeholder="Students see this under their answer as you type…"
+                              className="mt-2 w-full rounded-md border border-sky-300 bg-white px-3 py-2 text-sm text-zinc-900"
+                            />
+                          ) : null}
                         </div>
                       ) : null}
                     </div>

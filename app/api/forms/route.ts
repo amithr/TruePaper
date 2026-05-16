@@ -20,7 +20,7 @@ export async function GET() {
 
   const { data: forms, error: formsError } = await supabase
     .from("forms")
-    .select("id, title, description, created_by")
+    .select("id, title, description, created_by, live_teacher_feedback_enabled")
     .order("created_at", { ascending: true });
 
   if (formsError) {
@@ -64,7 +64,7 @@ export async function POST(request: Request) {
   const { data, error } = await supabase
     .from("forms")
     .insert({ title, description, created_by: session.user.id })
-    .select("id, title, description, created_by")
+    .select("id, title, description, created_by, live_teacher_feedback_enabled")
     .single();
 
   if (error || !data) {
@@ -77,6 +77,7 @@ export async function POST(request: Request) {
       title: data.title,
       description: data.description ?? "",
       createdBy: data.created_by,
+      liveTeacherFeedbackEnabled: false,
       questions: [],
     } satisfies Form,
   });

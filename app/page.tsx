@@ -8,6 +8,7 @@ import { LoadingBar } from "@/components/LoadingBar";
 import { SessionJoinShare } from "@/components/SessionJoinShare";
 import { StudentExamTextarea } from "@/components/StudentExamTextarea";
 import { getOrCreateAnonymousSessionId } from "@/lib/anonymous-session";
+import { postExamTabLeave } from "@/lib/exam-tab-leave";
 import type { Form, Question, QuestionType, StudentAnswers } from "@/lib/forms";
 import { isValidLiveSessionDisplayName, normalizeLiveSessionDisplayName } from "@/lib/live-session-display-name";
 import { parseLiveSessionStudentGet } from "@/lib/live-session-student-get";
@@ -100,35 +101,9 @@ function examProtectionHandlers(enabled: boolean) {
   };
 }
 
-function seedFromString(input: string): number {
-  let hash = 2166136261;
-  for (let index = 0; index < input.length; index += 1) {
-    hash ^= input.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
-function makeSeededRandom(seed: number): () => number {
-  let state = seed || 0x9e3779b9;
-  return () => {
-    state += 0x6d2b79f5;
-    let t = state;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function shuffleQuestionsDeterministically(questions: Question[], seedKey: string): Question[] {
-  const seededRandom = makeSeededRandom(seedFromString(seedKey));
-  const result = [...questions];
-  for (let index = result.length - 1; index > 0; index -= 1) {
-    const swapIndex = Math.floor(seededRandom() * (index + 1));
-    [result[index], result[swapIndex]] = [result[swapIndex], result[index]];
-  }
-  return result;
-}
+/** Debounce after the last keystroke; max-wait forces a save during continuous typing (teacher live view). */
+const AUTOSAVE_DEBOUNCE_MS = 300;
+const AUTOSAVE_MAX_WAIT_MS = 350;
 
 export default function Home() {
   const router = useRouter();
@@ -136,13 +111,6 @@ export default function Home() {
   const [mode, setMode] = useState<"teacher" | "student">("student");
   const [authForms, setAuthForms] = useState<Form[]>([]);
   const [activeFormId, setActiveFormId] = useState("");
-  const [documentToGenerate, setDocumentToGenerate] = useState<File | null>(null);
-  const [isGeneratingFormFromDocument, setIsGeneratingFormFromDocument] = useState(false);
-  const [templateToImport, setTemplateToImport] = useState<File | null>(null);
-  const [isImportingTemplate, setIsImportingTemplate] = useState(false);
-  const [generateMultipleChoiceCount, setGenerateMultipleChoiceCount] = useState(5);
-  const [generateShortAnswerCount, setGenerateShortAnswerCount] = useState(3);
-  const [generateLongAnswerCount, setGenerateLongAnswerCount] = useState(2);
   const [pendingAutoJoinCode, setPendingAutoJoinCode] = useState("");
   const [joinCodeInput, setJoinCodeInput] = useState("");
   const [joinDisplayNameInput, setJoinDisplayNameInput] = useState("");
@@ -153,6 +121,7 @@ export default function Home() {
   const [studentAnswers, setStudentAnswers] = useState<StudentAnswers>({});
   const [examSuspended, setExamSuspended] = useState(false);
   const [examFinished, setExamFinished] = useState(false);
+  const [liveTeacherFeedback, setLiveTeacherFeedback] = useState<Record<string, string>>({});
   const [statusMessage, setStatusMessage] = useState("");
   const [autosaveBanner, setAutosaveBanner] = useState("");
   const typingHeartbeatTimerRef = useRef<number | undefined>(undefined);
@@ -162,6 +131,7 @@ export default function Home() {
   const lastPersistedAnswersJsonRef = useRef("");
   const suspendAutosaveRef = useRef(false);
   const autosaveTimerRef = useRef<number | undefined>(undefined);
+  const lastAutosaveSentAtRef = useRef(0);
   const autosaveBannerClearRef = useRef<number | undefined>(undefined);
   const [isLoadingForms, setIsLoadingForms] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
@@ -170,6 +140,7 @@ export default function Home() {
   const [nowTick, setNowTick] = useState(() => Date.now());
   const teacherHomeRedirectDoneRef = useRef(false);
   const joinIntentFromUrlRef = useRef(false);
+  const tabLeaveReportedRef = useRef(false);
 
   const isTeacher = session?.profile?.role === "teacher";
 
@@ -540,6 +511,7 @@ export default function Home() {
         suspendAutosaveRef.current = false;
         setExamSuspended(parsed.suspended);
         setExamFinished(parsed.finished);
+        setLiveTeacherFeedback(parsed.liveTeacherFeedback);
         if (parsed.finished) {
           setStatusMessage("You have submitted this exam.");
         } else if (parsed.suspended) {
@@ -592,13 +564,16 @@ export default function Home() {
             setStudentAnswers(parsed.answers);
             lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(parsed.answers);
           }
+          if (joinedSession?.form.liveTeacherFeedbackEnabled) {
+            setLiveTeacherFeedback(parsed.liveTeacherFeedback);
+          }
         } catch {
           /* ignore */
         }
       })();
-    }, 3000);
+    }, joinedSession?.form.liveTeacherFeedbackEnabled ? 1200 : 3000);
     return () => window.clearInterval(id);
-  }, [joinedSession, anonymousSessionId]);
+  }, [joinedSession, anonymousSessionId, joinedSession?.form.liveTeacherFeedbackEnabled]);
 
   useEffect(() => {
     if (
@@ -619,14 +594,19 @@ export default function Home() {
       return;
     }
 
-    window.clearTimeout(autosaveTimerRef.current);
-    autosaveTimerRef.current = window.setTimeout(() => {
+    const answers = latestStudentAnswersRef.current;
+    const nextJson = stableStringifyStudentAnswers(answers);
+    if (nextJson === lastPersistedAnswersJsonRef.current) {
+      return;
+    }
+
+    const runPersist = () => {
       if (suspendAutosaveRef.current) {
         return;
       }
-      const answers = latestStudentAnswersRef.current;
-      const nextJson = stableStringifyStudentAnswers(answers);
-      if (nextJson === lastPersistedAnswersJsonRef.current) {
+      const currentAnswers = latestStudentAnswersRef.current;
+      const currentJson = stableStringifyStudentAnswers(currentAnswers);
+      if (currentJson === lastPersistedAnswersJsonRef.current) {
         return;
       }
 
@@ -639,7 +619,7 @@ export default function Home() {
             body: JSON.stringify({
               deviceId: anonymousSessionId,
               displayName: activeExamDisplayName,
-              answers,
+              answers: currentAnswers,
             }),
           });
           const raw = (await res.json()) as { error?: string };
@@ -647,7 +627,7 @@ export default function Home() {
             setAutosaveBanner(raw.error ?? "Autosave failed. Use Save answers.");
             return;
           }
-          lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(answers);
+          lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(currentAnswers);
           if (autosaveBannerClearRef.current !== undefined) {
             window.clearTimeout(autosaveBannerClearRef.current);
           }
@@ -660,7 +640,21 @@ export default function Home() {
           setAutosaveBanner("Autosave failed. Use Save answers.");
         }
       })();
-    }, 1100);
+    };
+
+    const now = Date.now();
+    const sinceLastSent = now - lastAutosaveSentAtRef.current;
+    window.clearTimeout(autosaveTimerRef.current);
+
+    if (sinceLastSent >= AUTOSAVE_MAX_WAIT_MS) {
+      lastAutosaveSentAtRef.current = now;
+      runPersist();
+    } else {
+      autosaveTimerRef.current = window.setTimeout(() => {
+        lastAutosaveSentAtRef.current = Date.now();
+        runPersist();
+      }, AUTOSAVE_DEBOUNCE_MS);
+    }
 
     return () => {
       if (autosaveTimerRef.current !== undefined) {
@@ -748,6 +742,12 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (!examSuspended) {
+      tabLeaveReportedRef.current = false;
+    }
+  }, [examSuspended]);
+
+  useEffect(() => {
     if (
       !joinedSession ||
       !sessionOpen ||
@@ -758,56 +758,84 @@ export default function Home() {
     ) {
       return;
     }
+
     let hiddenTimer: number | undefined;
+    let blurTimer: number | undefined;
     const liveSessionId = joinedSession.liveSessionId;
     const deviceId = anonymousSessionId;
     const displayName = activeExamDisplayName;
+    const tabLeaveUrl = `/api/public/live-sessions/${liveSessionId}/tab-leave`;
 
-    const reportTabLeave = async () => {
-      try {
-        const res = await fetch(`/api/public/live-sessions/${liveSessionId}/tab-leave`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ deviceId, displayName }),
-        });
-        let errBody: { error?: string } = {};
-        try {
-          errBody = (await res.json()) as { error?: string };
-        } catch {
-          /* ignore */
-        }
-        if (!res.ok) {
-          setStatusMessage(errBody.error ?? "Could not record tab change.");
-          return;
-        }
-        setExamSuspended(true);
-        setStatusMessage(
-          "The exam was paused because this page was hidden. Wait for your teacher to let you continue.",
-        );
-      } catch {
-        setStatusMessage("Could not record tab change. Try again or contact your teacher.");
-      }
+    const applyPausedState = () => {
+      setExamSuspended(true);
+      setStatusMessage(
+        "The exam was paused because this page was hidden. Wait for your teacher to let you continue.",
+      );
     };
 
+    const reportTabLeave = () => {
+      if (tabLeaveReportedRef.current) {
+        return;
+      }
+      tabLeaveReportedRef.current = true;
+      applyPausedState();
+      postExamTabLeave(tabLeaveUrl, { deviceId, displayName });
+    };
+
+    const isDocumentHidden = () =>
+      document.visibilityState === "hidden" || document.hidden === true;
+
     const onVisibility = () => {
-      if (document.visibilityState === "hidden") {
+      if (isDocumentHidden()) {
         hiddenTimer = window.setTimeout(() => {
-          if (document.visibilityState === "hidden") {
-            void reportTabLeave();
+          if (isDocumentHidden()) {
+            reportTabLeave();
           }
           hiddenTimer = undefined;
         }, 200);
-      } else if (hiddenTimer !== undefined) {
-        window.clearTimeout(hiddenTimer);
-        hiddenTimer = undefined;
+      } else {
+        if (hiddenTimer !== undefined) {
+          window.clearTimeout(hiddenTimer);
+          hiddenTimer = undefined;
+        }
       }
     };
 
+    /** Fires reliably when leaving the page on iOS/Android (more so than visibilitychange alone). */
+    const onPageHide = () => {
+      reportTabLeave();
+    };
+
+    /** App switch on mobile often blurs the window before visibility becomes hidden. */
+    const onWindowBlur = () => {
+      if (blurTimer !== undefined) {
+        window.clearTimeout(blurTimer);
+      }
+      blurTimer = window.setTimeout(() => {
+        blurTimer = undefined;
+        if (isDocumentHidden()) {
+          reportTabLeave();
+        }
+      }, 50);
+    };
+
     document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", onPageHide);
+    window.addEventListener("blur", onWindowBlur);
+
+    if (isDocumentHidden()) {
+      reportTabLeave();
+    }
+
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", onPageHide);
+      window.removeEventListener("blur", onWindowBlur);
       if (hiddenTimer !== undefined) {
         window.clearTimeout(hiddenTimer);
+      }
+      if (blurTimer !== undefined) {
+        window.clearTimeout(blurTimer);
       }
     };
   }, [joinedSession, sessionOpen, examSuspended, examFinished, anonymousSessionId, activeExamDisplayName]);
@@ -870,6 +898,7 @@ export default function Home() {
         body: JSON.stringify({
           title: activeForm.title,
           description: activeForm.description,
+          liveTeacherFeedbackEnabled: activeForm.liveTeacherFeedbackEnabled,
         }),
       });
       setStatusMessage("Form saved.");
@@ -906,96 +935,6 @@ export default function Home() {
       setStatusMessage(error instanceof Error ? error.message : "Failed to add question.");
     } finally {
       setIsMutating(false);
-    }
-  };
-
-  const createFormFromDocument = async () => {
-    if (!documentToGenerate) {
-      setStatusMessage("Choose a document first.");
-      return;
-    }
-    setIsGeneratingFormFromDocument(true);
-    setStatusMessage("");
-    try {
-      const payload = new FormData();
-      payload.set("document", documentToGenerate);
-      payload.set("multipleChoiceCount", String(Math.max(0, Math.min(20, generateMultipleChoiceCount))));
-      payload.set("shortAnswerCount", String(Math.max(0, Math.min(20, generateShortAnswerCount))));
-      payload.set("longAnswerCount", String(Math.max(0, Math.min(20, generateLongAnswerCount))));
-      const data = await requestJson<{ form: Form }>("/api/forms/generate-from-document", {
-        method: "POST",
-        body: payload,
-      });
-      setAuthForms((current) => [...current, data.form]);
-      setActiveFormId(data.form.id);
-      setDocumentToGenerate(null);
-      if (typeof window !== "undefined") {
-        window.history.replaceState({}, "", `/?form=${encodeURIComponent(data.form.id)}`);
-      }
-      setStatusMessage("Form generated from document.");
-    } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Could not generate form from document.");
-    } finally {
-      setIsGeneratingFormFromDocument(false);
-    }
-  };
-
-  const downloadExamTemplate = () => {
-    const template = {
-      title: "Exam title",
-      description: "Brief description/instructions",
-      questions: [
-        {
-          prompt: "Multiple choice question prompt",
-          type: "multipleChoice",
-          options: ["Option A", "Option B", "Option C", "Option D"],
-          correctAnswer: "Option A",
-          points: 1,
-        },
-        {
-          prompt: "Short answer question prompt (3-4 sentence response)",
-          type: "text",
-          options: [],
-          correctAnswer: null,
-          points: 2,
-        },
-      ],
-    };
-    const blob = new Blob([JSON.stringify(template, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = "truepaper-exam-template.json";
-    anchor.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const importExamTemplate = async () => {
-    if (!templateToImport) {
-      setStatusMessage("Choose a JSON template file first.");
-      return;
-    }
-    setIsImportingTemplate(true);
-    setStatusMessage("");
-    try {
-      const text = await templateToImport.text();
-      const parsed = JSON.parse(text) as unknown;
-      const data = await requestJson<{ form: Form }>("/api/forms/create-from-template", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(parsed),
-      });
-      setAuthForms((current) => [...current, data.form]);
-      setActiveFormId(data.form.id);
-      setTemplateToImport(null);
-      if (typeof window !== "undefined") {
-        window.history.replaceState({}, "", `/?form=${encodeURIComponent(data.form.id)}`);
-      }
-      setStatusMessage("Form created from JSON template.");
-    } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Could not import JSON template.");
-    } finally {
-      setIsImportingTemplate(false);
     }
   };
 
@@ -1094,6 +1033,7 @@ export default function Home() {
   const leaveJoinedSession = () => {
     suspendAutosaveRef.current = true;
     lastPersistedAnswersJsonRef.current = "";
+    lastAutosaveSentAtRef.current = 0;
     if (autosaveTimerRef.current !== undefined) {
       window.clearTimeout(autosaveTimerRef.current);
       autosaveTimerRef.current = undefined;
@@ -1104,6 +1044,7 @@ export default function Home() {
     setExamSuspended(false);
     setExamFinished(false);
     setActiveExamDisplayName("");
+    setLiveTeacherFeedback({});
     setStatusMessage("Left the session.");
   };
 
@@ -1188,13 +1129,10 @@ export default function Home() {
     if (!studentExamForm) {
       return [];
     }
-    // Randomize joined exam question order per student/session, but keep it stable for that student.
-    if (joinedSession && anonymousSessionId) {
-      const seedKey = `${joinedSession.liveSessionId}:${anonymousSessionId}:${activeExamDisplayName}`;
-      return shuffleQuestionsDeterministically(studentExamForm.questions, seedKey);
-    }
-    return studentExamForm.questions;
-  }, [studentExamForm, joinedSession, anonymousSessionId, activeExamDisplayName]);
+    return [...studentExamForm.questions].sort(
+      (left, right) => left.displayOrder - right.displayOrder,
+    );
+  }, [studentExamForm]);
 
   if (session === undefined) {
     return (
@@ -1454,132 +1392,6 @@ export default function Home() {
         ) : showTeacherTools && activeForm ? (
           <section className="space-y-8">
             <div className="space-y-3">
-              <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
-                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
-                  Generate from document (AI)
-                </p>
-                <div className="mb-3 grid gap-2 sm:grid-cols-3">
-                  <label className="text-xs font-medium text-zinc-700">
-                    Multiple choice
-                    <input
-                      type="number"
-                      min={0}
-                      max={20}
-                      value={generateMultipleChoiceCount}
-                      onChange={(event) =>
-                        setGenerateMultipleChoiceCount(Math.max(0, Math.min(20, Number(event.target.value) || 0)))
-                      }
-                      className="mt-1 w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm"
-                    />
-                  </label>
-                  <label className="text-xs font-medium text-zinc-700">
-                    Short answer (3-4 sentences)
-                    <input
-                      type="number"
-                      min={0}
-                      max={20}
-                      value={generateShortAnswerCount}
-                      onChange={(event) =>
-                        setGenerateShortAnswerCount(Math.max(0, Math.min(20, Number(event.target.value) || 0)))
-                      }
-                      className="mt-1 w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm"
-                    />
-                  </label>
-                  <label className="text-xs font-medium text-zinc-700">
-                    Long answer (1-2 paragraphs)
-                    <input
-                      type="number"
-                      min={0}
-                      max={20}
-                      value={generateLongAnswerCount}
-                      onChange={(event) =>
-                        setGenerateLongAnswerCount(Math.max(0, Math.min(20, Number(event.target.value) || 0)))
-                      }
-                      className="mt-1 w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm"
-                    />
-                  </label>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <input
-                    type="file"
-                    accept=".txt,.md,.markdown,.csv,.rtf,text/plain,text/markdown,text/csv"
-                    onChange={(event) => setDocumentToGenerate(event.target.files?.[0] ?? null)}
-                    className="max-w-xs text-sm"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => void createFormFromDocument()}
-                    disabled={!documentToGenerate || isGeneratingFormFromDocument}
-                    className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    {isGeneratingFormFromDocument ? "Generating…" : "Generate form"}
-                  </button>
-                </div>
-              </div>
-              <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
-                <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-500">
-                  AI template workflow
-                </p>
-                <ol className="mb-3 list-decimal space-y-1 pl-5 text-sm text-zinc-700">
-                  <li>Download the AI template file.</li>
-                  <li>
-                    Upload it to your AI tool and fill in the exam content.
-                    <span className="relative ml-2 inline-flex items-center align-middle">
-                      <button
-                        type="button"
-                        aria-label="Show suggested AI prompts"
-                        className="group inline-flex h-5 w-5 items-center justify-center rounded-full border border-zinc-400 bg-white text-xs font-semibold text-zinc-700"
-                      >
-                        ?
-                        <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 hidden w-[26rem] -translate-x-1/2 rounded-md border border-zinc-200 bg-white p-3 text-left text-xs text-zinc-700 shadow-lg group-hover:block group-focus-visible:block">
-                          <p className="font-semibold text-zinc-900">Suggested prompts</p>
-                          <p className="mt-2 font-medium text-zinc-800">General fill</p>
-                          <p>
-                            "Fill this JSON template for a [grade level] [subject] exam on [topic]. Keep
-                            the same JSON keys and output valid JSON only."
-                          </p>
-                          <p className="mt-2 font-medium text-zinc-800">Difficulty + distribution</p>
-                          <p>
-                            "Set difficulty to [easy/moderate/challenging]. Include a balanced mix across
-                            knowledge recall, understanding, and application."
-                          </p>
-                          <p className="mt-2 font-medium text-zinc-800">Text response expectations</p>
-                          <p>
-                            "For short answers, prompts should target 3-4 sentence responses. For long
-                            answers, prompts should target 1-2 paragraph responses."
-                          </p>
-                        </span>
-                      </button>
-                    </span>
-                  </li>
-                  <li>Save the JSON file and upload it here using Add Populated AI Template.</li>
-                </ol>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={downloadExamTemplate}
-                    title="Download a template, paste/fill it in any AI platform, then upload the completed JSON with 'Import JSON as form'."
-                    className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-900"
-                  >
-                    Download AI template
-                  </button>
-                  <input
-                    type="file"
-                    accept="application/json,.json"
-                    onChange={(event) => setTemplateToImport(event.target.files?.[0] ?? null)}
-                    className="max-w-xs text-sm"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => void importExamTemplate()}
-                    disabled={!templateToImport || isImportingTemplate}
-                    className="rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-900 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    {isImportingTemplate ? "Adding…" : "Add Populated AI Template"}
-                  </button>
-                </div>
-              </div>
-
               <label className="block text-sm font-medium">
                 Form title
                 <input
@@ -1602,6 +1414,27 @@ export default function Home() {
                   className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2"
                   rows={3}
                 />
+              </label>
+
+              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-3 text-sm">
+                <input
+                  type="checkbox"
+                  checked={activeForm.liveTeacherFeedbackEnabled}
+                  onChange={(event) =>
+                    updateActiveForm((form) => ({
+                      ...form,
+                      liveTeacherFeedbackEnabled: event.target.checked,
+                    }))
+                  }
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="font-medium text-zinc-900">Live teacher feedback</span>
+                  <span className="mt-0.5 block text-zinc-600">
+                    While students answer text questions, you can type comments on their live view that
+                    appear under their text box in real time.
+                  </span>
+                </span>
               </label>
 
               <button
@@ -1945,6 +1778,21 @@ export default function Home() {
                         className="w-full rounded-md border border-zinc-300 px-3 py-2"
                       />
                     )}
+                    {question.type === "text" &&
+                    studentExamForm.liveTeacherFeedbackEnabled &&
+                    joinedSession &&
+                    (liveTeacherFeedback[question.id] ?? "").trim() ? (
+                      <div
+                        className="mt-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950"
+                        role="note"
+                        aria-live="polite"
+                      >
+                        <p className="text-xs font-semibold uppercase tracking-wide text-sky-800">
+                          Teacher feedback
+                        </p>
+                        <p className="mt-1 whitespace-pre-wrap">{liveTeacherFeedback[question.id]}</p>
+                      </div>
+                    ) : null}
                   </article>
                 ))}
               </form>

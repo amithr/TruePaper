@@ -10,6 +10,7 @@ type Params = {
 type UpdateFormBody = {
   title?: string;
   description?: string;
+  liveTeacherFeedbackEnabled?: boolean;
 };
 
 export async function PATCH(request: Request, { params }: Params) {
@@ -29,10 +30,15 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Title is required." }, { status: 400 });
   }
 
-  const { error } = await supabase
-    .from("forms")
-    .update({ title, description: description ?? "" })
-    .eq("id", formId);
+  const patch: { title: string; description: string; live_teacher_feedback_enabled?: boolean } = {
+    title,
+    description: description ?? "",
+  };
+  if (typeof body.liveTeacherFeedbackEnabled === "boolean") {
+    patch.live_teacher_feedback_enabled = body.liveTeacherFeedbackEnabled;
+  }
+
+  const { error } = await supabase.from("forms").update(patch).eq("id", formId);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

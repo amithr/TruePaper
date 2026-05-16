@@ -13,6 +13,7 @@ type LookupPayload = {
   closesAt?: string;
   title?: string;
   description?: string;
+  liveTeacherFeedbackEnabled?: boolean;
   questions?: Array<{
     id: string;
     prompt: string;
@@ -76,6 +77,7 @@ export async function GET(request: Request) {
       title: payload.title ?? "Form",
       description: payload.description ?? "",
       createdBy: null,
+      liveTeacherFeedbackEnabled: payload.liveTeacherFeedbackEnabled === true,
       questions: mapQuestions(payload.questions ?? []),
     };
 

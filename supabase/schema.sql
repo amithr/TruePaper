@@ -9,6 +9,7 @@ create table if not exists public.forms (
   title text not null,
   description text not null default '',
   created_by uuid references auth.users (id) on delete set null,
+  live_teacher_feedback_enabled boolean not null default false,
   created_at timestamptz not null default now()
 );
 
@@ -54,6 +55,7 @@ create table if not exists public.form_responses (
   last_typing_at timestamptz,
   finished_at timestamptz,
   student_display_name text,
+  live_teacher_feedback jsonb not null default '{}'::jsonb,
   updated_at timestamptz not null default now(),
   constraint form_responses_responder_chk check (
     (student_id is not null and anonymous_session_id is null and live_session_id is null)
@@ -356,6 +358,7 @@ begin
     'closesAt', fs.closes_at,
     'title', f.title,
     'description', coalesce(f.description, ''),
+    'liveTeacherFeedbackEnabled', coalesce(f.live_teacher_feedback_enabled, false),
     'questions', coalesce(
       (
         select jsonb_agg(
@@ -477,28 +480,58 @@ set search_path = public
 as $$
 declare
   fs record;
+  fid uuid;
+  feedback_enabled boolean := false;
   ans jsonb;
+  live_fb jsonb;
   susp boolean := false;
   fin boolean := false;
   disp text := '';
 begin
   if p_device_id is null
      or p_device_id !~ '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then
-    return jsonb_build_object('answers', '{}'::jsonb, 'suspended', false, 'finished', false, 'displayName', '');
+    return jsonb_build_object(
+      'answers', '{}'::jsonb,
+      'suspended', false,
+      'finished', false,
+      'displayName', '',
+      'liveTeacherFeedback', '{}'::jsonb
+    );
   end if;
 
   select * into fs from public.form_sessions where id = p_live_session_id limit 1;
   if not found then
-    return jsonb_build_object('answers', '{}'::jsonb, 'suspended', false, 'finished', false, 'displayName', '');
+    return jsonb_build_object(
+      'answers', '{}'::jsonb,
+      'suspended', false,
+      'finished', false,
+      'displayName', '',
+      'liveTeacherFeedback', '{}'::jsonb
+    );
   end if;
 
   if timezone('utc', now()) < fs.opens_at or timezone('utc', now()) > fs.closes_at then
-    return jsonb_build_object('answers', '{}'::jsonb, 'suspended', false, 'finished', false, 'displayName', '');
+    return jsonb_build_object(
+      'answers', '{}'::jsonb,
+      'suspended', false,
+      'finished', false,
+      'displayName', '',
+      'liveTeacherFeedback', '{}'::jsonb
+    );
   end if;
 
-  select fr.answers, (fr.suspended_at is not null), (fr.finished_at is not null),
+  fid := fs.form_id;
+  select coalesce(f.live_teacher_feedback_enabled, false)
+  into feedback_enabled
+  from public.forms f
+  where f.id = fid;
+
+  select fr.answers,
+         coalesce(fr.live_teacher_feedback, '{}'::jsonb),
+         (fr.suspended_at is not null),
+         (fr.finished_at is not null),
          coalesce(nullif(trim(fr.student_display_name), ''), '')
-  into ans, susp, fin, disp
+  into ans, live_fb, susp, fin, disp
   from public.form_responses fr
   where fr.live_session_id = p_live_session_id
     and fr.anonymous_session_id = p_device_id
@@ -506,6 +539,7 @@ begin
 
   if not found then
     ans := '{}'::jsonb;
+    live_fb := '{}'::jsonb;
     susp := false;
     fin := false;
     disp := '';
@@ -515,7 +549,8 @@ begin
     'answers', coalesce(ans, '{}'::jsonb),
     'suspended', susp,
     'finished', fin,
-    'displayName', disp
+    'displayName', disp,
+    'liveTeacherFeedback', case when feedback_enabled then coalesce(live_fb, '{}'::jsonb) else '{}'::jsonb end
   );
 end;
 $$;
