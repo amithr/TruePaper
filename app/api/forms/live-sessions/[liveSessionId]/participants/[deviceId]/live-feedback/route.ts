@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { isMissingColumnError } from "@/lib/is-missing-db-column";
+import { isValidAnonymousSessionId } from "@/lib/anonymous-session";
 import { parseLiveTeacherFeedback } from "@/lib/live-teacher-feedback";
 import { getSessionUser } from "@/lib/request-auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -15,6 +15,8 @@ type Body = {
 };
 
 const MAX_MESSAGE_LEN = 2000;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function PATCH(request: Request, { params }: Params) {
   const { liveSessionId, deviceId: rawDeviceId } = await params;
@@ -23,8 +25,12 @@ export async function PATCH(request: Request, { params }: Params) {
   const questionId = body.questionId?.trim() ?? "";
   const message = (body.message ?? "").trim().slice(0, MAX_MESSAGE_LEN);
 
-  if (!questionId) {
-    return NextResponse.json({ error: "questionId is required." }, { status: 400 });
+  if (!isValidAnonymousSessionId(deviceId)) {
+    return NextResponse.json({ error: "Invalid device id." }, { status: 400 });
+  }
+
+  if (!questionId || !UUID_RE.test(questionId)) {
+    return NextResponse.json({ error: "A valid questionId is required." }, { status: 400 });
   }
 
   const supabase = await createSupabaseServerClient();
@@ -36,91 +42,49 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Only teachers can send live feedback." }, { status: 403 });
   }
 
-  const { data: fs, error: fsError } = await supabase
-    .from("form_sessions")
-    .select("id, form_id, forms ( live_teacher_feedback_enabled )")
-    .eq("id", liveSessionId)
-    .eq("created_by", session.user.id)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc("set_live_teacher_feedback", {
+    p_live_session_id: liveSessionId,
+    p_device_id: deviceId,
+    p_question_id: questionId,
+    p_message: message,
+  });
 
-  if (fsError) {
-    if (isMissingColumnError(fsError, "live_teacher_feedback_enabled")) {
+  if (error) {
+    if (error.message.includes("set_live_teacher_feedback") || error.code === "42883") {
       return NextResponse.json(
         {
           error:
-            "Database is missing live_teacher_feedback_enabled on forms. Run migration 20260516120000_live_teacher_feedback.sql.",
+            "Database is missing set_live_teacher_feedback. Run migration 20260516140000_live_teacher_feedback_rpc.sql.",
         },
         { status: 503 },
       );
     }
-    return NextResponse.json({ error: fsError.message }, { status: 500 });
-  }
-  if (!fs) {
-    return NextResponse.json({ error: "Session not found." }, { status: 404 });
-  }
-
-  const formNested = fs.forms as { live_teacher_feedback_enabled?: boolean } | { live_teacher_feedback_enabled?: boolean }[] | null;
-  const formRow = Array.isArray(formNested) ? formNested[0] : formNested;
-  if (!formRow?.live_teacher_feedback_enabled) {
-    return NextResponse.json(
-      { error: "Live teacher feedback is not enabled for this form." },
-      { status: 400 },
-    );
-  }
-
-  const { data: question, error: qError } = await supabase
-    .from("questions")
-    .select("id, question_type")
-    .eq("id", questionId)
-    .eq("form_id", fs.form_id as string)
-    .maybeSingle();
-
-  if (qError) {
-    return NextResponse.json({ error: qError.message }, { status: 500 });
-  }
-  if (!question || question.question_type !== "text") {
-    return NextResponse.json({ error: "Question not found or not a text question." }, { status: 404 });
-  }
-
-  const { data: responseRow, error: responseError } = await supabase
-    .from("form_responses")
-    .select("id, live_teacher_feedback")
-    .eq("live_session_id", liveSessionId)
-    .eq("anonymous_session_id", deviceId)
-    .is("student_id", null)
-    .maybeSingle();
-
-  if (responseError) {
-    if (isMissingColumnError(responseError, "live_teacher_feedback")) {
+    if (error.message.includes("not authenticated")) {
+      return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+    }
+    if (error.message.includes("not allowed")) {
       return NextResponse.json(
         {
           error:
-            "Database is missing live_teacher_feedback on form_responses. Run migration 20260516120000_live_teacher_feedback.sql.",
+            "Live teacher feedback is not enabled for this form, or you do not own this session.",
         },
-        { status: 503 },
+        { status: 403 },
       );
     }
-    return NextResponse.json({ error: responseError.message }, { status: 500 });
-  }
-  if (!responseRow) {
-    return NextResponse.json({ error: "Student response not found." }, { status: 404 });
-  }
-
-  const existing = parseLiveTeacherFeedback(responseRow.live_teacher_feedback);
-  if (message) {
-    existing[questionId] = message;
-  } else {
-    delete existing[questionId];
-  }
-
-  const { error: updateError } = await supabase
-    .from("form_responses")
-    .update({ live_teacher_feedback: existing })
-    .eq("id", responseRow.id);
-
-  if (updateError) {
-    return NextResponse.json({ error: updateError.message }, { status: 500 });
+    if (error.message.includes("question not found")) {
+      return NextResponse.json({ error: "Question not found or not a text question." }, { status: 404 });
+    }
+    if (error.message.includes("student response not found")) {
+      return NextResponse.json(
+        { error: "Student has not joined this session on their device yet." },
+        { status: 404 },
+      );
+    }
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, liveTeacherFeedback: existing });
+  return NextResponse.json({
+    ok: true,
+    liveTeacherFeedback: parseLiveTeacherFeedback(data),
+  });
 }

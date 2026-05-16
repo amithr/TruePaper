@@ -246,7 +246,10 @@ export default function WatchStudentExamPage() {
           }
           const message = (latestLiveFeedbackDraftsRef.current[questionId] ?? "").trim();
           try {
-            await requestJson<{ ok: true }>(
+            const result = await requestJson<{
+              ok: true;
+              liveTeacherFeedback: LiveTeacherFeedbackByQuestionId;
+            }>(
               `/api/forms/live-sessions/${liveSessionId}/participants/${encodeURIComponent(deviceId)}/live-feedback`,
               {
                 method: "PATCH",
@@ -254,8 +257,13 @@ export default function WatchStudentExamPage() {
                 body: JSON.stringify({ questionId, message }),
               },
             );
-          } catch {
-            /* ignore — teacher can retry by typing */
+            setSnapshot((prev) =>
+              prev
+                ? { ...prev, liveTeacherFeedback: result.liveTeacherFeedback }
+                : prev,
+            );
+          } catch (e) {
+            setLoadError(e instanceof Error ? e.message : "Could not save feedback to student.");
           }
         })();
       }, 350);

@@ -600,9 +600,7 @@ export default function Home() {
             setStudentAnswers(parsed.answers);
             lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(parsed.answers);
           }
-          if (joinedSession?.form.liveTeacherFeedbackEnabled) {
-            setLiveTeacherFeedback(parsed.liveTeacherFeedback);
-          }
+          setLiveTeacherFeedback(parsed.liveTeacherFeedback);
         } catch {
           /* ignore */
         }
@@ -1879,7 +1877,6 @@ export default function Home() {
                       />
                     )}
                     {question.type === "text" &&
-                    studentExamForm.liveTeacherFeedbackEnabled &&
                     joinedSession &&
                     (liveTeacherFeedback[question.id] ?? "").trim() ? (
                       <div
