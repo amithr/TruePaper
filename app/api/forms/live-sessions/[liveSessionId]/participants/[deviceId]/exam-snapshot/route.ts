@@ -14,7 +14,7 @@ type Params = {
 };
 
 const RESPONSE_SELECT_WITH_NAME =
-  "answers, student_display_name, suspended_at, finished_at, last_activity_at, updated_at, live_teacher_feedback";
+  "answers, student_display_name, suspended_at, finished_at, last_activity_at, updated_at, live_teacher_feedback, student_resume_code";
 const RESPONSE_SELECT_LEGACY =
   "answers, suspended_at, finished_at, last_activity_at, updated_at";
 const FORM_SELECT = "id, title, description, created_by, live_teacher_feedback_enabled";
@@ -132,6 +132,18 @@ export async function GET(_request: Request, { params }: Params) {
     rowError = retry.error;
   }
 
+  if (rowError && isMissingColumnError(rowError, "student_resume_code")) {
+    const retry = await supabase
+      .from("form_responses")
+      .select(RESPONSE_SELECT_WITH_NAME.replace(", student_resume_code", ""))
+      .eq("live_session_id", liveSessionId)
+      .eq("anonymous_session_id", deviceId)
+      .is("student_id", null)
+      .maybeSingle();
+    row = retry.data as Record<string, unknown> | null;
+    rowError = retry.error;
+  }
+
   if (rowError) {
     return NextResponse.json({ error: rowError.message }, { status: 500 });
   }
@@ -144,6 +156,19 @@ export async function GET(_request: Request, { params }: Params) {
   const finished = Boolean(row?.finished_at);
   const lastActivityAt = typeof row?.last_activity_at === "string" ? row.last_activity_at : null;
   const updatedAt = typeof row?.updated_at === "string" ? row.updated_at : null;
+
+  let studentResumeCode =
+    typeof row?.student_resume_code === "string" ? row.student_resume_code.trim().toUpperCase() : "";
+
+  if (row && !studentResumeCode) {
+    const { data: ensured, error: ensureError } = await supabase.rpc("ensure_student_resume_code", {
+      p_live_session_id: liveSessionId,
+      p_device_id: deviceId,
+    });
+    if (!ensureError && typeof ensured === "string") {
+      studentResumeCode = ensured.trim().toUpperCase();
+    }
+  }
 
   return NextResponse.json({
     session: {
@@ -164,6 +189,7 @@ export async function GET(_request: Request, { params }: Params) {
     form: form as Form,
     answers,
     liveTeacherFeedback: parseLiveTeacherFeedback(row?.live_teacher_feedback),
+    studentResumeCode: studentResumeCode || null,
     updatedAt,
   });
 }

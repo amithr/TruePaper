@@ -10,10 +10,21 @@ export function getOrCreateAnonymousSessionId(): string {
     return "";
   }
   const existing = window.localStorage.getItem(STORAGE_KEY)?.trim();
-  if (existing && /^[0-9a-f-]{36}$/i.test(existing)) {
+  if (existing && isValidAnonymousSessionId(existing)) {
     return existing;
   }
   const id = crypto.randomUUID();
   window.localStorage.setItem(STORAGE_KEY, id);
   return id;
+}
+
+/** Restore this device after clearing site data or switching browsers (used with a personal rejoin code). */
+export function persistAnonymousSessionId(deviceId: string): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  if (!isValidAnonymousSessionId(deviceId)) {
+    return;
+  }
+  window.localStorage.setItem(STORAGE_KEY, deviceId);
 }

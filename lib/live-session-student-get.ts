@@ -7,46 +7,45 @@ function answersFromJsonObject(raw: Record<string, unknown>): StudentAnswers {
   );
 }
 
-/** Parses RPC / API payload: `{ answers, suspended, finished?, displayName? }` or legacy flat answers object. */
+function resumeCodeFromObject(obj: Record<string, unknown>): string {
+  const rc = obj.resumeCode;
+  return typeof rc === "string" ? rc.trim().toUpperCase() : "";
+}
+
+const emptyParsed = {
+  answers: {} as StudentAnswers,
+  suspended: false,
+  finished: false,
+  displayName: "",
+  liveTeacherFeedback: {} as LiveTeacherFeedbackByQuestionId,
+  liveTeacherFeedbackEnabled: false,
+  resumeCode: "",
+};
+
+/** Parses RPC / API payload: `{ answers, suspended, finished?, displayName?, resumeCode? }` or legacy flat answers object. */
 export function parseLiveSessionStudentGet(data: unknown): {
   answers: StudentAnswers;
   suspended: boolean;
   finished: boolean;
   displayName: string;
   liveTeacherFeedback: LiveTeacherFeedbackByQuestionId;
+  liveTeacherFeedbackEnabled: boolean;
+  resumeCode: string;
 } {
   if (data === null || data === undefined) {
-    return {
-      answers: {},
-      suspended: false,
-      finished: false,
-      displayName: "",
-      liveTeacherFeedback: {},
-    };
+    return { ...emptyParsed };
   }
 
   if (typeof data === "string") {
     try {
       return parseLiveSessionStudentGet(JSON.parse(data) as unknown);
     } catch {
-      return {
-        answers: {},
-        suspended: false,
-        finished: false,
-        displayName: "",
-        liveTeacherFeedback: {},
-      };
+      return { ...emptyParsed };
     }
   }
 
   if (typeof data !== "object" || Array.isArray(data)) {
-    return {
-      answers: {},
-      suspended: false,
-      finished: false,
-      displayName: "",
-      liveTeacherFeedback: {},
-    };
+    return { ...emptyParsed };
   }
 
   const obj = data as Record<string, unknown>;
@@ -64,6 +63,8 @@ export function parseLiveSessionStudentGet(data: unknown): {
       finished: Boolean(obj.finished),
       displayName: typeof dn === "string" ? dn : "",
       liveTeacherFeedback: parseLiveTeacherFeedback(obj.liveTeacherFeedback),
+      liveTeacherFeedbackEnabled: obj.liveTeacherFeedbackEnabled === true,
+      resumeCode: resumeCodeFromObject(obj),
     };
   }
 
@@ -73,5 +74,7 @@ export function parseLiveSessionStudentGet(data: unknown): {
     finished: false,
     displayName: "",
     liveTeacherFeedback: {},
+    liveTeacherFeedbackEnabled: false,
+    resumeCode: "",
   };
 }

@@ -13,6 +13,7 @@ import {
   parseLiveTeacherFeedback,
   type LiveTeacherFeedbackByQuestionId,
 } from "@/lib/live-teacher-feedback";
+import { formatResumeCodeForDisplay } from "@/lib/resume-code";
 import { buttonLabel, ui } from "@/lib/ui";
 type ApiError = { error?: string };
 
@@ -35,6 +36,7 @@ type SnapshotJson = {
   form: Form;
   answers: StudentAnswers;
   liveTeacherFeedback: LiveTeacherFeedbackByQuestionId;
+  studentResumeCode: string | null;
   updatedAt: string | null;
 };
 
@@ -128,14 +130,32 @@ export default function WatchStudentExamPage() {
   const [realtimeMode, setRealtimeMode] = useState<RealtimeMode>("connecting");
   const [pointsDraftsByQuestionId, setPointsDraftsByQuestionId] = useState<Record<string, number>>({});
   const [savingPointsQuestionId, setSavingPointsQuestionId] = useState<string | null>(null);
-  const [expandedLiveFeedbackQuestionIds, setExpandedLiveFeedbackQuestionIds] = useState<Set<string>>(
-    () => new Set(),
-  );
   const [liveFeedbackDraftsByQuestionId, setLiveFeedbackDraftsByQuestionId] = useState<
     Record<string, string>
   >({});
+  const [liveFeedbackSavingQuestionIds, setLiveFeedbackSavingQuestionIds] = useState<Set<string>>(
+    () => new Set(),
+  );
   const liveFeedbackSaveTimerRef = useRef<Record<string, number>>({});
   const latestLiveFeedbackDraftsRef = useRef<Record<string, string>>({});
+  const editingLiveFeedbackQuestionIdRef = useRef<string | null>(null);
+
+  const mergeLiveFeedbackForDisplay = useCallback(
+    (server: LiveTeacherFeedbackByQuestionId): LiveTeacherFeedbackByQuestionId => {
+      const merged = { ...server };
+      for (const [questionId, draft] of Object.entries(latestLiveFeedbackDraftsRef.current)) {
+        const pending =
+          editingLiveFeedbackQuestionIdRef.current === questionId ||
+          liveFeedbackSaveTimerRef.current[questionId] !== undefined ||
+          liveFeedbackSavingQuestionIds.has(questionId);
+        if (pending && draft !== undefined) {
+          merged[questionId] = draft;
+        }
+      }
+      return merged;
+    },
+    [liveFeedbackSavingQuestionIds],
+  );
 
   const refresh = useCallback(async () => {
     if (!liveSessionId || !deviceId) {
@@ -163,13 +183,16 @@ export default function WatchStudentExamPage() {
         if (answersUnchanged && feedbackUnchanged && metaUnchanged) {
           return prev;
         }
-        return data;
+        return {
+          ...data,
+          liveTeacherFeedback: mergeLiveFeedbackForDisplay(data.liveTeacherFeedback),
+        };
       });
     } catch (e) {
       setSnapshot(null);
       setLoadError(e instanceof Error ? e.message : "Failed to load.");
     }
-  }, [liveSessionId, deviceId]);
+  }, [liveSessionId, deviceId, mergeLiveFeedbackForDisplay]);
 
   useEffect(() => {
     void (async () => {
@@ -222,15 +245,59 @@ export default function WatchStudentExamPage() {
     setLiveFeedbackDraftsByQuestionId((prev) => {
       const next = { ...snapshot.liveTeacherFeedback };
       for (const questionId of Object.keys(prev)) {
-        if (liveFeedbackSaveTimerRef.current[questionId] !== undefined) {
-          next[questionId] = prev[questionId];
+        const keepLocal =
+          editingLiveFeedbackQuestionIdRef.current === questionId ||
+          liveFeedbackSaveTimerRef.current[questionId] !== undefined ||
+          liveFeedbackSavingQuestionIds.has(questionId);
+        if (keepLocal) {
+          next[questionId] = prev[questionId] ?? "";
         }
       }
       return next;
     });
-  }, [snapshot?.updatedAt, snapshot?.liveTeacherFeedback]);
+  }, [snapshot?.updatedAt, snapshot?.liveTeacherFeedback, liveFeedbackSavingQuestionIds]);
 
   latestLiveFeedbackDraftsRef.current = liveFeedbackDraftsByQuestionId;
+
+  const persistLiveFeedback = useCallback(
+    async (questionId: string) => {
+      if (!liveSessionId || !deviceId) {
+        return;
+      }
+      const message = latestLiveFeedbackDraftsRef.current[questionId] ?? "";
+      setLiveFeedbackSavingQuestionIds((prev) => new Set(prev).add(questionId));
+      try {
+        const result = await requestJson<{
+          ok: true;
+          liveTeacherFeedback: LiveTeacherFeedbackByQuestionId;
+        }>(
+          `/api/forms/live-sessions/${liveSessionId}/participants/${encodeURIComponent(deviceId)}/live-feedback`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ questionId, message }),
+          },
+        );
+        setSnapshot((prev) =>
+          prev ? { ...prev, liveTeacherFeedback: result.liveTeacherFeedback } : prev,
+        );
+        setLiveFeedbackDraftsByQuestionId((prev) => ({
+          ...prev,
+          ...result.liveTeacherFeedback,
+        }));
+        setLoadError("");
+      } catch (e) {
+        setLoadError(e instanceof Error ? e.message : "Could not save feedback to student.");
+      } finally {
+        setLiveFeedbackSavingQuestionIds((prev) => {
+          const next = new Set(prev);
+          next.delete(questionId);
+          return next;
+        });
+      }
+    },
+    [liveSessionId, deviceId],
+  );
 
   const scheduleLiveFeedbackSave = useCallback(
     (questionId: string) => {
@@ -240,35 +307,22 @@ export default function WatchStudentExamPage() {
       }
       liveFeedbackSaveTimerRef.current[questionId] = window.setTimeout(() => {
         delete liveFeedbackSaveTimerRef.current[questionId];
-        void (async () => {
-          if (!liveSessionId || !deviceId) {
-            return;
-          }
-          const message = (latestLiveFeedbackDraftsRef.current[questionId] ?? "").trim();
-          try {
-            const result = await requestJson<{
-              ok: true;
-              liveTeacherFeedback: LiveTeacherFeedbackByQuestionId;
-            }>(
-              `/api/forms/live-sessions/${liveSessionId}/participants/${encodeURIComponent(deviceId)}/live-feedback`,
-              {
-                method: "PATCH",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ questionId, message }),
-              },
-            );
-            setSnapshot((prev) =>
-              prev
-                ? { ...prev, liveTeacherFeedback: result.liveTeacherFeedback }
-                : prev,
-            );
-          } catch (e) {
-            setLoadError(e instanceof Error ? e.message : "Could not save feedback to student.");
-          }
-        })();
-      }, 350);
+        void persistLiveFeedback(questionId);
+      }, 400);
     },
-    [liveSessionId, deviceId],
+    [persistLiveFeedback],
+  );
+
+  const flushLiveFeedbackSave = useCallback(
+    (questionId: string) => {
+      const existing = liveFeedbackSaveTimerRef.current[questionId];
+      if (existing !== undefined) {
+        window.clearTimeout(existing);
+        delete liveFeedbackSaveTimerRef.current[questionId];
+      }
+      void persistLiveFeedback(questionId);
+    },
+    [persistLiveFeedback],
   );
 
   const saveQuestionPoints = async (question: Form["questions"][number]) => {
@@ -428,6 +482,15 @@ export default function WatchStudentExamPage() {
           </Link>
           <h1 className="mt-4 text-2xl font-bold tracking-tight">Live session · {titleName}</h1>
           <p className="mt-1 font-mono text-xs text-zinc-600">Device {maskDeviceId(st.anonymousSessionId)}</p>
+          {snapshot.studentResumeCode ? (
+            <p className="mt-2 text-sm text-zinc-700">
+              Student rejoin code:{" "}
+              <span className="font-mono font-semibold tracking-wider text-zinc-900">
+                {formatResumeCodeForDisplay(snapshot.studentResumeCode)}
+              </span>
+              <span className="ml-2 text-xs text-zinc-500">(if they lost this browser)</span>
+            </p>
+          ) : null}
           <p className="mt-2 text-sm text-zinc-600">
             {s.sessionOpen
               ? `${noTimeLimit ? "Session open · No time limit" : `Session open · Time left ${formatCountdown(msLeft)}`} · ${streamLine}`
@@ -556,32 +619,25 @@ export default function WatchStudentExamPage() {
                       />
                       {snapshot.form.liveTeacherFeedbackEnabled ? (
                         <div className="rounded-md border border-sky-200 bg-sky-50/80 px-3 py-3">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setExpandedLiveFeedbackQuestionIds((prev) => {
-                                const next = new Set(prev);
-                                if (next.has(question.id)) {
-                                  next.delete(question.id);
-                                } else {
-                                  next.add(question.id);
-                                }
-                                return next;
-                              })
-                            }
-                            className="flex w-full items-center justify-between gap-2 text-left text-sm font-medium text-sky-950"
-                          >
-                            <span>Live feedback to student</span>
-                            <span className="text-xs font-normal text-sky-800">
-                              {expandedLiveFeedbackQuestionIds.has(question.id)
-                                ? buttonLabel("Hide")
-                                : buttonLabel("Show")}
-                            </span>
-                          </button>
-                          {expandedLiveFeedbackQuestionIds.has(question.id) ? (
+                          <label className="block text-sm font-medium text-sky-950">
+                            Live feedback to student
+                            {liveFeedbackSavingQuestionIds.has(question.id) ? (
+                              <span className="ml-2 text-xs font-normal text-sky-800">Saving…</span>
+                            ) : (
+                              <span className="ml-2 text-xs font-normal text-sky-800">
+                                Autosaved · visible on their screen
+                              </span>
+                            )}
                             <textarea
                               rows={3}
                               value={liveFeedbackDraftsByQuestionId[question.id] ?? ""}
+                              onFocus={() => {
+                                editingLiveFeedbackQuestionIdRef.current = question.id;
+                              }}
+                              onBlur={() => {
+                                editingLiveFeedbackQuestionIdRef.current = null;
+                                flushLiveFeedbackSave(question.id);
+                              }}
                               onChange={(event) => {
                                 const next = event.target.value;
                                 setLiveFeedbackDraftsByQuestionId((current) => ({
@@ -593,7 +649,7 @@ export default function WatchStudentExamPage() {
                               placeholder="Students see this under their answer as you type…"
                               className="mt-2 w-full rounded-md border border-sky-300 bg-white px-3 py-2 text-sm text-zinc-900"
                             />
-                          ) : null}
+                          </label>
                         </div>
                       ) : null}
                     </div>

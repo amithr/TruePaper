@@ -6,13 +6,15 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { LoadingBar } from "@/components/LoadingBar";
 import { SessionJoinShare } from "@/components/SessionJoinShare";
+import { StudentExamReconnect } from "@/components/StudentExamReconnect";
 import { StudentExamTextarea } from "@/components/StudentExamTextarea";
-import { getOrCreateAnonymousSessionId } from "@/lib/anonymous-session";
+import { getOrCreateAnonymousSessionId, persistAnonymousSessionId } from "@/lib/anonymous-session";
 import { postExamTabLeave } from "@/lib/exam-tab-leave";
 import type { Form, Question, QuestionType, StudentAnswers } from "@/lib/forms";
 import { isValidLiveSessionDisplayName, normalizeLiveSessionDisplayName } from "@/lib/live-session-display-name";
 import { parseLiveSessionStudentGet } from "@/lib/live-session-student-get";
 import { isValidJoinCodeFormat, normalizeJoinCode } from "@/lib/join-code";
+import { isValidResumeCodeFormat, normalizeResumeCode } from "@/lib/resume-code";
 import { isNoTimeLimitSession } from "@/lib/session-window";
 import { stableStringifyStudentAnswers } from "@/lib/student-answers-json";
 import { buttonLabel, focusRing, ui } from "@/lib/ui";
@@ -40,6 +42,18 @@ type SessionData = {
 type JoinApiResponse = {
   liveSessionId: string;
   formId: string;
+  opensAt: string;
+  closesAt: string;
+  form: Form;
+};
+
+type ResumeApiResponse = {
+  liveSessionId: string;
+  formId: string;
+  deviceId: string;
+  displayName: string;
+  joinCode: string;
+  resumeCode: string;
   opensAt: string;
   closesAt: string;
   form: Form;
@@ -133,8 +147,11 @@ export default function Home() {
   const [authForms, setAuthForms] = useState<Form[]>([]);
   const [activeFormId, setActiveFormId] = useState("");
   const [pendingAutoJoinCode, setPendingAutoJoinCode] = useState("");
+  const [pendingAutoResumeCode, setPendingAutoResumeCode] = useState("");
   const [joinCodeInput, setJoinCodeInput] = useState("");
+  const [rejoinCodeInput, setRejoinCodeInput] = useState("");
   const [joinDisplayNameInput, setJoinDisplayNameInput] = useState("");
+  const [studentResumeCode, setStudentResumeCode] = useState("");
   const [activeExamDisplayName, setActiveExamDisplayName] = useState("");
   const [joinedSession, setJoinedSession] = useState<JoinedLiveSession | null>(null);
   const [teacherLiveBanner, setTeacherLiveBanner] = useState<TeacherLiveBanner | null>(null);
@@ -353,16 +370,28 @@ export default function Home() {
         joinIntentFromUrlRef.current = true;
       }
     }
+    const resumeRaw = params.get("resume");
+    if (resumeRaw) {
+      const normalizedResume = normalizeResumeCode(resumeRaw);
+      if (isValidResumeCodeFormat(normalizedResume)) {
+        setRejoinCodeInput(normalizedResume);
+        setPendingAutoResumeCode(normalizedResume);
+        joinIntentFromUrlRef.current = true;
+      }
+    }
     const u = new URL(window.location.href);
     if (u.searchParams.has("code") || u.searchParams.has("join")) {
       u.searchParams.delete("code");
       u.searchParams.delete("join");
-      window.history.replaceState({}, "", u.pathname + u.search + u.hash);
     }
+    if (u.searchParams.has("resume")) {
+      u.searchParams.delete("resume");
+    }
+    window.history.replaceState({}, "", u.pathname + u.search + u.hash);
   }, []);
 
   useEffect(() => {
-    if (!pendingAutoJoinCode || joinedSession || isMutating) {
+    if (!pendingAutoJoinCode || joinedSession || isMutating || pendingAutoResumeCode) {
       return;
     }
     const normalizedDisplayName = normalizeLiveSessionDisplayName(joinDisplayNameInput);
@@ -372,7 +401,15 @@ export default function Home() {
     }
     void joinWithCode(pendingAutoJoinCode);
     setPendingAutoJoinCode("");
-  }, [pendingAutoJoinCode, joinDisplayNameInput, joinedSession, isMutating]);
+  }, [pendingAutoJoinCode, joinDisplayNameInput, joinedSession, isMutating, pendingAutoResumeCode]);
+
+  useEffect(() => {
+    if (!pendingAutoResumeCode || joinedSession || isMutating) {
+      return;
+    }
+    void rejoinWithResumeCode(pendingAutoResumeCode);
+    setPendingAutoResumeCode("");
+  }, [pendingAutoResumeCode, joinedSession, isMutating]);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -542,6 +579,19 @@ export default function Home() {
         setExamSuspended(parsed.suspended);
         setExamFinished(parsed.finished);
         setLiveTeacherFeedback(parsed.liveTeacherFeedback);
+        if (parsed.liveTeacherFeedbackEnabled && joinedSession) {
+          setJoinedSession((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  form: { ...prev.form, liveTeacherFeedbackEnabled: true },
+                }
+              : prev,
+          );
+        }
+        if (parsed.resumeCode) {
+          setStudentResumeCode(parsed.resumeCode);
+        }
         if (parsed.finished) {
           setStatusMessage("You have submitted this exam.");
         } else if (parsed.suspended) {
@@ -578,6 +628,7 @@ export default function Home() {
             suspended?: boolean;
             finished?: boolean;
             liveTeacherFeedback?: unknown;
+            liveTeacherFeedbackEnabled?: boolean;
             error?: string;
           };
           if (!response.ok) {
@@ -601,13 +652,26 @@ export default function Home() {
             lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(parsed.answers);
           }
           setLiveTeacherFeedback(parsed.liveTeacherFeedback);
+          if (parsed.liveTeacherFeedbackEnabled) {
+            setJoinedSession((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    form: { ...prev.form, liveTeacherFeedbackEnabled: true },
+                  }
+                : prev,
+            );
+          }
+          if (parsed.resumeCode) {
+            setStudentResumeCode(parsed.resumeCode);
+          }
         } catch {
           /* ignore */
         }
       })();
-    }, joinedSession?.form.liveTeacherFeedbackEnabled ? 1200 : 3000);
+    }, 800);
     return () => window.clearInterval(id);
-  }, [joinedSession, anonymousSessionId, joinedSession?.form.liveTeacherFeedbackEnabled]);
+  }, [joinedSession, anonymousSessionId]);
 
   useEffect(() => {
     if (
@@ -1079,6 +1143,57 @@ export default function Home() {
     }
   };
 
+  const rejoinWithResumeCode = async (rawCode: string) => {
+    const code = normalizeResumeCode(rawCode);
+    if (!isValidResumeCodeFormat(code)) {
+      setStatusMessage("Enter your 8-character personal rejoin code.");
+      return;
+    }
+
+    setIsMutating(true);
+    setStatusMessage("");
+    try {
+      suspendAutosaveRef.current = true;
+      const data = await requestJson<ResumeApiResponse>(
+        `/api/public/resume?code=${encodeURIComponent(code)}`,
+      );
+      persistAnonymousSessionId(data.deviceId);
+      setAnonymousSessionId(data.deviceId);
+      setJoinCodeInput(data.joinCode);
+      setRejoinCodeInput(code);
+      setStudentResumeCode(data.resumeCode || code);
+      const displayName = normalizeLiveSessionDisplayName(data.displayName);
+      if (isValidLiveSessionDisplayName(displayName)) {
+        setActiveExamDisplayName(displayName);
+        setJoinDisplayNameInput(displayName);
+        try {
+          if (typeof window !== "undefined") {
+            window.localStorage.setItem("truepaper_last_exam_display_name", displayName);
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      setJoinedSession({
+        liveSessionId: data.liveSessionId,
+        form: data.form,
+        opensAt: data.opensAt,
+        closesAt: data.closesAt,
+      });
+      setExamSuspended(false);
+      setExamFinished(false);
+      setStatusMessage(
+        displayName
+          ? `Welcome back, ${displayName}. Loading your saved answers…`
+          : "Welcome back. Loading your saved answers…",
+      );
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : "Could not rejoin that exam.");
+    } finally {
+      setIsMutating(false);
+    }
+  };
+
   const joinWithCode = async (rawCode: string) => {
     const code = normalizeJoinCode(rawCode);
     if (!isValidJoinCodeFormat(code)) {
@@ -1139,6 +1254,8 @@ export default function Home() {
     setExamFinished(false);
     setActiveExamDisplayName("");
     setLiveTeacherFeedback({});
+    setStudentResumeCode("");
+    setRejoinCodeInput("");
     setStatusMessage("Left the session.");
   };
 
@@ -1329,6 +1446,41 @@ export default function Home() {
           You can scroll down to preview the form as students see it—no code needed. Use a join code when
           you want to test saving answers in a live session.
         </p>
+      ) : null}
+
+      {!joinedSession ? (
+        <div className="mt-6 rounded-lg border border-dashed border-zinc-300 bg-zinc-50/80 px-4 py-4">
+          <p className="text-sm font-medium text-zinc-900">Already in this exam?</p>
+          <p className="mt-1 text-sm text-zinc-600">
+            If you were logged out or cleared this site, enter your <strong>personal rejoin code</strong>{" "}
+            (8 characters from when you joined—not the class session code).
+          </p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+            <label className="block text-sm font-medium">
+              Personal rejoin code
+              <input
+                type="text"
+                inputMode="text"
+                autoCapitalize="characters"
+                autoCorrect="off"
+                spellCheck={false}
+                maxLength={10}
+                value={rejoinCodeInput}
+                onChange={(e) => setRejoinCodeInput(e.target.value.toUpperCase())}
+                className="tp-input mt-1 font-mono tracking-widest"
+                placeholder="ABCD 1234"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => void rejoinWithResumeCode(rejoinCodeInput)}
+              disabled={isMutating || !isValidResumeCodeFormat(normalizeResumeCode(rejoinCodeInput))}
+              className="justify-self-start tp-btn-primary disabled:opacity-50"
+            >
+              {buttonLabel("Rejoin my exam")}
+            </button>
+          </div>
+        </div>
       ) : null}
     </section>
   );
@@ -1804,6 +1956,10 @@ export default function Home() {
               </div>
             )}
 
+            {joinedSession && studentResumeCode ? (
+              <StudentExamReconnect resumeCode={studentResumeCode} />
+            ) : null}
+
             <header>
               <h2 className="text-2xl font-bold">{studentExamForm.title || "Untitled Form"}</h2>
               {studentExamForm.description ? (
@@ -1878,11 +2034,12 @@ export default function Home() {
                     )}
                     {question.type === "text" &&
                     joinedSession &&
-                    (liveTeacherFeedback[question.id] ?? "").trim() ? (
+                    (liveTeacherFeedback[question.id] ?? "").length > 0 ? (
                       <div
                         className="mt-2 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950"
-                        role="note"
+                        role="status"
                         aria-live="polite"
+                        aria-atomic="true"
                       >
                         <p className="text-xs font-semibold uppercase tracking-wide text-sky-800">
                           Teacher feedback

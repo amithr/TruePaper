@@ -54,9 +54,24 @@ export async function GET(request: Request, { params }: Params) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    const { answers, suspended, finished, displayName, liveTeacherFeedback } =
-      parseLiveSessionStudentGet(data);
-    return NextResponse.json({ answers, suspended, finished, displayName, liveTeacherFeedback });
+    const {
+      answers,
+      suspended,
+      finished,
+      displayName,
+      liveTeacherFeedback,
+      liveTeacherFeedbackEnabled,
+      resumeCode,
+    } = parseLiveSessionStudentGet(data);
+    return NextResponse.json({
+      answers,
+      suspended,
+      finished,
+      displayName,
+      liveTeacherFeedback,
+      liveTeacherFeedbackEnabled,
+      resumeCode: resumeCode || null,
+    });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Configuration error.";
     return NextResponse.json({ error: message }, { status: 500 });
