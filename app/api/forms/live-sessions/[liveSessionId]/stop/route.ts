@@ -7,7 +7,7 @@ type Params = {
   params: Promise<{ liveSessionId: string }>;
 };
 
-/** Ends the session immediately by setting closes_at to now (join + saves then fail as closed). */
+/** Ends the session immediately and marks all student devices in the session as finished. */
 export async function POST(_request: Request, { params }: Params) {
   const { liveSessionId } = await params;
   const supabase = await createSupabaseServerClient();
@@ -21,23 +21,33 @@ export async function POST(_request: Request, { params }: Params) {
     return NextResponse.json({ error: "Only teachers can stop a session." }, { status: 403 });
   }
 
-  const nowIso = new Date().toISOString();
-
-  const { data, error } = await supabase
-    .from("form_sessions")
-    .update({ closes_at: nowIso })
-    .eq("id", liveSessionId)
-    .eq("created_by", session.user.id)
-    .select("id")
-    .maybeSingle();
+  const { data, error } = await supabase.rpc("stop_live_session", {
+    p_live_session_id: liveSessionId,
+  });
 
   if (error) {
+    if (error.message.includes("stop_live_session") || error.code === "42883") {
+      return NextResponse.json(
+        {
+          error:
+            "Database is missing stop_live_session. Run migration 20260516130000_stop_session_finish_all.sql.",
+        },
+        { status: 503 },
+      );
+    }
+    if (error.message.includes("session not found")) {
+      return NextResponse.json({ error: "Session not found." }, { status: 404 });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  if (!data) {
-    return NextResponse.json({ error: "Session not found." }, { status: 404 });
-  }
+  const payload = data as { ok?: boolean; closesAt?: string; finishedCount?: number } | null;
+  const closesAt =
+    typeof payload?.closesAt === "string" ? payload.closesAt : new Date().toISOString();
 
-  return NextResponse.json({ ok: true, closesAt: nowIso });
+  return NextResponse.json({
+    ok: true,
+    closesAt,
+    finishedCount: typeof payload?.finishedCount === "number" ? payload.finishedCount : 0,
+  });
 }

@@ -15,6 +15,7 @@ import { parseLiveSessionStudentGet } from "@/lib/live-session-student-get";
 import { isValidJoinCodeFormat, normalizeJoinCode } from "@/lib/join-code";
 import { isNoTimeLimitSession } from "@/lib/session-window";
 import { stableStringifyStudentAnswers } from "@/lib/student-answers-json";
+import { buttonLabel, focusRing, ui } from "@/lib/ui";
 
 type ApiError = {
   error?: string;
@@ -102,8 +103,28 @@ function examProtectionHandlers(enabled: boolean) {
 }
 
 /** Debounce after the last keystroke; max-wait forces a save during continuous typing (teacher live view). */
-const AUTOSAVE_DEBOUNCE_MS = 300;
-const AUTOSAVE_MAX_WAIT_MS = 350;
+const AUTOSAVE_DEBOUNCE_MS = 200;
+const AUTOSAVE_MAX_WAIT_MS = 300;
+
+const BUILDER_AUTOSAVE_MS = 5000;
+
+function serializeBuilderFormDetails(form: Form): string {
+  return JSON.stringify({
+    title: form.title,
+    description: form.description,
+    liveTeacherFeedbackEnabled: form.liveTeacherFeedbackEnabled,
+  });
+}
+
+function serializeBuilderQuestion(question: Question): string {
+  return JSON.stringify({
+    prompt: question.prompt,
+    type: question.type,
+    options: question.options,
+    correctAnswer: question.type === "multipleChoice" ? question.correctAnswer : null,
+    points: question.points,
+  });
+}
 
 export default function Home() {
   const router = useRouter();
@@ -124,6 +145,7 @@ export default function Home() {
   const [liveTeacherFeedback, setLiveTeacherFeedback] = useState<Record<string, string>>({});
   const [statusMessage, setStatusMessage] = useState("");
   const [autosaveBanner, setAutosaveBanner] = useState("");
+  const [builderAutosaveBanner, setBuilderAutosaveBanner] = useState("");
   const typingHeartbeatTimerRef = useRef<number | undefined>(undefined);
   const lastPointerInteractionPingAtRef = useRef(0);
   const loadedExamNamePrefillRef = useRef(false);
@@ -132,6 +154,12 @@ export default function Home() {
   const suspendAutosaveRef = useRef(false);
   const autosaveTimerRef = useRef<number | undefined>(undefined);
   const lastAutosaveSentAtRef = useRef(0);
+  const pendingDirtySinceRef = useRef<number | null>(null);
+  const lastPersistedBuilderFormDetailsRef = useRef("");
+  const lastPersistedBuilderQuestionJsonByIdRef = useRef<Record<string, string>>({});
+  const builderAutosaveInFlightRef = useRef(false);
+  const builderAutosaveBannerClearRef = useRef<number | undefined>(undefined);
+  const latestActiveFormRef = useRef<Form | undefined>(undefined);
   const autosaveBannerClearRef = useRef<number | undefined>(undefined);
   const [isLoadingForms, setIsLoadingForms] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
@@ -150,6 +178,8 @@ export default function Home() {
     () => authForms.find((form) => form.id === activeFormId),
     [authForms, activeFormId],
   );
+
+  latestActiveFormRef.current = activeForm;
 
   const closesAtForStudent = joinedSession?.closesAt ?? null;
   const sessionOpen =
@@ -597,7 +627,12 @@ export default function Home() {
     const answers = latestStudentAnswersRef.current;
     const nextJson = stableStringifyStudentAnswers(answers);
     if (nextJson === lastPersistedAnswersJsonRef.current) {
+      pendingDirtySinceRef.current = null;
       return;
+    }
+
+    if (pendingDirtySinceRef.current === null) {
+      pendingDirtySinceRef.current = Date.now();
     }
 
     const runPersist = () => {
@@ -628,6 +663,7 @@ export default function Home() {
             return;
           }
           lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(currentAnswers);
+          pendingDirtySinceRef.current = null;
           if (autosaveBannerClearRef.current !== undefined) {
             window.clearTimeout(autosaveBannerClearRef.current);
           }
@@ -643,17 +679,22 @@ export default function Home() {
     };
 
     const now = Date.now();
+    const dirtyFor = pendingDirtySinceRef.current ? now - pendingDirtySinceRef.current : 0;
     const sinceLastSent = now - lastAutosaveSentAtRef.current;
     window.clearTimeout(autosaveTimerRef.current);
 
-    if (sinceLastSent >= AUTOSAVE_MAX_WAIT_MS) {
+    if (dirtyFor >= AUTOSAVE_MAX_WAIT_MS || sinceLastSent >= AUTOSAVE_MAX_WAIT_MS) {
       lastAutosaveSentAtRef.current = now;
       runPersist();
     } else {
+      const debounceMs = Math.min(
+        AUTOSAVE_DEBOUNCE_MS,
+        Math.max(0, AUTOSAVE_MAX_WAIT_MS - dirtyFor),
+      );
       autosaveTimerRef.current = window.setTimeout(() => {
         lastAutosaveSentAtRef.current = Date.now();
         runPersist();
-      }, AUTOSAVE_DEBOUNCE_MS);
+      }, debounceMs);
     }
 
     return () => {
@@ -884,31 +925,100 @@ export default function Home() {
     );
   };
 
-  const saveActiveFormDetails = async () => {
+  useEffect(() => {
     if (!activeForm) {
+      lastPersistedBuilderFormDetailsRef.current = "";
+      lastPersistedBuilderQuestionJsonByIdRef.current = {};
+      return;
+    }
+    lastPersistedBuilderFormDetailsRef.current = serializeBuilderFormDetails(activeForm);
+    const persistedQuestions: Record<string, string> = {};
+    for (const question of activeForm.questions) {
+      persistedQuestions[question.id] = serializeBuilderQuestion(question);
+    }
+    lastPersistedBuilderQuestionJsonByIdRef.current = persistedQuestions;
+  }, [activeForm?.id]);
+
+  useEffect(() => {
+    if (!activeFormId || mode !== "teacher" || !isTeacher) {
       return;
     }
 
-    setIsMutating(true);
-    setStatusMessage("");
-    try {
-      await requestJson<{ ok: true }>(`/api/forms/${activeForm.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: activeForm.title,
-          description: activeForm.description,
-          liveTeacherFeedbackEnabled: activeForm.liveTeacherFeedbackEnabled,
-        }),
-      });
-      setStatusMessage("Form saved.");
-      await syncListsAfterTeacherChange();
-    } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Failed to save form.");
-    } finally {
-      setIsMutating(false);
-    }
-  };
+    const runBuilderAutosave = async () => {
+      const form = latestActiveFormRef.current;
+      if (!form || form.id !== activeFormId || builderAutosaveInFlightRef.current) {
+        return;
+      }
+
+      const detailsJson = serializeBuilderFormDetails(form);
+      const formDetailsDirty = detailsJson !== lastPersistedBuilderFormDetailsRef.current;
+      const dirtyQuestions: Question[] = [];
+      for (const question of form.questions) {
+        const questionJson = serializeBuilderQuestion(question);
+        if (questionJson !== lastPersistedBuilderQuestionJsonByIdRef.current[question.id]) {
+          dirtyQuestions.push(question);
+        }
+      }
+
+      if (!formDetailsDirty && dirtyQuestions.length === 0) {
+        return;
+      }
+
+      builderAutosaveInFlightRef.current = true;
+      setBuilderAutosaveBanner("Saving…");
+      try {
+        if (formDetailsDirty) {
+          await requestJson<{ ok: true }>(`/api/forms/${form.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: form.title,
+              description: form.description,
+              liveTeacherFeedbackEnabled: form.liveTeacherFeedbackEnabled,
+            }),
+          });
+          lastPersistedBuilderFormDetailsRef.current = detailsJson;
+          await syncListsAfterTeacherChange();
+        }
+
+        for (const question of dirtyQuestions) {
+          await requestJson<{ ok: true }>(`/api/questions/${question.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              prompt: question.prompt,
+              type: question.type,
+              options: question.options,
+              correctAnswer: question.type === "multipleChoice" ? question.correctAnswer : null,
+              points: question.points,
+            }),
+          });
+          lastPersistedBuilderQuestionJsonByIdRef.current[question.id] =
+            serializeBuilderQuestion(question);
+        }
+
+        if (builderAutosaveBannerClearRef.current !== undefined) {
+          window.clearTimeout(builderAutosaveBannerClearRef.current);
+        }
+        setBuilderAutosaveBanner("All changes saved");
+        builderAutosaveBannerClearRef.current = window.setTimeout(() => {
+          builderAutosaveBannerClearRef.current = undefined;
+          setBuilderAutosaveBanner((prev) => (prev === "All changes saved" ? "" : prev));
+        }, 2600);
+      } catch (error) {
+        setBuilderAutosaveBanner(
+          error instanceof Error ? error.message : "Autosave failed. Changes will retry shortly.",
+        );
+      } finally {
+        builderAutosaveInFlightRef.current = false;
+      }
+    };
+
+    const id = window.setInterval(() => {
+      void runBuilderAutosave();
+    }, BUILDER_AUTOSAVE_MS);
+    return () => window.clearInterval(id);
+  }, [activeFormId, mode, isTeacher]);
 
   const addQuestion = async (type: QuestionType) => {
     if (!activeForm) {
@@ -930,33 +1040,11 @@ export default function Home() {
         ...form,
         questions: [...form.questions, data.question],
       }));
+      lastPersistedBuilderQuestionJsonByIdRef.current[data.question.id] =
+        serializeBuilderQuestion(data.question);
       await syncListsAfterTeacherChange();
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Failed to add question.");
-    } finally {
-      setIsMutating(false);
-    }
-  };
-
-  const saveQuestion = async (question: Question) => {
-    setIsMutating(true);
-    setStatusMessage("");
-    try {
-      await requestJson<{ ok: true }>(`/api/questions/${question.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: question.prompt,
-          type: question.type,
-          options: question.options,
-          correctAnswer: question.type === "multipleChoice" ? question.correctAnswer : null,
-          points: question.points,
-        }),
-      });
-      setStatusMessage("Question saved.");
-      await syncListsAfterTeacherChange();
-    } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : "Failed to save question.");
     } finally {
       setIsMutating(false);
     }
@@ -973,6 +1061,7 @@ export default function Home() {
         ...form,
         questions: form.questions.filter((question) => question.id !== questionId),
       }));
+      delete lastPersistedBuilderQuestionJsonByIdRef.current[questionId];
       setStudentAnswers((currentAnswers) => {
         const nextAnswers = { ...currentAnswers };
         delete nextAnswers[questionId];
@@ -1034,6 +1123,7 @@ export default function Home() {
     suspendAutosaveRef.current = true;
     lastPersistedAnswersJsonRef.current = "";
     lastAutosaveSentAtRef.current = 0;
+    pendingDirtySinceRef.current = null;
     if (autosaveTimerRef.current !== undefined) {
       window.clearTimeout(autosaveTimerRef.current);
       autosaveTimerRef.current = undefined;
@@ -1136,8 +1226,8 @@ export default function Home() {
 
   if (session === undefined) {
     return (
-      <div className="min-h-screen bg-zinc-100 py-10 text-zinc-900">
-        <main className="mx-auto w-full max-w-5xl rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
+      <div className="min-h-screen bg-[var(--tp-bg)] py-8 text-[var(--tp-text)] sm:py-10">
+        <main className="mx-auto w-full max-w-5xl tp-card p-8">
           <div className="animate-pulse space-y-4" aria-hidden="true">
             <div className="h-9 w-72 max-w-full rounded-md bg-zinc-200" />
             <div className="h-4 max-w-2xl rounded bg-zinc-100" />
@@ -1159,8 +1249,9 @@ export default function Home() {
     : false;
 
   const joinSessionSection = (
-    <section id="join-session" className="mb-8 rounded-xl border border-zinc-200 p-4">
-      <h2 className="mb-3 text-lg font-semibold">Join a live session</h2>
+    <section id="join-session" className="mb-8 tp-card p-6">
+      <p className={ui.sectionTitle}>Student</p>
+      <h2 className="mb-3 text-lg font-semibold tracking-tight">Join a live session</h2>
       <p className="mb-3 text-sm text-zinc-600">
         Enter the code your teacher gives you (6 characters, no spaces) and your name as it should
         appear to your teacher. If your teacher shared a join link, the code may already be filled in.
@@ -1181,7 +1272,7 @@ export default function Home() {
               maxLength={120}
               value={joinDisplayNameInput}
               onChange={(e) => setJoinDisplayNameInput(e.target.value)}
-              className="w-full rounded-md border border-zinc-300 px-3 py-2"
+              className="tp-input"
               placeholder="e.g. Jordan Lee"
               aria-describedby="join-display-name-hint"
             />
@@ -1215,7 +1306,7 @@ export default function Home() {
               !isValidJoinCodeFormat(normalizeJoinCode(joinCodeInput)) ||
               !isValidLiveSessionDisplayName(normalizeLiveSessionDisplayName(joinDisplayNameInput))
             }
-            className="justify-self-start rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 disabled:opacity-50"
+            className="justify-self-start tp-btn-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 disabled:opacity-50"
           >
             Join
           </button>
@@ -1225,7 +1316,7 @@ export default function Home() {
             onClick={leaveJoinedSession}
             className="justify-self-start rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2"
           >
-            Leave session
+            {buttonLabel("Leave session")}
           </button>
         )}
       </div>
@@ -1238,15 +1329,12 @@ export default function Home() {
     </section>
   );
 
-  const focusRing =
-    "focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2";
-
   return (
-    <div className="min-h-screen bg-zinc-100 py-10 text-zinc-900">
-      <main className="mx-auto w-full max-w-5xl rounded-2xl bg-white p-8 shadow-sm">
+    <div className={ui.page}>
+      <main className={`${ui.pageMain} tp-card p-6 sm:p-8`}>
         {urlAuthNotice ? (
           <div
-            className="mb-6 flex flex-wrap items-start justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+            className={`mb-6 ${ui.alertWarning}`}
             role="alert"
           >
             <p>{urlAuthNotice}</p>
@@ -1255,7 +1343,7 @@ export default function Home() {
               onClick={() => setUrlAuthNotice("")}
               className={`shrink-0 font-medium text-amber-900 underline ${focusRing}`}
             >
-              Dismiss
+              {buttonLabel("Dismiss")}
             </button>
           </div>
         ) : null}
@@ -1271,15 +1359,15 @@ export default function Home() {
               <div className="mt-4 flex flex-wrap gap-2">
                 <Link
                   href="/login"
-                  className={`rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white ${focusRing}`}
+                  className={`tp-btn-primary ${focusRing}`}
                 >
-                  Teacher log in
+                  {buttonLabel("Teacher log in")}
                 </Link>
                 <Link
                   href="/register"
-                  className={`rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 ${focusRing}`}
+                  className={`${ui.btnSecondary} ${focusRing}`}
                 >
-                  Teacher register
+                  {buttonLabel("Teacher register")}
                 </Link>
               </div>
             </div>
@@ -1313,7 +1401,7 @@ export default function Home() {
                       mode === "teacher" ? "bg-zinc-900 text-white" : "text-zinc-600"
                     }`}
                   >
-                    Teacher view
+                    {buttonLabel("Teacher view")}
                   </button>
                   <button
                     type="button"
@@ -1322,7 +1410,7 @@ export default function Home() {
                       mode === "student" ? "bg-zinc-900 text-white" : "text-zinc-600"
                     }`}
                   >
-                    Student view
+                    {buttonLabel("Student view")}
                   </button>
                 </div>
               ) : null}
@@ -1330,9 +1418,9 @@ export default function Home() {
                 type="button"
                 onClick={() => void logout()}
                 disabled={isMutating}
-                className={`rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 ${focusRing} disabled:opacity-50`}
+                className={`tp-btn-secondary ${focusRing} disabled:opacity-50`}
               >
-                Log out
+                {buttonLabel("Log out")}
               </button>
             </div>
           </div>
@@ -1353,16 +1441,16 @@ export default function Home() {
                 href={`/live/${encodeURIComponent(teacherLiveBanner.joinCode)}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className={`font-medium text-emerald-900 underline ${focusRing}`}
+                className={`tp-link ${focusRing}`}
               >
                 Class display (projector)
               </Link>
               <button
                 type="button"
-                className={`font-medium text-emerald-900 underline ${focusRing}`}
+                className={`tp-link ${focusRing}`}
                 onClick={() => setTeacherLiveBanner(null)}
               >
-                Dismiss banner
+                {buttonLabel("Dismiss banner")}
               </button>
             </p>
             <div className="mt-3">
@@ -1382,7 +1470,7 @@ export default function Home() {
             <p className="font-medium text-zinc-800">No form open</p>
             <p className="mt-2 max-w-md mx-auto">
               In the{" "}
-              <Link href="/dashboard" className={`font-medium text-emerald-800 underline ${focusRing}`}>
+              <Link href="/dashboard" className={`tp-link ${focusRing}`}>
                 form library
               </Link>
               , click <span className="font-medium text-zinc-800">Edit in builder</span> on a form to open it
@@ -1391,6 +1479,14 @@ export default function Home() {
           </div>
         ) : showTeacherTools && activeForm ? (
           <section className="space-y-8">
+            {builderAutosaveBanner ? (
+              <p className="tp-alert border border-[var(--tp-border)] bg-[var(--tp-bg)] text-[var(--tp-text-secondary)]">
+                {builderAutosaveBanner}
+              </p>
+            ) : (
+              <p className={`${ui.badgeSuccess} w-fit`}>Autosave on</p>
+            )}
+            <p className={ui.sectionTitle}>Form builder</p>
             <div className="space-y-3">
               <label className="block text-sm font-medium">
                 Form title
@@ -1400,7 +1496,7 @@ export default function Home() {
                   onChange={(event) =>
                     updateActiveForm((form) => ({ ...form, title: event.target.value }))
                   }
-                  className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2"
+                  className="tp-input"
                 />
               </label>
 
@@ -1411,7 +1507,7 @@ export default function Home() {
                   onChange={(event) =>
                     updateActiveForm((form) => ({ ...form, description: event.target.value }))
                   }
-                  className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2"
+                  className="tp-input"
                   rows={3}
                 />
               </label>
@@ -1436,15 +1532,6 @@ export default function Home() {
                   </span>
                 </span>
               </label>
-
-              <button
-                type="button"
-                onClick={saveActiveFormDetails}
-                disabled={isMutating}
-                className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white"
-              >
-                Save form details
-              </button>
             </div>
 
             <div className="flex flex-wrap gap-2 border-t border-zinc-200 pt-6">
@@ -1452,31 +1539,30 @@ export default function Home() {
                 type="button"
                 onClick={() => void addQuestion("multipleChoice")}
                 disabled={isMutating}
-                className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white"
+                className="tp-btn-primary"
               >
-                Add multiple choice
+                {buttonLabel("Add multiple choice")}
               </button>
               <button
                 type="button"
                 onClick={() => void addQuestion("text")}
                 disabled={isMutating}
-                className="rounded-md bg-zinc-200 px-3 py-2 text-sm font-medium text-zinc-900"
+                className={ui.btnSecondary}
               >
-                Add text area
+                {buttonLabel("Add text area")}
               </button>
             </div>
 
-            <div className="space-y-0 border-t border-zinc-200 pt-8">
+            <div className={`${ui.questionList} border-t border-[var(--tp-border)] pt-8`}>
               {activeForm.questions.length === 0 ? (
-                <p className="py-2 text-sm text-zinc-600">Add questions to this form.</p>
+                <p className={ui.empty}>Add questions to this form.</p>
               ) : (
                 activeForm.questions.map((question, index) => (
-                  <article
-                    key={question.id}
-                    className="border-b border-zinc-200 py-6 last:border-b-0"
-                  >
-                    <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-                      <h3 className="text-sm font-semibold text-zinc-500">Question {index + 1}</h3>
+                  <article key={question.id} className={ui.questionCardNested}>
+                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--tp-border)] pb-4">
+                      <h3 className="text-sm font-semibold text-[var(--tp-text-secondary)]">
+                        Question {index + 1}
+                      </h3>
                       <button
                         type="button"
                         onClick={() => void removeQuestion(question.id)}
@@ -1487,8 +1573,46 @@ export default function Home() {
                       </button>
                     </div>
 
-                    <label className="block text-sm font-medium">
-                      Prompt
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-6">
+                      <aside
+                        className={`${ui.questionScoring} order-first w-full shrink-0 sm:max-w-[11rem] lg:order-2 lg:w-40`}
+                      >
+                        <p className={ui.sectionTitle}>Scoring</p>
+                        <label className={`${ui.label} mt-2 block`}>
+                          Points
+                          <div className="mt-1.5 flex items-center gap-2">
+                            <input
+                              type="number"
+                              min={1}
+                              max={1000}
+                              value={question.points}
+                              onChange={(event) =>
+                                updateActiveForm((form) => ({
+                                  ...form,
+                                  questions: form.questions.map((formQuestion) =>
+                                    formQuestion.id === question.id
+                                      ? {
+                                          ...formQuestion,
+                                          points: Math.max(
+                                            1,
+                                            Math.min(1000, Number(event.target.value) || 1),
+                                          ),
+                                        }
+                                      : formQuestion,
+                                  ),
+                                }))
+                              }
+                              className={ui.pointsInput}
+                              aria-label={`Points for question ${index + 1}`}
+                            />
+                            <span className="text-sm font-medium text-[var(--tp-text-muted)]">pts</span>
+                          </div>
+                        </label>
+                      </aside>
+
+                      <div className="min-w-0 flex-1 space-y-4 lg:order-1">
+                        <label className={ui.label}>
+                          Prompt
                       <input
                         type="text"
                         value={question.prompt}
@@ -1502,35 +1626,12 @@ export default function Home() {
                             ),
                           }))
                         }
-                        className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2"
-                      />
-                    </label>
-                    <label className="mt-3 block text-sm font-medium">
-                      Points
-                      <input
-                        type="number"
-                        min={1}
-                        max={1000}
-                        value={question.points}
-                        onChange={(event) =>
-                          updateActiveForm((form) => ({
-                            ...form,
-                            questions: form.questions.map((formQuestion) =>
-                              formQuestion.id === question.id
-                                ? {
-                                    ...formQuestion,
-                                    points: Math.max(1, Math.min(1000, Number(event.target.value) || 1)),
-                                  }
-                                : formQuestion,
-                            ),
-                          }))
-                        }
-                        className="mt-1 w-28 rounded-md border border-zinc-300 px-3 py-2"
+                        className={ui.input}
                       />
                     </label>
 
-                    {question.type === "multipleChoice" ? (
-                      <div className="mt-4 space-y-2">
+                        {question.type === "multipleChoice" ? (
+                          <div className="space-y-2">
                         {question.options.map((option, optionIndex) => (
                           <label
                             key={`${question.id}-option-${optionIndex}`}
@@ -1567,7 +1668,7 @@ export default function Home() {
                                   }),
                                 }))
                               }
-                              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2"
+                              className="tp-input"
                             />
                           </label>
                         ))}
@@ -1591,9 +1692,9 @@ export default function Home() {
                               }),
                             }))
                           }
-                          className="rounded-md bg-zinc-200 px-3 py-2 text-sm font-medium text-zinc-900"
+                          className={ui.btnPrimary}
                         >
-                          Add option
+                          {buttonLabel("Add option")}
                         </button>
                         <label className="block text-sm font-medium">
                           Correct answer (optional)
@@ -1612,7 +1713,7 @@ export default function Home() {
                                 ),
                               }))
                             }
-                            className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2"
+                            className="tp-input"
                           >
                             <option value="">No correct answer selected</option>
                             {question.options.map((option, optionIndex) => (
@@ -1622,17 +1723,10 @@ export default function Home() {
                             ))}
                           </select>
                         </label>
+                          </div>
+                        ) : null}
                       </div>
-                    ) : null}
-
-                    <button
-                      type="button"
-                      onClick={() => void saveQuestion(question)}
-                      disabled={isMutating}
-                      className="mt-4 rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white"
-                    >
-                      Save question
-                    </button>
+                    </div>
                   </article>
                 ))
               )}
@@ -1718,10 +1812,10 @@ export default function Home() {
                 This form has no questions yet.
               </p>
             ) : (
-              <form className="space-y-4">
+              <form className={ui.questionList}>
                 {studentExamQuestions.map((question, index) => (
-                  <article key={question.id} className="rounded-xl border border-zinc-200 p-4">
-                    <h3 className="mb-2 font-semibold">
+                  <article key={question.id} className={ui.questionCardNested}>
+                    <h3 className="mb-3 text-base font-semibold text-[var(--tp-text)]">
                       {index + 1}. {question.prompt || "Untitled question"}
                     </h3>
 
@@ -1775,7 +1869,7 @@ export default function Home() {
                           }));
                         }}
                         placeholder="Type your response..."
-                        className="w-full rounded-md border border-zinc-300 px-3 py-2"
+                        className="tp-input"
                       />
                     )}
                     {question.type === "text" &&
@@ -1811,9 +1905,9 @@ export default function Home() {
                   examSuspended ||
                   examFinished
                 }
-                className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                className="tp-btn-primary disabled:opacity-50"
               >
-                Save answers
+                {buttonLabel("Save answers")}
               </button>
               {joinedSession && sessionOpen && !examSuspended && !examFinished ? (
                 <button

@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
+import { buttonLabel, ui } from "@/lib/ui";
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -35,33 +37,28 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-100 py-16 text-zinc-900">
-      <main className="mx-auto w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
-        <h1 className="text-2xl font-bold">Teacher log in</h1>
-        <p className="mt-1 text-sm text-zinc-600">
+    <div className={ui.page}>
+      <main className={`${ui.pageMainNarrow} tp-card p-8 sm:p-10`}>
+        <p className={ui.sectionTitle}>Teacher account</p>
+        <h1 className="mt-2 text-2xl font-bold tracking-tight text-[var(--tp-text)]">Log in</h1>
+        <p className="mt-2 text-sm text-[var(--tp-text-secondary)]">
           Students do not need an account to answer forms.
         </p>
-        <p className="mt-2 text-sm text-zinc-600">
+        <p className="mt-2 text-sm text-[var(--tp-text-secondary)]">
           No account?{" "}
-          <Link
-            href="/register"
-            className="font-medium text-zinc-900 underline focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2"
-          >
+          <Link href="/register" className={ui.link}>
             Register
           </Link>
         </p>
-        <p className="mt-3 text-sm text-zinc-600">
+        <p className="mt-3 text-sm text-[var(--tp-text-secondary)]">
           Joining a class with a code?{" "}
-          <Link
-            href="/#join-session"
-            className="font-medium text-zinc-900 underline focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2"
-          >
+          <Link href="/#join-session" className={ui.link}>
             Student join
           </Link>
         </p>
 
-        <form className="mt-6 space-y-4" onSubmit={onSubmit}>
-          <label className="block text-sm font-medium">
+        <form className="mt-8 space-y-5" onSubmit={onSubmit}>
+          <label className={ui.label}>
             Email
             <input
               type="email"
@@ -69,10 +66,10 @@ export default function LoginPage() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2"
+              className={ui.input}
             />
           </label>
-          <label className="block text-sm font-medium">
+          <label className={ui.label}>
             Password
             <input
               type="password"
@@ -80,16 +77,12 @@ export default function LoginPage() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2"
+              className={ui.input}
             />
           </label>
-          {error ? <p className="text-sm text-red-600">{error}</p> : null}
-          <button
-            type="submit"
-            disabled={pending}
-            className="w-full rounded-md bg-zinc-900 py-2 text-sm font-medium text-white disabled:opacity-60"
-          >
-            {pending ? "Signing in…" : "Sign in"}
+          {error ? <p className={ui.alertError}>{error}</p> : null}
+          <button type="submit" disabled={pending} className={`w-full ${ui.btnPrimary}`}>
+            {pending ? buttonLabel("Signing in…") : buttonLabel("Sign in")}
           </button>
         </form>
       </main>

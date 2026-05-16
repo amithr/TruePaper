@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import QRCode from "react-qr-code";
 
 import { copyToClipboard } from "@/lib/copy-to-clipboard";
+import { buttonLabel } from "@/lib/ui";
 
 type Props = {
   joinCode: string;
@@ -13,7 +14,7 @@ type Props = {
 };
 
 const btn =
-  "rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-1";
+  "tp-btn-secondary px-2.5 py-1.5 text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--tp-accent-ring)] focus-visible:ring-offset-1";
 
 export function SessionJoinShare({ joinCode, showQr = true, className }: Props) {
   const [copied, setCopied] = useState<"link" | "code" | null>(null);
@@ -59,10 +60,10 @@ export function SessionJoinShare({ joinCode, showQr = true, className }: Props) 
     <div className={className}>
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" onClick={() => void onCopyLink()} disabled={!joinUrl} className={btn}>
-          {copied === "link" ? "Join link copied!" : "Copy join link"}
+          {copied === "link" ? buttonLabel("Join link copied!") : buttonLabel("Copy join link")}
         </button>
         <button type="button" onClick={() => void onCopyCode()} className={btn}>
-          {copied === "code" ? "Code copied!" : "Copy code"}
+          {copied === "code" ? buttonLabel("Code copied!") : buttonLabel("Copy code")}
         </button>
         {showQr ? (
           <button
@@ -71,7 +72,7 @@ export function SessionJoinShare({ joinCode, showQr = true, className }: Props) 
             className={btn}
             aria-expanded={showQrPanel}
           >
-            {showQrPanel ? "Hide QR" : "Show QR"}
+            {showQrPanel ? buttonLabel("Hide QR") : buttonLabel("Show QR")}
           </button>
         ) : null}
       </div>

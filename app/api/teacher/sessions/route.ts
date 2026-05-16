@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { finalizeLiveSessionIfClosed } from "@/lib/live-session-finalize";
 import { isLiveParticipantActivelyEngaged } from "@/lib/participant-status";
 import { getSessionUser } from "@/lib/request-auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -52,13 +53,27 @@ export async function GET() {
   }>;
 
   const ids = sessions.map((s) => s.id);
-  const assigned = new Map<string, number>();
-  const inProgress = new Map<string, number>();
-  const finished = new Map<string, number>();
   const nowMs = Date.now();
   const windowOpenBySessionId = new Map(
     sessions.map((s) => [s.id, sessionWindowOpen(s.opens_at, s.closes_at, nowMs)]),
   );
+
+  for (const s of sessions) {
+    if (!windowOpenBySessionId.get(s.id)) {
+      try {
+        await finalizeLiveSessionIfClosed(supabase, s.id);
+      } catch (e) {
+        return NextResponse.json(
+          { error: e instanceof Error ? e.message : "Could not finalize sessions." },
+          { status: 500 },
+        );
+      }
+    }
+  }
+
+  const assigned = new Map<string, number>();
+  const inProgress = new Map<string, number>();
+  const finished = new Map<string, number>();
 
   if (ids.length > 0) {
     const { data: responseRows, error: countError } = await supabase

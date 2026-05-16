@@ -7,12 +7,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { LoadingBar } from "@/components/LoadingBar";
 import type { Form, StudentAnswers } from "@/lib/forms";
 import { isNoTimeLimitSession } from "@/lib/session-window";
-import { parseStudentAnswersJson } from "@/lib/student-answers-json";
+import { parseStudentAnswersJson, stableStringifyStudentAnswers } from "@/lib/student-answers-json";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
 import {
   parseLiveTeacherFeedback,
   type LiveTeacherFeedbackByQuestionId,
 } from "@/lib/live-teacher-feedback";
+import { buttonLabel, ui } from "@/lib/ui";
 type ApiError = { error?: string };
 
 type SnapshotJson = {
@@ -68,16 +69,33 @@ function maskDeviceId(id: string): string {
 
 function mergeSnapshotFromRow(prev: SnapshotJson, row: Record<string, unknown>): SnapshotJson {
   const answers = parseStudentAnswersJson(row.answers);
+  const answersUnchanged =
+    stableStringifyStudentAnswers(prev.answers) === stableStringifyStudentAnswers(answers);
   const dn =
     typeof row.student_display_name === "string" ? row.student_display_name.trim() : prev.student.displayName;
   const lastActivityAt =
     typeof row.last_activity_at === "string" ? row.last_activity_at : prev.student.lastActivityAt;
   const updatedAt = typeof row.updated_at === "string" ? row.updated_at : prev.updatedAt;
+  const liveTeacherFeedback = parseLiveTeacherFeedback(row.live_teacher_feedback);
+  const feedbackUnchanged =
+    JSON.stringify(prev.liveTeacherFeedback) === JSON.stringify(liveTeacherFeedback);
+
+  if (
+    answersUnchanged &&
+    feedbackUnchanged &&
+    updatedAt === prev.updatedAt &&
+    dn === prev.student.displayName &&
+    (row.suspended_at != null) === prev.student.suspended &&
+    (row.finished_at != null) === prev.student.finished &&
+    lastActivityAt === prev.student.lastActivityAt
+  ) {
+    return prev;
+  }
 
   return {
     ...prev,
     answers,
-    liveTeacherFeedback: parseLiveTeacherFeedback(row.live_teacher_feedback),
+    liveTeacherFeedback,
     student: {
       ...prev.student,
       hasJoined: true,
@@ -90,7 +108,9 @@ function mergeSnapshotFromRow(prev: SnapshotJson, row: Record<string, unknown>):
   };
 }
 
-const FALLBACK_POLL_MS = 2000;
+/** Fast poll so teachers see typing even when Supabase Realtime is unavailable. */
+const LIVE_ANSWERS_POLL_MS = 400;
+const REALTIME_CONNECT_TIMEOUT_MS = 5000;
 
 export default function WatchStudentExamPage() {
   const router = useRouter();
@@ -126,7 +146,25 @@ export default function WatchStudentExamPage() {
       const data = await requestJson<SnapshotJson>(
         `/api/forms/live-sessions/${liveSessionId}/participants/${encodeURIComponent(deviceId)}/exam-snapshot`,
       );
-      setSnapshot(data);
+      setSnapshot((prev) => {
+        if (!prev) {
+          return data;
+        }
+        const answersUnchanged =
+          stableStringifyStudentAnswers(prev.answers) === stableStringifyStudentAnswers(data.answers);
+        const feedbackUnchanged =
+          JSON.stringify(prev.liveTeacherFeedback) === JSON.stringify(data.liveTeacherFeedback);
+        const metaUnchanged =
+          prev.updatedAt === data.updatedAt &&
+          prev.student.suspended === data.student.suspended &&
+          prev.student.finished === data.student.finished &&
+          prev.student.displayName === data.student.displayName &&
+          prev.student.lastActivityAt === data.student.lastActivityAt;
+        if (answersUnchanged && feedbackUnchanged && metaUnchanged) {
+          return prev;
+        }
+        return data;
+      });
     } catch (e) {
       setSnapshot(null);
       setLoadError(e instanceof Error ? e.message : "Failed to load.");
@@ -300,14 +338,24 @@ export default function WatchStudentExamPage() {
   }, [session, snapshot?.form.id, liveSessionId, deviceIdNorm, refresh]);
 
   useEffect(() => {
-    if (realtimeMode !== "poll" || session === undefined || session === null) {
+    if (realtimeMode !== "connecting" || session === undefined || session === null) {
+      return;
+    }
+    const id = window.setTimeout(() => {
+      setRealtimeMode((mode) => (mode === "connecting" ? "poll" : mode));
+    }, REALTIME_CONNECT_TIMEOUT_MS);
+    return () => window.clearTimeout(id);
+  }, [realtimeMode, session]);
+
+  useEffect(() => {
+    if (session === undefined || session === null || !snapshot || snapshot.student.finished) {
       return;
     }
     const id = window.setInterval(() => {
       void refresh();
-    }, FALLBACK_POLL_MS);
+    }, LIVE_ANSWERS_POLL_MS);
     return () => window.clearInterval(id);
-  }, [realtimeMode, session, refresh]);
+  }, [session, snapshot?.student.finished, refresh]);
 
   useEffect(() => {
     const id = window.setInterval(() => setNowTick(Date.now()), 1000);
@@ -316,7 +364,7 @@ export default function WatchStudentExamPage() {
 
   if (session === undefined) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-100 px-6 text-zinc-600">
+      <div className="flex min-h-screen items-center justify-center bg-[var(--tp-bg)] px-6 text-zinc-600">
         <LoadingBar className="max-w-xs" />
       </div>
     );
@@ -324,7 +372,7 @@ export default function WatchStudentExamPage() {
 
   if (session === null || !snapshot) {
     return (
-      <div className="min-h-screen bg-zinc-100 py-10 text-zinc-900">
+      <div className="min-h-screen bg-[var(--tp-bg)] py-8 text-[var(--tp-text)] sm:py-10">
         <main className="mx-auto w-full max-w-3xl px-4 sm:px-6">
           <Link
             href={liveSessionId ? `/dashboard/sessions/${liveSessionId}` : "/dashboard"}
@@ -333,7 +381,7 @@ export default function WatchStudentExamPage() {
             ← Session board
           </Link>
           {loadError ? (
-            <p className="mt-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            <p className="mt-6 tp-alert tp-alert-error">
               {loadError}
             </p>
           ) : (
@@ -360,16 +408,16 @@ export default function WatchStudentExamPage() {
 
   const streamLine =
     realtimeMode === "live"
-      ? "Answers stream live over Supabase Realtime when this student autosaves."
+      ? "Answers refresh as the student types (autosave + live updates)."
       : realtimeMode === "poll"
-        ? "Realtime is unavailable (check migrations / Realtime). Falling back to periodic refresh."
+        ? "Answers refresh as the student types (autosave every few hundred ms)."
         : "Connecting to live updates…";
 
   const focusRing =
     "focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2";
 
   return (
-    <div className="min-h-screen bg-zinc-100 py-10 text-zinc-900">
+    <div className="min-h-screen bg-[var(--tp-bg)] py-8 text-[var(--tp-text)] sm:py-10">
       <main className="mx-auto w-full max-w-3xl space-y-6 px-4 sm:px-6">
         <div>
           <Link
@@ -416,12 +464,12 @@ export default function WatchStudentExamPage() {
           ) : null}
         </div>
         {statusMessage ? (
-          <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          <p className="tp-alert tp-alert-success border px-4 py-3 text-sm text-emerald-900">
             {statusMessage}
           </p>
         ) : null}
 
-        <section className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+        <section className="tp-card p-6">
           <header>
             <h2 className="text-xl font-bold">{snapshot.form.title || "Untitled form"}</h2>
             {snapshot.form.description ? (
@@ -434,31 +482,41 @@ export default function WatchStudentExamPage() {
               This form has no questions yet.
             </p>
           ) : (
-            <div className="mt-6 space-y-4">
+            <div className={`mt-6 ${ui.questionList}`}>
               {snapshot.form.questions.map((question, index) => (
-                <article key={question.id} className="rounded-xl border border-zinc-200 bg-zinc-50/50 p-4">
-                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="text-sm font-semibold text-zinc-900">
-                      {index + 1}. {question.prompt || "Untitled question"}
-                    </h3>
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs font-medium text-zinc-700">
+                <article key={question.id} className={ui.questionCardNested}>
+                  <h3 className="text-sm font-semibold text-zinc-900">
+                    {index + 1}. {question.prompt || "Untitled question"}
+                  </h3>
+
+                  <div className={`${ui.questionScoring} mt-3 mb-4 flex flex-wrap items-end gap-3`}>
+                    <div>
+                      <p className={ui.sectionTitle}>Scoring</p>
+                      <label className={`${ui.label} mt-1.5 block`}>
                         Points
-                        <input
-                          type="number"
-                          min={1}
-                          max={1000}
-                          value={pointsDraftsByQuestionId[question.id] ?? question.points}
-                          onChange={(event) =>
-                            setPointsDraftsByQuestionId((current) => ({
-                              ...current,
-                              [question.id]: Math.max(1, Math.min(1000, Number(event.target.value) || 1)),
-                            }))
-                          }
-                          className="ml-2 w-20 rounded-md border border-zinc-300 px-2 py-1 text-sm"
-                        />
+                        <div className="mt-1 flex items-center gap-2">
+                          <input
+                            type="number"
+                            min={1}
+                            max={1000}
+                            value={pointsDraftsByQuestionId[question.id] ?? question.points}
+                            onChange={(event) =>
+                              setPointsDraftsByQuestionId((current) => ({
+                                ...current,
+                                [question.id]: Math.max(
+                                  1,
+                                  Math.min(1000, Number(event.target.value) || 1),
+                                ),
+                              }))
+                            }
+                            className={ui.pointsInput}
+                          />
+                          <span className="text-sm font-medium text-[var(--tp-text-muted)]">pts</span>
+                        </div>
                       </label>
-                      <label className="text-xs font-medium text-zinc-700">
+                    </div>
+                    {question.type === "multipleChoice" ? (
+                      <label className={`${ui.label} block min-w-[8rem]`}>
                         Auto grade
                         <input
                           type="text"
@@ -468,18 +526,20 @@ export default function WatchStudentExamPage() {
                               ? "—"
                               : `${autoAwardedPointsForQuestion(question)}/${pointsDraftsByQuestionId[question.id] ?? question.points}`
                           }
-                          className="ml-2 w-24 rounded-md border border-zinc-300 bg-zinc-50 px-2 py-1 text-sm text-zinc-700"
+                          className={`${ui.input} mt-1 bg-[var(--tp-bg)] text-center font-semibold tabular-nums`}
                         />
                       </label>
-                      <button
-                        type="button"
-                        onClick={() => void saveQuestionPoints(question)}
-                        disabled={savingPointsQuestionId === question.id}
-                        className="rounded-md border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-900 disabled:opacity-50"
-                      >
-                        {savingPointsQuestionId === question.id ? "Saving…" : "Save points"}
-                      </button>
-                    </div>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => void saveQuestionPoints(question)}
+                      disabled={savingPointsQuestionId === question.id}
+                      className={`${ui.btnPrimary} px-2.5 py-1.5 text-xs disabled:opacity-50`}
+                    >
+                      {savingPointsQuestionId === question.id
+                        ? buttonLabel("Saving…")
+                        : buttonLabel("Save points")}
+                    </button>
                   </div>
 
                   {question.type === "multipleChoice" ? (
@@ -548,7 +608,9 @@ export default function WatchStudentExamPage() {
                           >
                             <span>Live feedback to student</span>
                             <span className="text-xs font-normal text-sky-800">
-                              {expandedLiveFeedbackQuestionIds.has(question.id) ? "Hide" : "Show"}
+                              {expandedLiveFeedbackQuestionIds.has(question.id)
+                                ? buttonLabel("Hide")
+                                : buttonLabel("Show")}
                             </span>
                           </button>
                           {expandedLiveFeedbackQuestionIds.has(question.id) ? (

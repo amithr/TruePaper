@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import type { StudentAnswers } from "@/lib/forms";
 import { isValidAnonymousSessionId } from "@/lib/anonymous-session";
 import { isValidLiveSessionDisplayName, normalizeLiveSessionDisplayName } from "@/lib/live-session-display-name";
+import { finalizeLiveSessionIfClosed } from "@/lib/live-session-finalize";
 import { parseLiveSessionStudentGet } from "@/lib/live-session-student-get";
 import { createSupabaseAnonServiceClient } from "@/lib/supabase/anon-service";
 
@@ -27,6 +28,14 @@ export async function GET(request: Request, { params }: Params) {
 
   try {
     const supabase = createSupabaseAnonServiceClient();
+    try {
+      await finalizeLiveSessionIfClosed(supabase, liveSessionId);
+    } catch (e) {
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : "Could not load response." },
+        { status: 500 },
+      );
+    }
     const { data, error } = await supabase.rpc("get_live_session_student_response", {
       p_live_session_id: liveSessionId,
       p_device_id: deviceId,

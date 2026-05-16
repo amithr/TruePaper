@@ -14,17 +14,15 @@ import {
   isPasswordStrong,
   validatePasswordStrength,
 } from "@/lib/password-policy";
+import { buttonLabel, ui } from "@/lib/ui";
 
 const REQUIREMENT_ROWS = getPasswordRequirementLabels();
 
-const inputBaseClass =
-  "mt-1 w-full rounded-md border px-3 py-2 transition-[box-shadow,border-color] duration-150";
-
 function passwordInputClass(met: boolean): string {
   if (met) {
-    return `${inputBaseClass} border-green-600 outline outline-2 outline-offset-0 outline-green-600`;
+    return `${ui.input} border-[var(--tp-success)] shadow-[0_0_0_3px_var(--tp-success-soft)]`;
   }
-  return `${inputBaseClass} border-zinc-300 outline-none`;
+  return ui.input;
 }
 
 export default function RegisterPage() {
@@ -100,33 +98,28 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-100 py-16 text-zinc-900">
-      <main className="mx-auto w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
-        <h1 className="text-2xl font-bold">Teacher registration</h1>
-        <p className="mt-1 text-sm text-zinc-600">
+    <div className={ui.page}>
+      <main className={`${ui.pageMainNarrow} tp-card p-8 sm:p-10`}>
+        <p className={ui.sectionTitle}>Teacher account</p>
+        <h1 className="mt-2 text-2xl font-bold tracking-tight">Create account</h1>
+        <p className="mt-2 text-sm text-[var(--tp-text-secondary)]">
           Students can fill out forms without an account. This page is for teachers who build forms.
         </p>
-        <p className="mt-2 text-sm text-zinc-600">
+        <p className="mt-2 text-sm text-[var(--tp-text-secondary)]">
           Already have an account?{" "}
-          <Link
-            href="/login"
-            className="font-medium text-zinc-900 underline focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2"
-          >
+          <Link href="/login" className={ui.link}>
             Log in
           </Link>
         </p>
-        <p className="mt-3 text-sm text-zinc-600">
+        <p className="mt-3 text-sm text-[var(--tp-text-secondary)]">
           Joining a class with a code?{" "}
-          <Link
-            href="/#join-session"
-            className="font-medium text-zinc-900 underline focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2"
-          >
+          <Link href="/#join-session" className={ui.link}>
             Student join
           </Link>
         </p>
 
-        <form className="mt-6 space-y-4" onSubmit={onSubmit}>
-          <label className="block text-sm font-medium">
+        <form className="mt-8 space-y-5" onSubmit={onSubmit}>
+          <label className={ui.label}>
             Your name
             <input
               type="text"
@@ -136,11 +129,11 @@ export default function RegisterPage() {
               maxLength={120}
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
-              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2"
+              className={ui.input}
               placeholder="e.g. Alex Morgan"
             />
           </label>
-          <label className="block text-sm font-medium">
+          <label className={ui.label}>
             Email
             <input
               type="email"
@@ -148,11 +141,11 @@ export default function RegisterPage() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2"
+              className={ui.input}
             />
           </label>
           <div>
-            <label className="block text-sm font-medium">
+            <label className={ui.label}>
               Password
               <input
                 type="password"
@@ -170,7 +163,7 @@ export default function RegisterPage() {
                 return (
                   <li
                     key={key}
-                    className={`flex items-center gap-2 ${met ? "text-green-700" : "text-zinc-500"}`}
+                    className={`flex items-center gap-2 ${met ? "text-[var(--tp-success)]" : "text-[var(--tp-text-muted)]"}`}
                   >
                     <span
                       className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border text-xs font-semibold ${
@@ -188,7 +181,7 @@ export default function RegisterPage() {
               })}
             </ul>
           </div>
-          <label className="block text-sm font-medium">
+          <label className={ui.label}>
             Confirm password
             <input
               type="password"
@@ -207,14 +200,10 @@ export default function RegisterPage() {
               </p>
             ) : null}
           </label>
-          {error ? <p className="text-sm text-red-600">{error}</p> : null}
-          {info ? <p className="text-sm text-zinc-700">{info}</p> : null}
-          <button
-            type="submit"
-            disabled={pending}
-            className="w-full rounded-md bg-zinc-900 py-2 text-sm font-medium text-white disabled:opacity-60"
-          >
-            {pending ? "Creating account…" : "Create teacher account"}
+          {error ? <p className={ui.alertError}>{error}</p> : null}
+          {info ? <p className={ui.alertSuccess}>{info}</p> : null}
+          <button type="submit" disabled={pending} className={`w-full ${ui.btnPrimary}`}>
+            {pending ? buttonLabel("Creating account…") : buttonLabel("Create teacher account")}
           </button>
         </form>
       </main>

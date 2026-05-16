@@ -9,6 +9,7 @@ import { SessionJoinShare } from "@/components/SessionJoinShare";
 import type { Form } from "@/lib/forms";
 import { isNoTimeLimitSession } from "@/lib/session-window";
 import type { TeacherSessionSummary } from "@/lib/teacher-sessions";
+import { buttonLabel, focusRing, ui } from "@/lib/ui";
 
 type ApiError = { error?: string };
 
@@ -83,9 +84,6 @@ export default function TeacherDashboardPage() {
   const [formLibraryPage, setFormLibraryPage] = useState(0);
   const [formLibrarySearch, setFormLibrarySearch] = useState("");
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
-
-  const focusRing =
-    "focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2";
 
   const refreshData = useCallback(async () => {
     setLoadError("");
@@ -304,9 +302,9 @@ export default function TeacherDashboardPage() {
 
   if (session === undefined) {
     return (
-      <div className="min-h-screen bg-zinc-100 py-10 text-zinc-900">
+      <div className="min-h-screen bg-[var(--tp-bg)] py-8 text-[var(--tp-text)] sm:py-10">
         <main className="mx-auto w-full max-w-5xl px-4 sm:px-6">
-          <div className="animate-pulse space-y-4 rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
+          <div className="animate-pulse space-y-4 tp-card p-8">
             <div className="h-8 w-56 rounded-md bg-zinc-200" />
             <div className="h-4 max-w-md rounded bg-zinc-100" />
             <div className="h-40 rounded-xl bg-zinc-100" />
@@ -319,7 +317,7 @@ export default function TeacherDashboardPage() {
 
   if (session === null) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-100 text-zinc-600">
+      <div className="flex min-h-screen items-center justify-center bg-[var(--tp-bg)] text-zinc-600">
         Redirecting…
       </div>
     );
@@ -328,74 +326,60 @@ export default function TeacherDashboardPage() {
   const name = welcomeName(session.profile, session.user.email);
 
   return (
-    <div className="min-h-screen bg-zinc-100 py-10 text-zinc-900">
-      <main className="mx-auto w-full max-w-5xl space-y-10 px-4 sm:px-6">
-        <header className="flex flex-wrap items-start justify-between gap-4 rounded-2xl border border-zinc-200 bg-white p-8 shadow-sm">
+    <div className={ui.page}>
+      <main className={`${ui.pageMain} space-y-8`}>
+        <header className="flex flex-wrap items-start justify-between gap-4 tp-card p-8">
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-emerald-700">Welcome to Truepaper</p>
-            <h1 className="mt-1 text-3xl font-bold tracking-tight">Hello, {name}</h1>
-            <p className="mt-2 max-w-2xl text-zinc-600">
+            <p className={ui.sectionTitle}>Overview</p>
+            <h1 className="mt-2 text-3xl font-bold tracking-tight">Hello, {name}</h1>
+            <p className="mt-2 max-w-2xl text-[var(--tp-text-secondary)]">
               Run live sessions so students join with a 6-character code—each session is one form window
               where many students can submit answers on their own devices.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link
-              href="/#join-session"
-              className={`rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-800 ${focusRing}`}
-            >
-              Student join page
+            <Link href="/#join-session" className={ui.btnSecondary}>
+              {buttonLabel("Student join page")}
             </Link>
-            <button
-              type="button"
-              onClick={() => void logout()}
-              className={`rounded-md border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 ${focusRing}`}
-            >
-              Log out
+            <button type="button" onClick={() => void logout()} className={ui.btnGhost}>
+              {buttonLabel("Log out")}
             </button>
           </div>
         </header>
 
         <nav
           aria-label="Dashboard sections"
-          className="flex flex-wrap items-center gap-2 rounded-xl border border-zinc-200 bg-white p-2 shadow-sm"
+          className="flex flex-wrap items-center gap-2 tp-card p-2"
         >
           <button
             type="button"
             onClick={() => scrollToSection("running-sessions")}
-            className={`rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 ${focusRing}`}
+            className={ui.pill}
           >
-            Currently running
+            {buttonLabel("Currently running")}
           </button>
-          <button
-            type="button"
-            onClick={() => scrollToSection("past-sessions")}
-            className={`rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 ${focusRing}`}
-          >
-            Past sessions
+          <button type="button" onClick={() => scrollToSection("past-sessions")} className={ui.pill}>
+            {buttonLabel("Past sessions")}
           </button>
-          <button
-            type="button"
-            onClick={() => scrollToSection("form-library")}
-            className={`rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 ${focusRing}`}
-          >
-            Form library
+          <button type="button" onClick={() => scrollToSection("form-library")} className={ui.pill}>
+            {buttonLabel("Form library")}
           </button>
         </nav>
 
         {loadError ? (
-          <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <p className="tp-alert tp-alert-error">
             {loadError}
           </p>
         ) : null}
 
         <section
           id="running-sessions"
-          className="scroll-mt-6 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm"
+          className="scroll-mt-6 tp-card p-6"
         >
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
             <div className="min-w-0 flex-1">
-              <h2 className="text-xl font-semibold">Currently running sessions</h2>
+              <p className={ui.sectionTitle}>Live</p>
+              <h2 className="text-xl font-semibold tracking-tight">Currently running sessions</h2>
             </div>
             <div className="flex flex-col items-end gap-1 text-right">
               <button
@@ -403,7 +387,7 @@ export default function TeacherDashboardPage() {
                 onClick={() => void refreshData()}
                 className={`text-sm font-medium text-zinc-700 underline ${focusRing}`}
               >
-                Refresh now
+                {buttonLabel("Refresh now")}
               </button>
               <p className="text-xs text-zinc-500">
                 Last updated{" "}
@@ -412,7 +396,7 @@ export default function TeacherDashboardPage() {
             </div>
           </div>
           {running.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-zinc-200 bg-zinc-50 px-4 py-6 text-sm text-zinc-600">
+            <p className="tp-empty">
               No sessions are open right now. Start one from your form library below.
             </p>
           ) : (
@@ -445,7 +429,7 @@ export default function TeacherDashboardPage() {
                             href={`/live/${encodeURIComponent(s.joinCode)}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className={`font-medium text-emerald-800 underline ${focusRing}`}
+                            className={`tp-link ${focusRing}`}
                           >
                             Class display (projector)
                           </Link>
@@ -473,7 +457,7 @@ export default function TeacherDashboardPage() {
                           onClick={() => void stopRunningSession(s.id)}
                           className={`rounded-md border border-red-200 bg-white px-2 py-1 text-xs font-medium text-red-800 ${focusRing}`}
                         >
-                          Stop session
+                          {buttonLabel("Stop session")}
                         </button>
                       </div>
                     </div>
@@ -498,7 +482,7 @@ export default function TeacherDashboardPage() {
                                 onClick={() => void resumeStudent(s.id, row.anonymousSessionId)}
                                 className="rounded-md bg-amber-900 px-2 py-1 text-xs font-medium text-white"
                               >
-                                Allow to continue
+                                {buttonLabel("Allow to continue")}
                               </button>
                             </li>
                           ))}
@@ -512,10 +496,11 @@ export default function TeacherDashboardPage() {
           )}
         </section>
 
-        <section id="past-sessions" className="scroll-mt-6 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-          <h2 className="text-xl font-semibold">Past sessions</h2>
+        <section id="past-sessions" className="scroll-mt-6 tp-card p-6">
+          <p className={ui.sectionTitle}>History</p>
+          <h2 className="text-xl font-semibold tracking-tight">Past sessions</h2>
           {past.length === 0 ? (
-            <p className="mt-4 rounded-lg border border-dashed border-zinc-200 bg-zinc-50 px-4 py-6 text-sm text-zinc-600">
+            <p className="mt-4 tp-empty">
               No past sessions yet.
             </p>
           ) : (
@@ -576,9 +561,9 @@ export default function TeacherDashboardPage() {
                       type="button"
                       disabled={pastSessionsPage <= 0}
                       onClick={() => setPastSessionsPage((p) => Math.max(0, p - 1))}
-                      className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+                      className={`${ui.btnSecondary} px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-40`}
                     >
-                      Previous
+                      {buttonLabel("Previous")}
                     </button>
                     <button
                       type="button"
@@ -586,9 +571,9 @@ export default function TeacherDashboardPage() {
                       onClick={() =>
                         setPastSessionsPage((p) => Math.min(pastSessionsTotalPages - 1, p + 1))
                       }
-                      className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+                      className={`${ui.btnSecondary} px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-40`}
                     >
-                      Next
+                      {buttonLabel("Next")}
                     </button>
                   </div>
                 </div>
@@ -597,10 +582,11 @@ export default function TeacherDashboardPage() {
           )}
         </section>
 
-        <section id="form-library" className="scroll-mt-6 rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+        <section id="form-library" className="scroll-mt-6 tp-card p-6">
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 className="text-xl font-semibold">Form library</h2>
+              <p className={ui.sectionTitle}>Forms</p>
+              <h2 className="text-xl font-semibold tracking-tight">Form library</h2>
               <p className="mt-1 text-sm text-zinc-600">
                 Edit questions and copy, or start a timed session without leaving the dashboard.
               </p>
@@ -620,9 +606,9 @@ export default function TeacherDashboardPage() {
                   setLoadError(e instanceof Error ? e.message : "Could not create form.");
                 }
               }}
-              className="rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white"
+              className="tp-btn-primary"
             >
-              New form
+              {buttonLabel("New form")}
             </button>
           </div>
           {forms.length > 0 ? (
@@ -640,11 +626,11 @@ export default function TeacherDashboardPage() {
             </label>
           ) : null}
           {forms.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-zinc-200 bg-zinc-50 px-4 py-6 text-sm text-zinc-600">
+            <p className="tp-empty">
               Create your first form to build questions, then start a live session for your class.
             </p>
           ) : filteredForms.length === 0 ? (
-            <p className="rounded-lg border border-dashed border-zinc-200 bg-zinc-50 px-4 py-6 text-sm text-zinc-600">
+            <p className="tp-empty">
               No forms match “{formLibrarySearch.trim()}”. Try a different search.
             </p>
           ) : (
@@ -698,21 +684,23 @@ export default function TeacherDashboardPage() {
                         onClick={() => void startSessionForForm(form.id)}
                         className="rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
                       >
-                        {startingFormId === form.id ? "Starting…" : "Start session"}
+                        {startingFormId === form.id
+                          ? buttonLabel("Starting…")
+                          : buttonLabel("Start session")}
                       </button>
                       <Link
                         href={`/?form=${form.id}`}
-                        className={`rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-800 ${focusRing}`}
+                        className={`tp-btn-secondary ${focusRing}`}
                       >
-                        Edit in builder
+                        {buttonLabel("Edit in builder")}
                       </Link>
                       <button
                         type="button"
                         disabled={deletingFormId === form.id || startingFormId === form.id}
                         onClick={() => void deleteForm(form.id, form.title)}
-                        className={`rounded-md border border-red-200 bg-white px-3 py-2 text-sm font-medium text-red-800 disabled:opacity-50 ${focusRing}`}
+                        className={`${ui.btnDanger} disabled:opacity-50 ${focusRing}`}
                       >
-                        {deletingFormId === form.id ? "Deleting…" : "Delete"}
+                        {deletingFormId === form.id ? buttonLabel("Deleting…") : buttonLabel("Delete")}
                       </button>
                     </div>
                   </li>
@@ -731,17 +719,17 @@ export default function TeacherDashboardPage() {
                       type="button"
                       disabled={formLibraryPage <= 0}
                       onClick={() => setFormLibraryPage((p) => Math.max(0, p - 1))}
-                      className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+                      className={`${ui.btnSecondary} px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-40`}
                     >
-                      Previous
+                      {buttonLabel("Previous")}
                     </button>
                     <button
                       type="button"
                       disabled={formLibraryPage >= formLibraryTotalPages - 1}
                       onClick={() => setFormLibraryPage((p) => Math.min(formLibraryTotalPages - 1, p + 1))}
-                      className="rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm font-medium text-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+                      className={`${ui.btnSecondary} px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-40`}
                     >
-                      Next
+                      {buttonLabel("Next")}
                     </button>
                   </div>
                 </div>

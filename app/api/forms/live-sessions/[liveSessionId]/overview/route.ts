@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isMissingColumnError } from "@/lib/is-missing-db-column";
+import { finalizeLiveSessionIfClosed } from "@/lib/live-session-finalize";
 import { computeLiveParticipantUiStatus } from "@/lib/participant-status";
 import { getSessionUser } from "@/lib/request-auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -59,6 +60,19 @@ export async function GET(_request: Request, { params }: Params) {
   const forms = fs.forms as { title: string } | { title: string }[] | null;
   const formTitle = Array.isArray(forms) ? forms[0]?.title : forms?.title;
 
+  const nowMs = Date.now();
+  const windowOpen = sessionWindowOpen(fs.opens_at, fs.closes_at, nowMs);
+  if (!windowOpen) {
+    try {
+      await finalizeLiveSessionIfClosed(supabase, liveSessionId);
+    } catch (e) {
+      return NextResponse.json(
+        { error: e instanceof Error ? e.message : "Could not finalize session." },
+        { status: 500 },
+      );
+    }
+  }
+
   const primary = await supabase
     .from("form_responses")
     .select(FORM_RESPONSES_OVERVIEW_SELECT_WITH_NAME)
@@ -81,9 +95,6 @@ export async function GET(_request: Request, { params }: Params) {
   if (rowsError) {
     return NextResponse.json({ error: rowsError.message }, { status: 500 });
   }
-
-  const nowMs = Date.now();
-  const windowOpen = sessionWindowOpen(fs.opens_at, fs.closes_at, nowMs);
 
   const participants = (rows ?? []).map((r) => {
     const suspendedAt = r.suspended_at as string | null;
