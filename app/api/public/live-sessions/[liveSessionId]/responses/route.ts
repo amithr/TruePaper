@@ -54,8 +54,9 @@ export async function GET(request: Request, { params }: Params) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    const { answers, suspended, finished, displayName } = parseLiveSessionStudentGet(data);
-    return NextResponse.json({ answers, suspended, finished, displayName });
+    const { answers, suspended, finished, displayName, liveTeacherFeedback } =
+      parseLiveSessionStudentGet(data);
+    return NextResponse.json({ answers, suspended, finished, displayName, liveTeacherFeedback });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Configuration error.";
     return NextResponse.json({ error: message }, { status: 500 });

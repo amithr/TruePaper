@@ -398,14 +398,6 @@ export default function WatchStudentExamPage() {
   const titleName = st.displayName || maskDeviceId(st.anonymousSessionId);
   const noTimeLimit = isNoTimeLimitSession(s.opensAt, s.closesAt);
 
-  const autoAwardedPointsForQuestion = (question: Form["questions"][number]): number | null => {
-    if (question.type !== "multipleChoice" || !question.correctAnswer) {
-      return null;
-    }
-    const maxPoints = pointsDraftsByQuestionId[question.id] ?? question.points;
-    return snapshot.answers[question.id] === question.correctAnswer ? maxPoints : 0;
-  };
-
   const streamLine =
     realtimeMode === "live"
       ? "Answers refresh as the student types (autosave + live updates)."
@@ -515,21 +507,6 @@ export default function WatchStudentExamPage() {
                         </div>
                       </label>
                     </div>
-                    {question.type === "multipleChoice" ? (
-                      <label className={`${ui.label} block min-w-[8rem]`}>
-                        Auto grade
-                        <input
-                          type="text"
-                          readOnly
-                          value={
-                            autoAwardedPointsForQuestion(question) === null
-                              ? "—"
-                              : `${autoAwardedPointsForQuestion(question)}/${pointsDraftsByQuestionId[question.id] ?? question.points}`
-                          }
-                          className={`${ui.input} mt-1 bg-[var(--tp-bg)] text-center font-semibold tabular-nums`}
-                        />
-                      </label>
-                    ) : null}
                     <button
                       type="button"
                       onClick={() => void saveQuestionPoints(question)}
@@ -559,26 +536,6 @@ export default function WatchStudentExamPage() {
                           <span>{option || `Option ${optionIndex + 1}`}</span>
                         </label>
                       ))}
-                      {question.correctAnswer ? (
-                        <div className="rounded-md border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-700">
-                          <p>
-                            Correct answer: <span className="font-medium text-zinc-900">{question.correctAnswer}</span>
-                          </p>
-                          <p className="mt-1">
-                            Auto score:{" "}
-                            <span className="font-medium text-zinc-900">
-                              {snapshot.answers[question.id] === question.correctAnswer
-                                ? pointsDraftsByQuestionId[question.id] ?? question.points
-                                : 0}
-                            </span>
-                            /{pointsDraftsByQuestionId[question.id] ?? question.points} (graded from teacher answer key)
-                          </p>
-                        </div>
-                      ) : (
-                        <p className="text-xs text-zinc-500">
-                          No correct answer set by teacher, so this question is not auto-scored.
-                        </p>
-                      )}
                     </div>
                   ) : (
                     <div className="space-y-3">

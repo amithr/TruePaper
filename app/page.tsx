@@ -573,7 +573,13 @@ export default function Home() {
           const response = await fetch(
             `/api/public/live-sessions/${joinedSession.liveSessionId}/responses?${params.toString()}`,
           );
-          const raw = (await response.json()) as { answers?: unknown; suspended?: boolean; error?: string };
+          const raw = (await response.json()) as {
+            answers?: unknown;
+            suspended?: boolean;
+            finished?: boolean;
+            liveTeacherFeedback?: unknown;
+            error?: string;
+          };
           if (!response.ok) {
             return;
           }
