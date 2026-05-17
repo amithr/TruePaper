@@ -192,6 +192,10 @@ export function StudentExamTextarea({
         emit(e.currentTarget.value);
         return;
       }
+      // Playwright `fill()` uses insertReplacementText on `input`; `change` syncs state.
+      if (ne.inputType === "insertReplacementText") {
+        return;
+      }
       applyFromDom(e.currentTarget.value, ne.inputType);
     },
     [protect, disabled, emit, applyFromDom],

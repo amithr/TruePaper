@@ -19,6 +19,17 @@ export async function loadE2eFixture(): Promise<E2eFixture | null> {
   }
 }
 
+/** Resolves when the student PUT autosave request succeeds. */
+export function waitForStudentAnswersPut(page: Page, timeout = 45_000) {
+  return page.waitForResponse(
+    (res) =>
+      res.request().method() === "PUT" &&
+      /\/api\/public\/live-sessions\/[^/]+\/responses/.test(res.url()) &&
+      res.ok(),
+    { timeout },
+  );
+}
+
 export async function joinStudentSession(
   page: Page,
   joinCode: string,
@@ -49,6 +60,41 @@ export async function joinStudentSession(
   }
 
   await expect(examAnswer).toBeEnabled({ timeout: 30_000 });
+}
+
+/** Type into the exam answer and wait until autosave persists to the server. */
+export async function typeStudentAnswerAndWaitForAutosave(
+  page: Page,
+  text: string,
+): Promise<void> {
+  const answer = page.getByTestId("student-exam-answer");
+  const status = page.getByTestId("student-autosave-status");
+
+  await expect(answer).toBeVisible();
+  await expect(answer).toBeEnabled();
+  await expect(status).toBeAttached({ timeout: 15_000 });
+
+  const saved = waitForStudentAnswersPut(page);
+  await answer.click();
+  await answer.fill(text);
+  await expect(answer).toHaveValue(text, { timeout: 15_000 });
+
+  // Playwright fill can update the DOM before React state; a small edit guarantees input events.
+  await answer.press("End");
+  await answer.press(" ");
+  await answer.press("Backspace");
+
+  await saved;
+  await expect(status).toContainText(/saved/i, { timeout: 10_000 });
+}
+
+/** Wait for the next successful student autosave after edits are already in flight. */
+export async function waitForNextStudentAutosave(page: Page, timeout = 45_000): Promise<void> {
+  const saved = waitForStudentAnswersPut(page, timeout);
+  await saved;
+  await expect(page.getByTestId("student-autosave-status")).toContainText(/saved/i, {
+    timeout: 10_000,
+  });
 }
 
 export async function readAnonymousDeviceId(page: Page): Promise<string> {

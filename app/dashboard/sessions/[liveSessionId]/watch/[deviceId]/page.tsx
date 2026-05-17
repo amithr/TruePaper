@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { LoadingBar } from "@/components/LoadingBar";
+import { StudentReviewShare } from "@/components/StudentReviewShare";
 import type { Form, StudentAnswers } from "@/lib/forms";
 import { isNoTimeLimitSession } from "@/lib/session-window";
 import { parseStudentAnswersJson, stableStringifyStudentAnswers } from "@/lib/student-answers-json";
@@ -405,6 +406,32 @@ export default function WatchStudentExamPage() {
     [persistLiveFeedbackRef],
   );
 
+  const flushAllLiveFeedbackSaves = useCallback(() => {
+    for (const questionId of Object.keys(liveFeedbackSaveTimerRef.current)) {
+      const existing = liveFeedbackSaveTimerRef.current[questionId];
+      if (existing !== undefined) {
+        window.clearTimeout(existing);
+        delete liveFeedbackSaveTimerRef.current[questionId];
+      }
+    }
+    for (const questionId of Object.keys(dirtyLiveFeedbackRef.current)) {
+      if (dirtyLiveFeedbackRef.current[questionId]) {
+        void persistLiveFeedbackRef.current(questionId);
+      }
+    }
+  }, [persistLiveFeedbackRef]);
+
+  useEffect(() => {
+    const onPageHide = () => {
+      flushAllLiveFeedbackSaves();
+    };
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      window.removeEventListener("pagehide", onPageHide);
+      flushAllLiveFeedbackSaves();
+    };
+  }, [flushAllLiveFeedbackSaves]);
+
   const saveQuestionPoints = async (question: Form["questions"][number]) => {
     const nextPoints = Math.max(1, Math.min(1000, pointsDraftsByQuestionId[question.id] ?? question.points));
     setSavingPointsQuestionId(question.id);
@@ -542,8 +569,18 @@ export default function WatchStudentExamPage() {
           >
             ← Session board
           </Link>
-          <h1 className="mt-4 text-2xl font-bold tracking-tight">Live session · {titleName}</h1>
+          <h1 className="mt-4 text-2xl font-bold tracking-tight">
+            {st.finished ? "Review submission" : "Live session"} · {titleName}
+          </h1>
           <p className="mt-1 font-mono text-xs text-zinc-600">Device {maskDeviceId(st.anonymousSessionId)}</p>
+          {st.hasJoined ? (
+            <div className="mt-3">
+              <StudentReviewShare
+                liveSessionId={liveSessionId}
+                deviceId={deviceIdNorm}
+              />
+            </div>
+          ) : null}
           {snapshot.studentResumeCode ? (
             <p className="mt-2 text-sm text-zinc-700">
               Student rejoin code:{" "}
@@ -680,15 +717,29 @@ export default function WatchStudentExamPage() {
                         placeholder="No response yet."
                         className="w-full resize-y rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
                       />
-                      {snapshot.form.liveTeacherFeedbackEnabled ? (
+                      {(() => {
+                        const savedMsg = snapshot.liveTeacherFeedback[question.id] ?? "";
+                        const draftMsg = liveFeedbackDraftsByQuestionId[question.id] ?? "";
+                        const showFeedbackEditor =
+                          snapshot.form.liveTeacherFeedbackEnabled ||
+                          savedMsg.trim().length > 0 ||
+                          draftMsg.trim().length > 0;
+                        if (!showFeedbackEditor) {
+                          return null;
+                        }
+                        const feedbackHint =
+                          st.finished || !s.sessionOpen
+                            ? "Autosaved · included on the student results link"
+                            : "Autosaved · visible on their screen";
+                        return (
                         <div className="rounded-md border border-sky-200 bg-sky-50/80 px-3 py-3">
                           <label className="block text-sm font-medium text-sky-950">
-                            Live feedback to student
+                            Teacher feedback
                             {liveFeedbackSavingQuestionIds.has(question.id) ? (
                               <span className="ml-2 text-xs font-normal text-sky-800">Saving…</span>
                             ) : (
                               <span className="ml-2 text-xs font-normal text-sky-800">
-                                Autosaved · visible on their screen
+                                {feedbackHint}
                               </span>
                             )}
                             <textarea
@@ -708,12 +759,13 @@ export default function WatchStudentExamPage() {
                                 broadcastFeedbackDraft(question.id, next);
                                 scheduleLiveFeedbackSave(question.id);
                               }}
-                              placeholder="Students see this under their answer as you type…"
+                              placeholder="Comment appears under the student's answer…"
                               className="mt-2 w-full rounded-md border border-sky-300 bg-white px-3 py-2 text-sm text-zinc-900"
                             />
                           </label>
                         </div>
-                      ) : null}
+                        );
+                      })()}
                     </div>
                   )}
                 </article>

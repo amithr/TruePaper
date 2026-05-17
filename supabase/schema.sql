@@ -57,6 +57,7 @@ create table if not exists public.form_responses (
   student_display_name text,
   live_teacher_feedback jsonb not null default '{}'::jsonb,
   student_resume_code text,
+  student_review_token text,
   updated_at timestamptz not null default now(),
   constraint form_responses_responder_chk check (
     (student_id is not null and anonymous_session_id is null and live_session_id is null)
@@ -87,6 +88,10 @@ create unique index if not exists form_responses_live_device_uidx
 create unique index if not exists form_responses_student_resume_code_uidx
   on public.form_responses (student_resume_code)
   where student_resume_code is not null;
+
+create unique index if not exists form_responses_student_review_token_uidx
+  on public.form_responses (student_review_token)
+  where student_review_token is not null;
 
 create index if not exists form_responses_form_id_idx on public.form_responses (form_id);
 
@@ -1246,10 +1251,8 @@ begin
   select fs.form_id
   into fid
   from public.form_sessions fs
-  join public.forms f on f.id = fs.form_id
   where fs.id = p_live_session_id
-    and fs.created_by = uid
-    and coalesce(f.live_teacher_feedback_enabled, false);
+    and fs.created_by = uid;
 
   if fid is null then
     raise exception 'not allowed';
@@ -1293,6 +1296,169 @@ begin
     and student_id is null;
 
   return existing;
+end;
+$$;
+
+create or replace function public.generate_student_review_token()
+returns text
+language plpgsql
+volatile
+set search_path = public
+as $$
+declare
+  alphabet constant text := '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+  result text := '';
+  i integer;
+  tries integer := 0;
+  ch integer;
+begin
+  loop
+    result := '';
+    for i in 1..12 loop
+      ch := 1 + floor(random() * length(alphabet))::integer;
+      result := result || substr(alphabet, ch, 1);
+    end loop;
+    exit when not exists (
+      select 1 from public.form_responses fr where fr.student_review_token = result
+    );
+    tries := tries + 1;
+    if tries > 100 then
+      raise exception 'could not allocate student review token';
+    end if;
+  end loop;
+  return result;
+end;
+$$;
+
+create or replace function public.ensure_student_review_token(
+  p_live_session_id uuid,
+  p_device_id text
+)
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  uid uuid;
+  code text;
+begin
+  uid := auth.uid();
+  if uid is null then
+    raise exception 'not authenticated';
+  end if;
+
+  if p_device_id is null
+     or lower(p_device_id) !~ '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then
+    raise exception 'invalid device id';
+  end if;
+
+  if not exists (
+    select 1
+    from public.form_sessions fs
+    where fs.id = p_live_session_id
+      and fs.created_by = uid
+  ) then
+    raise exception 'not allowed';
+  end if;
+
+  select fr.student_review_token into code
+  from public.form_responses fr
+  where fr.live_session_id = p_live_session_id
+    and lower(fr.anonymous_session_id) = lower(p_device_id)
+    and fr.student_id is null;
+
+  if not found then
+    raise exception 'student response not found';
+  end if;
+
+  if code is not null then
+    return code;
+  end if;
+
+  code := public.generate_student_review_token();
+
+  update public.form_responses
+  set student_review_token = code
+  where live_session_id = p_live_session_id
+    and lower(anonymous_session_id) = lower(p_device_id)
+    and student_id is null
+    and student_review_token is null;
+
+  select fr.student_review_token into code
+  from public.form_responses fr
+  where fr.live_session_id = p_live_session_id
+    and lower(fr.anonymous_session_id) = lower(p_device_id)
+    and fr.student_id is null;
+
+  return code;
+end;
+$$;
+
+create or replace function public.get_student_review_by_token(p_token text)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  tok text := upper(trim(coalesce(p_token, '')));
+  fid uuid;
+  payload jsonb;
+  qjson jsonb;
+begin
+  if length(tok) < 8 then
+    return null;
+  end if;
+
+  select fs.form_id
+  into fid
+  from public.form_responses fr
+  inner join public.form_sessions fs on fs.id = fr.live_session_id
+  where fr.student_review_token = tok
+    and fr.student_id is null
+  limit 1;
+
+  if fid is null then
+    return null;
+  end if;
+
+  select jsonb_agg(
+    jsonb_build_object(
+      'id', q.id,
+      'prompt', q.prompt,
+      'type', q.question_type,
+      'options', coalesce(q.options, '[]'::jsonb),
+      'points', q.points,
+      'displayOrder', q.display_order
+    )
+    order by q.display_order
+  )
+  into qjson
+  from public.questions q
+  where q.form_id = fid;
+
+  select jsonb_build_object(
+    'formTitle', coalesce(f.title, 'Form'),
+    'formDescription', coalesce(f.description, ''),
+    'displayName', coalesce(nullif(trim(fr.student_display_name), ''), ''),
+    'finished', fr.finished_at is not null,
+    'sessionOpen',
+      timezone('utc', now()) >= fs.opens_at
+      and timezone('utc', now()) <= fs.closes_at,
+    'questions', coalesce(qjson, '[]'::jsonb),
+    'answers', coalesce(fr.answers, '{}'::jsonb),
+    'liveTeacherFeedback', coalesce(fr.live_teacher_feedback, '{}'::jsonb)
+  )
+  into payload
+  from public.form_responses fr
+  inner join public.form_sessions fs on fs.id = fr.live_session_id
+  inner join public.forms f on f.id = fs.form_id
+  where fr.student_review_token = tok
+    and fr.student_id is null;
+
+  return payload;
 end;
 $$;
 
@@ -1467,12 +1633,16 @@ revoke all on function public.set_live_teacher_feedback(uuid, text, uuid, text) 
 revoke all on function public.ensure_student_resume_code(uuid, text) from public;
 revoke all on function public.lookup_student_resume_code(text) from public;
 revoke all on function public.get_student_live_teacher_feedback(uuid, text) from public;
+revoke all on function public.ensure_student_review_token(uuid, text) from public;
+revoke all on function public.get_student_review_by_token(text) from public;
 revoke all on function public.teacher_clear_live_session_student_suspension(uuid, text) from public;
 
 grant execute on function public.lookup_join_code(text) to anon, authenticated, service_role;
 grant execute on function public.ensure_student_resume_code(uuid, text) to anon, authenticated, service_role;
 grant execute on function public.lookup_student_resume_code(text) to anon, authenticated, service_role;
 grant execute on function public.get_student_live_teacher_feedback(uuid, text) to anon, authenticated, service_role;
+grant execute on function public.ensure_student_review_token(uuid, text) to authenticated, service_role;
+grant execute on function public.get_student_review_by_token(text) to anon, authenticated, service_role;
 grant execute on function public.get_live_session_public_board(text) to anon, authenticated, service_role;
 grant execute on function public.get_live_session_student_response(uuid, text) to anon, authenticated, service_role;
 grant execute on function public.save_live_session_student_response(uuid, text, jsonb, text) to anon, authenticated, service_role;

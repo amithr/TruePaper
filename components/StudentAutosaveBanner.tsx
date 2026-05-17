@@ -19,17 +19,13 @@ export const StudentAutosaveBanner = forwardRef<StudentAutosaveBannerHandle, Pro
       setMessage,
     }));
 
-    if (!message) {
-      return null;
-    }
-
     return (
       <p
         data-testid="student-autosave-status"
         className={className ?? "text-sm text-zinc-600"}
         aria-live="polite"
       >
-        {message}
+        {message || "\u00a0"}
       </p>
     );
   },

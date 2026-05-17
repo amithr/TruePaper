@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { LoadingBar } from "@/components/LoadingBar";
 import { SessionJoinShare } from "@/components/SessionJoinShare";
+import { StudentReviewShare } from "@/components/StudentReviewShare";
 import type { LiveParticipantUiStatus } from "@/lib/participant-status";
 import { isNoTimeLimitSession } from "@/lib/session-window";
 import {
@@ -367,7 +368,8 @@ export default function LiveSessionDetailPage() {
                     <th className="py-2 pr-4 font-medium">Device</th>
                     <th className="py-2 pr-4 font-medium">Status</th>
                     <th className="py-2 pr-4 font-medium">Last activity</th>
-                    <th className="py-2 pr-4 font-medium">Live exam</th>
+                    <th className="py-2 pr-4 font-medium">Exam</th>
+                    <th className="py-2 pr-4 font-medium">Results link</th>
                     <th className="py-2 font-medium">Actions</th>
                   </tr>
                 </thead>
@@ -416,8 +418,15 @@ export default function LiveSessionDetailPage() {
                           onClick={(event) => event.stopPropagation()}
                           className="text-sm font-medium text-sky-800 underline decoration-sky-300 underline-offset-2 hover:decoration-sky-600"
                         >
-                          Watch live
+                          {p.status === "finished" ? "View submission" : "Watch live"}
                         </Link>
+                      </td>
+                      <td className="py-3 pr-4" onClick={(event) => event.stopPropagation()}>
+                        <StudentReviewShare
+                          liveSessionId={liveSessionId}
+                          deviceId={p.anonymousSessionId}
+                          disabled={!p.displayName && p.status !== "finished"}
+                        />
                       </td>
                       <td className="py-3">
                         {p.status === "blocked" ? (

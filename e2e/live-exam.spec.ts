@@ -7,6 +7,8 @@ import {
   longStudentAnswer,
   readAnonymousDeviceId,
   teacherFeedbackMessage,
+  typeStudentAnswerAndWaitForAutosave,
+  waitForStudentAnswersPut,
 } from "./helpers";
 
 const teacherAuth = path.join(__dirname, ".auth", "teacher.json");
@@ -28,21 +30,18 @@ test.describe("Live exam E2E", () => {
     deviceId = await readAnonymousDeviceId(page);
 
     const answer = page.getByTestId("student-exam-answer");
-    await answer.fill(longStudentAnswer);
-    await expect(answer).toHaveValue(longStudentAnswer, { timeout: 15_000 });
-    await expect(page.getByTestId("student-autosave-status")).toContainText(/saved/i, {
-      timeout: 30_000,
-    });
+    await typeStudentAnswerAndWaitForAutosave(page, longStudentAnswer);
 
-    await page.waitForTimeout(3500);
     await expect(answer).toHaveValue(longStudentAnswer);
 
-    await answer.press("End");
     const withTail = `${longStudentAnswer} Extra tail after autosave.`;
+    const tailSave = waitForStudentAnswersPut(page);
+    await answer.press("End");
     await answer.pressSequentially(" Extra tail after autosave.", { delay: 5 });
     await expect(answer).toHaveValue(withTail, { timeout: 15_000 });
+    await tailSave;
     await expect(page.getByTestId("student-autosave-status")).toContainText(/saved/i, {
-      timeout: 30_000,
+      timeout: 10_000,
     });
   });
 

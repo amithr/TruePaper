@@ -6,10 +6,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { LoadingBar } from "@/components/LoadingBar";
 import { SessionJoinShare } from "@/components/SessionJoinShare";
-import {
-  StudentAutosaveBanner,
-  type StudentAutosaveBannerHandle,
-} from "@/components/StudentAutosaveBanner";
 import { StudentExamReconnect } from "@/components/StudentExamReconnect";
 import { StudentExamTextarea } from "@/components/StudentExamTextarea";
 import { StudentTeacherFeedbackCard } from "@/components/StudentTeacherFeedbackCard";
@@ -217,8 +213,15 @@ export default function Home() {
   const autosaveTimerRef = useRef<number | undefined>(undefined);
   const lastAutosaveSentAtRef = useRef(0);
   const pendingDirtySinceRef = useRef<number | null>(null);
-  const autosaveBannerRef = useRef<StudentAutosaveBannerHandle>(null);
+  const autosaveStatusElRef = useRef<HTMLParagraphElement>(null);
   const autosaveBannerClearRef = useRef<number | undefined>(undefined);
+  const setAutosaveStatus = useCallback((message: string) => {
+    const el = autosaveStatusElRef.current;
+    if (!el) {
+      return;
+    }
+    el.textContent = message || "\u00a0";
+  }, []);
   const lastPersistedBuilderFormDetailsRef = useRef("");
   const lastPersistedBuilderQuestionJsonByIdRef = useRef<Record<string, string>>({});
   const builderAutosaveInFlightRef = useRef(false);
@@ -761,12 +764,12 @@ export default function Home() {
     const currentJson = stableStringifyStudentAnswers(currentAnswers);
     if (currentJson === lastPersistedAnswersJsonRef.current) {
       pendingDirtySinceRef.current = null;
-      autosaveBannerRef.current?.setMessage("");
+      setAutosaveStatus("");
       return;
     }
 
     try {
-      autosaveBannerRef.current?.setMessage("Saving…");
+      setAutosaveStatus("Saving…");
       await requestJson<{ ok: true }>(
         `/api/public/live-sessions/${joinedSession.liveSessionId}/responses`,
         {
@@ -784,13 +787,13 @@ export default function Home() {
       if (autosaveBannerClearRef.current !== undefined) {
         window.clearTimeout(autosaveBannerClearRef.current);
       }
-      autosaveBannerRef.current?.setMessage("All changes saved");
+      setAutosaveStatus("All changes saved");
       autosaveBannerClearRef.current = window.setTimeout(() => {
         autosaveBannerClearRef.current = undefined;
-        autosaveBannerRef.current?.setMessage("");
+        setAutosaveStatus("");
       }, 2600);
     } catch {
-      autosaveBannerRef.current?.setMessage("Autosave failed. Use Save answers.");
+      setAutosaveStatus("Autosave failed. Use Save answers.");
     }
   }, [
     joinedSession,
@@ -799,6 +802,7 @@ export default function Home() {
     sessionOpen,
     examSuspended,
     examFinished,
+    setAutosaveStatus,
   ]);
 
   const scheduleStudentAutosave = useCallback(() => {
@@ -814,7 +818,14 @@ export default function Home() {
       return;
     }
 
-    const nextJson = stableStringifyStudentAnswers(latestStudentAnswersRef.current);
+    const textQuestions = joinedSession.form.questions.filter((q) => q.type === "text");
+    const mergedForDirtyCheck = mergeStudentAnswersForSave(
+      latestStudentAnswersRef.current,
+      examFormRef.current,
+      textQuestions,
+    );
+    latestStudentAnswersRef.current = mergedForDirtyCheck;
+    const nextJson = stableStringifyStudentAnswers(mergedForDirtyCheck);
     if (nextJson === lastPersistedAnswersJsonRef.current) {
       pendingDirtySinceRef.current = null;
       return;
@@ -824,7 +835,7 @@ export default function Home() {
       pendingDirtySinceRef.current = Date.now();
     }
 
-    autosaveBannerRef.current?.setMessage("Saving…");
+    setAutosaveStatus("Saving…");
 
     const now = Date.now();
     const dirtyFor = now - (pendingDirtySinceRef.current ?? now);
@@ -852,6 +863,7 @@ export default function Home() {
     examSuspended,
     examFinished,
     persistStudentAnswers,
+    setAutosaveStatus,
   ]);
 
   const broadcastAnswerDraft = useThrottledCallback(
@@ -911,6 +923,21 @@ export default function Home() {
       }
     }
   }, [sessionOpen, examSuspended, examFinished]);
+
+  useEffect(() => {
+    if (!studentAnswersHydrated || !joinedSession || !sessionOpen || examSuspended || examFinished) {
+      return;
+    }
+    scheduleStudentAutosave();
+  }, [
+    examAnswers,
+    studentAnswersHydrated,
+    joinedSession,
+    sessionOpen,
+    examSuspended,
+    examFinished,
+    scheduleStudentAutosave,
+  ]);
 
   useEffect(() => {
     if (!joinedSession || !anonymousSessionId || !activeExamDisplayName) {
@@ -1303,7 +1330,7 @@ export default function Home() {
       });
       setLiveTeacherFeedbackEnabledLive(data.form.liveTeacherFeedbackEnabled);
       latestStudentAnswersRef.current = {};
-      lastPersistedAnswersJsonRef.current = "";
+      lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers({});
       pendingDirtySinceRef.current = null;
       studentResponseLoadKeyRef.current = null;
       setExamAnswers({});
@@ -1355,14 +1382,14 @@ export default function Home() {
         /* ignore */
       }
       latestStudentAnswersRef.current = {};
-      lastPersistedAnswersJsonRef.current = "";
+      lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers({});
       pendingDirtySinceRef.current = null;
       studentResponseLoadKeyRef.current = null;
       setExamAnswers({});
       setStudentAnswersHydrated(false);
       setExamSuspended(false);
       setExamFinished(false);
-      autosaveBannerRef.current?.setMessage("");
+      setAutosaveStatus("");
       setStatusMessage("You are in the live session.");
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Could not join that session.");
@@ -1413,7 +1440,7 @@ export default function Home() {
       window.clearTimeout(autosaveTimerRef.current);
       autosaveTimerRef.current = undefined;
     }
-    autosaveBannerRef.current?.setMessage("");
+    setAutosaveStatus("");
     studentResponseLoadKeyRef.current = null;
     setExamAnswers({});
     setStudentAnswersHydrated(false);
@@ -1457,7 +1484,7 @@ export default function Home() {
       );
       lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(answers);
       pendingDirtySinceRef.current = null;
-      autosaveBannerRef.current?.setMessage("All changes saved");
+      setAutosaveStatus("All changes saved");
       setStatusMessage("Answers saved.");
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Failed to save answers.");
@@ -1813,7 +1840,9 @@ export default function Home() {
           </div>
         ) : null}
 
-        {(session && !showTeacherTools) || (isTeacher && mode === "student") ? joinSessionSection : null}
+        {(!showTeacherTools && session !== undefined) || (isTeacher && mode === "student")
+          ? joinSessionSection
+          : null}
 
         {isLoadingForms && showTeacherTools ? (
           <LoadingBar className="max-w-xs" label="Loading forms" />
@@ -2261,7 +2290,14 @@ export default function Home() {
                 </button>
               ) : null}
             </div>
-            <StudentAutosaveBanner ref={autosaveBannerRef} className="mt-2 text-xs text-zinc-600" />
+            <p
+              ref={autosaveStatusElRef}
+              data-testid="student-autosave-status"
+              aria-live="polite"
+              className="mt-2 text-xs text-zinc-600"
+            >
+              {"\u00a0"}
+            </p>
           </section>
         ) : !showTeacherTools ? (
           <p className="text-zinc-600">
