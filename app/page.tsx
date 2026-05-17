@@ -39,7 +39,9 @@ import { requestJson } from "@/lib/request-json";
 import { stableStringifyStudentAnswers } from "@/lib/student-answers-json";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
 import { usePollingRefresh } from "@/lib/use-polling-refresh";
+import { notifyTeacherWatchAnswerDraft } from "@/lib/notify-teacher-watch-answer-draft";
 import { useStudentExamRealtime } from "@/lib/use-student-exam-realtime";
+import { useThrottledCallback } from "@/lib/use-throttled-callback";
 import { buttonLabel, focusRing, ui } from "@/lib/ui";
 
 type SessionUser = {
@@ -668,7 +670,7 @@ export default function Home() {
 
   const applyStudentExamRemotePatch = useCallback((patch: StudentExamRemotePatch) => {
     if (patch.liveTeacherFeedback !== undefined) {
-      setLiveTeacherFeedback(patch.liveTeacherFeedback);
+      setLiveTeacherFeedback((prev) => ({ ...prev, ...patch.liveTeacherFeedback }));
       if (hasLiveTeacherFeedbackContent(patch.liveTeacherFeedback)) {
         setLiveTeacherFeedbackEnabledLive(true);
       }
@@ -853,17 +855,33 @@ export default function Home() {
     persistStudentAnswers,
   ]);
 
+  const broadcastAnswerDraft = useThrottledCallback(
+    (liveSessionId: string, deviceId: string, answers: StudentAnswers) => {
+      void notifyTeacherWatchAnswerDraft(liveSessionId, deviceId, answers);
+    },
+    180,
+  );
+
   const patchTextAnswer = useCallback(
     (questionId: string, next: string) => {
       setExamAnswers((prev) => {
         const updated = { ...prev, [questionId]: next };
         latestStudentAnswersRef.current = updated;
+        if (joinedSession && anonymousSessionId) {
+          broadcastAnswerDraft(joinedSession.liveSessionId, anonymousSessionId, updated);
+        }
         return updated;
       });
       scheduleTypingHeartbeat();
       scheduleStudentAutosave();
     },
-    [scheduleTypingHeartbeat, scheduleStudentAutosave],
+    [
+      scheduleTypingHeartbeat,
+      scheduleStudentAutosave,
+      joinedSession,
+      anonymousSessionId,
+      broadcastAnswerDraft,
+    ],
   );
 
   const patchChoiceAnswer = useCallback(
@@ -871,12 +889,19 @@ export default function Home() {
       setExamAnswers((prev) => {
         const updated = { ...prev, [questionId]: next };
         latestStudentAnswersRef.current = updated;
+        if (joinedSession && anonymousSessionId) {
+          void notifyTeacherWatchAnswerDraft(
+            joinedSession.liveSessionId,
+            anonymousSessionId,
+            updated,
+          );
+        }
         return updated;
       });
       scheduleTypingHeartbeat();
       scheduleStudentAutosave();
     },
-    [scheduleTypingHeartbeat, scheduleStudentAutosave],
+    [scheduleTypingHeartbeat, scheduleStudentAutosave, joinedSession, anonymousSessionId],
   );
 
   useEffect(() => {

@@ -3,10 +3,12 @@
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { useEffect } from "react";
 
+import { STUDENT_EXAM_FEEDBACK_DRAFT_EVENT } from "@/lib/broadcast-exam-drafts";
 import {
   STUDENT_EXAM_BROADCAST_EVENT,
   studentExamChannelName,
 } from "@/lib/student-exam-channel";
+import { parseLiveTeacherFeedback } from "@/lib/live-teacher-feedback";
 import { studentExamRemotePatchFromRow, type StudentExamRemotePatch } from "@/lib/student-exam-remote-patch";
 import { isAnswersOnlyFormResponseUpdate } from "@/lib/student-exam-realtime-filter";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
@@ -86,6 +88,26 @@ export function useStudentExamRealtime({
             if (patch.liveTeacherFeedback !== undefined) {
               onBroadcastReadyRef.current?.();
             }
+          }
+        })
+        .on("broadcast", { event: STUDENT_EXAM_FEEDBACK_DRAFT_EVENT }, ({ payload }) => {
+          if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+            return;
+          }
+          const row = payload as Record<string, unknown>;
+          if (typeof row.questionId === "string") {
+            const message = typeof row.message === "string" ? row.message : "";
+            applyPatch({
+              liveTeacherFeedback: { [row.questionId]: message },
+            });
+            onBroadcastReadyRef.current?.();
+            return;
+          }
+          if (row.liveTeacherFeedback !== undefined) {
+            applyPatch({
+              liveTeacherFeedback: parseLiveTeacherFeedback(row.liveTeacherFeedback),
+            });
+            onBroadcastReadyRef.current?.();
           }
         })
         .subscribe((status) => {

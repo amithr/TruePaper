@@ -20,10 +20,16 @@ export async function GET(request: Request) {
 
   const summaryOnly = new URL(request.url).searchParams.get("summary") === "1";
 
-  const { data: forms, error: formsError } = await supabase
+  let formsQuery = supabase
     .from("forms")
     .select("id, title, description, created_by, live_teacher_feedback_enabled")
     .order("created_at", { ascending: true });
+
+  if (session.profile?.role === "teacher") {
+    formsQuery = formsQuery.eq("created_by", session.user.id);
+  }
+
+  const { data: forms, error: formsError } = await formsQuery;
 
   if (formsError) {
     return NextResponse.json({ error: formsError.message }, { status: 500 });

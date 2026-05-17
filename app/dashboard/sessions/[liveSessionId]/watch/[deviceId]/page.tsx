@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { LoadingBar } from "@/components/LoadingBar";
 import type { Form, StudentAnswers } from "@/lib/forms";
@@ -12,11 +12,14 @@ import {
   LIVE_SESSION_OVERVIEW_EVENT,
   liveSessionOverviewChannelName,
 } from "@/lib/broadcast-live-session-overview";
+import { TEACHER_WATCH_ANSWER_DRAFT_EVENT } from "@/lib/broadcast-exam-drafts";
 import {
   TEACHER_WATCH_BROADCAST_EVENT,
   teacherWatchChannelName,
 } from "@/lib/broadcast-teacher-watch";
 import { notifyStudentExamFeedback } from "@/lib/notify-student-exam-feedback";
+import { notifyStudentFeedbackDraft } from "@/lib/notify-student-feedback-draft";
+import { useThrottledCallback } from "@/lib/use-throttled-callback";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
 import { useBroadcastRefresh } from "@/lib/use-broadcast-refresh";
 import { usePollingRefresh } from "@/lib/use-polling-refresh";
@@ -137,6 +140,7 @@ export default function WatchStudentExamPage() {
   const [liveFeedbackSavingQuestionIds, setLiveFeedbackSavingQuestionIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const [liveAnswerDrafts, setLiveAnswerDrafts] = useState<StudentAnswers>({});
   const liveFeedbackSaveTimerRef = useRef<Record<string, number>>({});
   const liveFeedbackSavingQuestionIdsRef = useLatestRef(liveFeedbackSavingQuestionIds);
   /** True while local text differs from last successful server save for that question. */
@@ -160,6 +164,23 @@ export default function WatchStudentExamPage() {
     }
     return merged;
   };
+
+  const displayAnswers = useMemo(() => {
+    if (!snapshot) {
+      return {} as StudentAnswers;
+    }
+    return { ...snapshot.answers, ...liveAnswerDrafts };
+  }, [snapshot, liveAnswerDrafts]);
+
+  const broadcastFeedbackDraft = useThrottledCallback(
+    (questionId: string, message: string) => {
+      if (!liveSessionId || !deviceIdNorm) {
+        return;
+      }
+      void notifyStudentFeedbackDraft(liveSessionId, deviceIdNorm, questionId, message);
+    },
+    180,
+  );
 
   const refreshRef = useLatestRef(async () => {
     if (!liveSessionId || !deviceId) {
@@ -235,13 +256,34 @@ export default function WatchStudentExamPage() {
     });
   }, [session, refreshRef]);
 
-  useBroadcastRefresh(
-    session !== undefined && session !== null && Boolean(liveSessionId && deviceIdNorm),
-    [teacherWatchChannelName(liveSessionId, deviceIdNorm)],
-    TEACHER_WATCH_BROADCAST_EVENT,
-    () => void refreshRef.current(),
-    350,
-  );
+  useEffect(() => {
+    if (session === undefined || session === null || !liveSessionId || !deviceIdNorm) {
+      return;
+    }
+
+    let cancelled = false;
+    const supabase = createBrowserSupabaseClient();
+    const channel = supabase
+      .channel(teacherWatchChannelName(liveSessionId, deviceIdNorm))
+      .on("broadcast", { event: TEACHER_WATCH_BROADCAST_EVENT }, () => {
+        void refreshRef.current();
+      })
+      .on("broadcast", { event: TEACHER_WATCH_ANSWER_DRAFT_EVENT }, ({ payload }) => {
+        if (cancelled || !payload || typeof payload !== "object" || Array.isArray(payload)) {
+          return;
+        }
+        const answers = (payload as { answers?: unknown }).answers;
+        if (answers && typeof answers === "object" && !Array.isArray(answers)) {
+          setLiveAnswerDrafts(answers as StudentAnswers);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      cancelled = true;
+      void supabase.removeChannel(channel);
+    };
+  }, [session, liveSessionId, deviceIdNorm, refreshRef]);
 
   useBroadcastRefresh(
     session !== undefined && session !== null && Boolean(liveSessionId),
@@ -537,7 +579,7 @@ export default function WatchStudentExamPage() {
             <p className="font-medium">Student has submitted. Answers are read-only.</p>
           ) : (
             <p className="font-medium">
-              Live view — text answers update as the student types (autosave every few hundred ms).
+              Live view — answers and your feedback appear as you and the student type.
             </p>
           )}
           {st.lastActivityAt ? (
@@ -621,7 +663,7 @@ export default function WatchStudentExamPage() {
                             type="radio"
                             name={`watch-${question.id}`}
                             value={option}
-                            checked={snapshot.answers[question.id] === option}
+                            checked={displayAnswers[question.id] === option}
                             disabled
                           />
                           <span>{option || `Option ${optionIndex + 1}`}</span>
@@ -634,7 +676,7 @@ export default function WatchStudentExamPage() {
                         readOnly
                         rows={6}
                         data-testid="teacher-watch-answer"
-                        value={snapshot.answers[question.id] ?? ""}
+                        value={displayAnswers[question.id] ?? ""}
                         placeholder="No response yet."
                         className="w-full resize-y rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
                       />
@@ -663,6 +705,7 @@ export default function WatchStudentExamPage() {
                                   ...current,
                                   [question.id]: next,
                                 }));
+                                broadcastFeedbackDraft(question.id, next);
                                 scheduleLiveFeedbackSave(question.id);
                               }}
                               placeholder="Students see this under their answer as you type…"
