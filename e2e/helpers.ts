@@ -26,15 +26,22 @@ export async function joinStudentSession(
   options?: { freshDevice?: boolean },
 ): Promise<void> {
   const fresh = options?.freshDevice !== false;
-  const query = fresh
-    ? `new=1&code=${encodeURIComponent(joinCode)}`
-    : `code=${encodeURIComponent(joinCode)}`;
-  await page.goto(`/?${query}`);
-  await page.getByPlaceholder("e.g. Jordan Lee").fill(displayName);
-  await expect(page.getByPlaceholder("ABCD12")).toHaveValue(joinCode);
-  const joinButton = page.getByRole("button", { name: "Join", exact: true });
-  await expect(joinButton).toBeEnabled();
+  // Avoid ?code= in the URL so pendingAutoJoin does not disable Join while isMutating.
+  await page.goto(fresh ? "/?new=1" : "/");
+  await page.waitForLoadState("domcontentloaded");
+  // Wait until auth has resolved and the anonymous join form is mounted.
+  await expect(page.getByTestId("student-join-submit")).toBeVisible({ timeout: 30_000 });
+
+  const codeInput = page.getByPlaceholder("ABCD12");
+  const nameInput = page.getByPlaceholder("e.g. Jordan Lee");
+  await codeInput.fill(joinCode);
+  await nameInput.fill(displayName);
+  await expect(codeInput).toHaveValue(joinCode);
+
+  const joinButton = page.getByTestId("student-join-submit");
+  await expect(joinButton).toBeEnabled({ timeout: 30_000 });
   await joinButton.click();
+
   await expect(page.getByTestId("student-exam-answer")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("Loading your saved answers")).toBeHidden({ timeout: 30_000 });
 }

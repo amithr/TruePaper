@@ -1593,6 +1593,7 @@ export default function Home() {
         {!joinedSession ? (
           <button
             type="button"
+            data-testid="student-join-submit"
             onClick={() => void joinWithCode(joinCodeInput)}
             disabled={
               isMutating ||
