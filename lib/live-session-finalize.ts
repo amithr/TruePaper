@@ -1,5 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { isMissingDbFunctionError } from "@/lib/is-missing-db-function";
+
 /** When the session window has ended, mark every student device in the session as finished. */
 export async function finalizeLiveSessionIfClosed(
   supabase: SupabaseClient,
@@ -24,6 +26,9 @@ export async function finalizeLiveSessionIfClosed(
   });
 
   if (error) {
+    if (isMissingDbFunctionError(error, "finalize_all_live_session_students")) {
+      return;
+    }
     throw new Error(error.message);
   }
 }

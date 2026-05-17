@@ -6,25 +6,20 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { LoadingBar } from "@/components/LoadingBar";
 import { SessionJoinShare } from "@/components/SessionJoinShare";
+import { LIVE_SESSION_OVERVIEW_EVENT, liveSessionOverviewChannelName } from "@/lib/broadcast-live-session-overview";
+import { notifyStudentExamResumed } from "@/lib/notify-student-exam-resumed";
+import { useBroadcastRefresh } from "@/lib/use-broadcast-refresh";
+import { usePostgresRealtimeRefresh } from "@/lib/use-postgres-realtime-refresh";
 import type { Form } from "@/lib/forms";
 import { isNoTimeLimitSession } from "@/lib/session-window";
-import type { TeacherSessionSummary } from "@/lib/teacher-sessions";
+import type { SuspendedStudentRow, TeacherSessionSummary } from "@/lib/teacher-sessions";
 import { buttonLabel, focusRing, ui } from "@/lib/ui";
 
-type ApiError = { error?: string };
+import { requestJson } from "@/lib/request-json";
 
 type SessionUser = { id: string; email?: string | null };
 type SessionProfile = { id: string; role: "teacher" | "student"; display_name: string | null };
 type SessionData = { user: SessionUser; profile: SessionProfile | null };
-
-async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
-  const response = await fetch(input, init);
-  const data = (await response.json()) as T & ApiError;
-  if (!response.ok) {
-    throw new Error(data.error ?? "Request failed.");
-  }
-  return data;
-}
 
 function formatCountdown(ms: number): string {
   if (ms <= 0) {
@@ -41,12 +36,6 @@ function isSessionRunning(now: number, opensAt: string, closesAt: string): boole
   const close = new Date(closesAt).getTime();
   return now >= open && now <= close;
 }
-
-type SuspendedStudentRow = {
-  anonymousSessionId: string;
-  displayName: string;
-  suspendedAt: string;
-};
 
 function maskDeviceId(id: string): string {
   return `…${id.slice(-8)}`;
@@ -91,8 +80,11 @@ export default function TeacherDashboardPage() {
     try {
       const [sessionRes, sessionsRes, formsRes] = await Promise.all([
         fetch("/api/auth/session"),
-        requestJson<{ sessions: TeacherSessionSummary[] }>("/api/teacher/sessions"),
-        requestJson<{ forms: Form[] }>("/api/forms"),
+        requestJson<{
+          sessions: TeacherSessionSummary[];
+          suspensionsBySession: Record<string, SuspendedStudentRow[]>;
+        }>("/api/teacher/sessions"),
+        requestJson<{ forms: Form[] }>("/api/forms?summary=1"),
       ]);
       const sessionJson = (await sessionRes.json()) as {
         user: SessionUser | null;
@@ -111,25 +103,7 @@ export default function TeacherDashboardPage() {
       setSession({ user: sessionJson.user, profile: sessionJson.profile });
       setSessions(sessionsRes.sessions);
       setForms(formsRes.forms);
-
-      const nowMs = Date.now();
-      const runningSessions = sessionsRes.sessions.filter((s) =>
-        isSessionRunning(nowMs, s.opensAt, s.closesAt),
-      );
-      const nextSusp: Record<string, SuspendedStudentRow[]> = {};
-      await Promise.all(
-        runningSessions.map(async (s) => {
-          try {
-            const sub = await requestJson<{ students: SuspendedStudentRow[] }>(
-              `/api/forms/live-sessions/${s.id}/suspensions`,
-            );
-            nextSusp[s.id] = sub.students;
-          } catch {
-            nextSusp[s.id] = [];
-          }
-        }),
-      );
-      setSuspensionsBySession(nextSusp);
+      setSuspensionsBySession(sessionsRes.suspensionsBySession ?? {});
       setLastSyncedAt(Date.now());
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Failed to load dashboard.");
@@ -138,13 +112,6 @@ export default function TeacherDashboardPage() {
 
   useEffect(() => {
     void refreshData();
-  }, [refreshData]);
-
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      void refreshData();
-    }, 5000);
-    return () => window.clearInterval(id);
   }, [refreshData]);
 
   useEffect(() => {
@@ -164,6 +131,25 @@ export default function TeacherDashboardPage() {
     }
     return { running: run, past: done };
   }, [sessions, nowTick]);
+
+  const runningOverviewChannels = useMemo(
+    () => running.map((s) => liveSessionOverviewChannelName(s.id)),
+    [running],
+  );
+
+  usePostgresRealtimeRefresh(
+    session !== undefined && session !== null,
+    "teacher-dashboard",
+    [{ table: "form_responses" }, { table: "form_sessions" }],
+    refreshData,
+  );
+
+  useBroadcastRefresh(
+    session !== undefined && session !== null && runningOverviewChannels.length > 0,
+    runningOverviewChannels,
+    LIVE_SESSION_OVERVIEW_EVENT,
+    refreshData,
+  );
 
   const pastSessionsTotalPages = Math.max(1, Math.ceil(past.length / PAST_SESSIONS_PAGE_SIZE));
 
@@ -224,8 +210,9 @@ export default function TeacherDashboardPage() {
       await requestJson<{ ok: true }>(`/api/forms/live-sessions/${liveSessionId}/resume-student`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ deviceId }),
+        body: JSON.stringify({ deviceId: deviceId.toLowerCase() }),
       });
+      void notifyStudentExamResumed(liveSessionId, deviceId);
       await refreshData();
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Could not resume student.");
@@ -660,7 +647,8 @@ export default function TeacherDashboardPage() {
                     <div>
                       <p className="font-semibold text-zinc-900">{form.title || "Untitled form"}</p>
                       <p className="mt-1 text-sm text-zinc-600">
-                        {form.questions.length} question{form.questions.length === 1 ? "" : "s"}
+                        {(form.questionCount ?? form.questions.length)} question
+                        {(form.questionCount ?? form.questions.length) === 1 ? "" : "s"}
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">

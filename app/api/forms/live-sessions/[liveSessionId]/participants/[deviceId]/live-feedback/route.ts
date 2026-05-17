@@ -3,6 +3,8 @@ import { NextResponse } from "next/server";
 import { isValidAnonymousSessionId } from "@/lib/anonymous-session";
 import { parseLiveTeacherFeedback } from "@/lib/live-teacher-feedback";
 import { getSessionUser } from "@/lib/request-auth";
+import { broadcastStudentExamPatch } from "@/lib/student-exam-channel";
+import { createSupabaseAnonServiceClient } from "@/lib/supabase/anon-service";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 type Params = {
@@ -20,7 +22,7 @@ const UUID_RE =
 
 export async function PATCH(request: Request, { params }: Params) {
   const { liveSessionId, deviceId: rawDeviceId } = await params;
-  const deviceId = decodeURIComponent(rawDeviceId).trim();
+  const deviceId = decodeURIComponent(rawDeviceId).trim().toLowerCase();
   const body = (await request.json()) as Body;
   const questionId = body.questionId?.trim() ?? "";
   const message = (body.message ?? "").trim().slice(0, MAX_MESSAGE_LEN);
@@ -83,8 +85,19 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  const liveTeacherFeedback = parseLiveTeacherFeedback(data);
+
+  try {
+    const broadcastClient = createSupabaseAnonServiceClient();
+    await broadcastStudentExamPatch(broadcastClient, liveSessionId, deviceId.toLowerCase(), {
+      liveTeacherFeedback,
+    });
+  } catch {
+    /* student may still receive postgres realtime */
+  }
+
   return NextResponse.json({
     ok: true,
-    liveTeacherFeedback: parseLiveTeacherFeedback(data),
+    liveTeacherFeedback,
   });
 }

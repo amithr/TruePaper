@@ -8,9 +8,16 @@ import { LoadingBar } from "@/components/LoadingBar";
 import { SessionJoinShare } from "@/components/SessionJoinShare";
 import type { LiveParticipantUiStatus } from "@/lib/participant-status";
 import { isNoTimeLimitSession } from "@/lib/session-window";
+import {
+  LIVE_SESSION_OVERVIEW_EVENT,
+  liveSessionOverviewChannelName,
+} from "@/lib/broadcast-live-session-overview";
+import { notifyStudentExamResumed } from "@/lib/notify-student-exam-resumed";
+import { useBroadcastRefresh } from "@/lib/use-broadcast-refresh";
+import { usePostgresRealtimeRefresh } from "@/lib/use-postgres-realtime-refresh";
 import { buttonLabel, focusRing, ui } from "@/lib/ui";
 
-type ApiError = { error?: string };
+import { requestJson } from "@/lib/request-json";
 
 type SessionUser = { id: string; email?: string | null };
 type SessionProfile = { id: string; role: "teacher" | "student"; display_name: string | null };
@@ -36,15 +43,6 @@ type OverviewParticipant = {
   lastTypingAt: string | null;
   updatedAt: string;
 };
-
-async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
-  const response = await fetch(input, init);
-  const data = (await response.json()) as T & ApiError;
-  if (!response.ok) {
-    throw new Error(data.error ?? "Request failed.");
-  }
-  return data;
-}
 
 function maskDeviceId(id: string): string {
   return `…${id.slice(-8)}`;
@@ -143,16 +141,27 @@ export default function LiveSessionDetailPage() {
     void refreshOverview();
   }, [session, refreshOverview]);
 
+  usePostgresRealtimeRefresh(
+    session !== undefined && session !== null && Boolean(liveSessionId),
+    `session-overview:${liveSessionId}`,
+    [
+      { table: "form_responses", filter: `live_session_id=eq.${liveSessionId}` },
+      { table: "form_sessions", filter: `id=eq.${liveSessionId}` },
+    ],
+    refreshOverview,
+  );
+
+  useBroadcastRefresh(
+    session !== undefined && session !== null && Boolean(liveSessionId),
+    liveSessionId ? [liveSessionOverviewChannelName(liveSessionId)] : [],
+    LIVE_SESSION_OVERVIEW_EVENT,
+    refreshOverview,
+  );
+
   useEffect(() => {
-    if (session === undefined || session === null) {
-      return;
-    }
-    const id = window.setInterval(() => {
-      setNowTick(Date.now());
-      void refreshOverview();
-    }, 4000);
+    const id = window.setInterval(() => setNowTick(Date.now()), 1000);
     return () => window.clearInterval(id);
-  }, [session, refreshOverview]);
+  }, []);
 
   const stopSession = async () => {
     if (!liveSessionId) {
@@ -189,8 +198,9 @@ export default function LiveSessionDetailPage() {
       await requestJson<{ ok: true }>(`/api/forms/live-sessions/${liveSessionId}/resume-student`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ deviceId }),
+        body: JSON.stringify({ deviceId: deviceId.toLowerCase() }),
       });
+      void notifyStudentExamResumed(liveSessionId, deviceId);
       await refreshOverview();
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Could not resume student.");

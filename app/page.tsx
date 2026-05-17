@@ -6,24 +6,35 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { LoadingBar } from "@/components/LoadingBar";
 import { SessionJoinShare } from "@/components/SessionJoinShare";
+import {
+  StudentAutosaveBanner,
+  type StudentAutosaveBannerHandle,
+} from "@/components/StudentAutosaveBanner";
 import { StudentExamReconnect } from "@/components/StudentExamReconnect";
 import { StudentExamTextarea } from "@/components/StudentExamTextarea";
 import { StudentTeacherFeedbackCard } from "@/components/StudentTeacherFeedbackCard";
-import { getOrCreateAnonymousSessionId, persistAnonymousSessionId } from "@/lib/anonymous-session";
+import {
+  createFreshAnonymousSessionId,
+  getOrCreateAnonymousSessionId,
+  joinUrlRequestsFreshDevice,
+  persistAnonymousSessionId,
+} from "@/lib/anonymous-session";
 import { postExamTabLeave } from "@/lib/exam-tab-leave";
 import type { Form, Question, QuestionType, StudentAnswers } from "@/lib/forms";
 import { isValidLiveSessionDisplayName, normalizeLiveSessionDisplayName } from "@/lib/live-session-display-name";
-import { parseLiveTeacherFeedback } from "@/lib/live-teacher-feedback";
 import { parseLiveSessionStudentGet } from "@/lib/live-session-student-get";
 import { isValidJoinCodeFormat, normalizeJoinCode } from "@/lib/join-code";
 import { isValidResumeCodeFormat, normalizeResumeCode } from "@/lib/resume-code";
 import { isNoTimeLimitSession } from "@/lib/session-window";
+import { LIVE_BOARD_BROADCAST_EVENT, liveBoardChannelName } from "@/lib/broadcast-live-board";
+import type { StudentExamRemotePatch } from "@/lib/student-exam-remote-patch";
+import { fetchStudentExamStatus } from "@/lib/fetch-student-exam-status";
+import { fetchStudentLiveTeacherFeedback } from "@/lib/fetch-student-live-feedback";
+import { requestJson } from "@/lib/request-json";
 import { stableStringifyStudentAnswers } from "@/lib/student-answers-json";
+import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
+import { useStudentExamRealtime } from "@/lib/use-student-exam-realtime";
 import { buttonLabel, focusRing, ui } from "@/lib/ui";
-
-type ApiError = {
-  error?: string;
-};
 
 type SessionUser = {
   id: string;
@@ -76,17 +87,6 @@ type JoinedLiveSession = {
   closesAt: string;
 };
 
-async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
-  const response = await fetch(input, init);
-  const data = (await response.json()) as T & ApiError;
-
-  if (!response.ok) {
-    throw new Error(data.error ?? "Request failed.");
-  }
-
-  return data;
-}
-
 function formatCountdown(ms: number): string {
   if (ms <= 0) {
     return "0:00";
@@ -124,6 +124,37 @@ const AUTOSAVE_MAX_WAIT_MS = 2000;
 
 const BUILDER_AUTOSAVE_MS = 5000;
 
+async function notifyLiveBoardRefresh(joinCode: string): Promise<void> {
+  const code = joinCode.trim().toUpperCase();
+  if (!code) {
+    return;
+  }
+  try {
+    const supabase = createBrowserSupabaseClient();
+    const channel = supabase.channel(liveBoardChannelName(code));
+    await new Promise<void>((resolve, reject) => {
+      const timeout = window.setTimeout(() => {
+        void supabase.removeChannel(channel);
+        reject(new Error("timeout"));
+      }, 5000);
+      channel.subscribe(async (status) => {
+        if (status === "SUBSCRIBED") {
+          window.clearTimeout(timeout);
+          await channel.send({
+            type: "broadcast",
+            event: LIVE_BOARD_BROADCAST_EVENT,
+            payload: { at: new Date().toISOString() },
+          });
+          void supabase.removeChannel(channel);
+          resolve();
+        }
+      });
+    });
+  } catch {
+    /* optional */
+  }
+}
+
 function serializeBuilderFormDetails(form: Form): string {
   return JSON.stringify({
     title: form.title,
@@ -158,13 +189,15 @@ export default function Home() {
   const [joinedSession, setJoinedSession] = useState<JoinedLiveSession | null>(null);
   const [teacherLiveBanner, setTeacherLiveBanner] = useState<TeacherLiveBanner | null>(null);
   const [anonymousSessionId, setAnonymousSessionId] = useState("");
-  const [studentAnswers, setStudentAnswers] = useState<StudentAnswers>({});
+  /** Multiple-choice only; text answers live in the DOM + latestStudentAnswersRef. */
+  const [choiceAnswers, setChoiceAnswers] = useState<StudentAnswers>({});
+  /** Snapshot for textarea defaultValue on join/load only — never updated while typing. */
+  const [textAnswersAtLoad, setTextAnswersAtLoad] = useState<StudentAnswers>({});
   const [examSuspended, setExamSuspended] = useState(false);
   const [examFinished, setExamFinished] = useState(false);
   const [liveTeacherFeedback, setLiveTeacherFeedback] = useState<Record<string, string>>({});
   const [liveTeacherFeedbackEnabledLive, setLiveTeacherFeedbackEnabledLive] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
-  const [autosaveBanner, setAutosaveBanner] = useState("");
   const [builderAutosaveBanner, setBuilderAutosaveBanner] = useState("");
   const typingHeartbeatTimerRef = useRef<number | undefined>(undefined);
   const lastPointerInteractionPingAtRef = useRef(0);
@@ -175,12 +208,14 @@ export default function Home() {
   const autosaveTimerRef = useRef<number | undefined>(undefined);
   const lastAutosaveSentAtRef = useRef(0);
   const pendingDirtySinceRef = useRef<number | null>(null);
+  const autosaveBannerRef = useRef<StudentAutosaveBannerHandle>(null);
+  const autosaveBannerClearRef = useRef<number | undefined>(undefined);
   const lastPersistedBuilderFormDetailsRef = useRef("");
   const lastPersistedBuilderQuestionJsonByIdRef = useRef<Record<string, string>>({});
   const builderAutosaveInFlightRef = useRef(false);
   const builderAutosaveBannerClearRef = useRef<number | undefined>(undefined);
   const latestActiveFormRef = useRef<Form | undefined>(undefined);
-  const autosaveBannerClearRef = useRef<number | undefined>(undefined);
+  const [textareasMountKey, setTextareasMountKey] = useState(0);
   const [isLoadingForms, setIsLoadingForms] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -189,10 +224,10 @@ export default function Home() {
   const teacherHomeRedirectDoneRef = useRef(false);
   const joinIntentFromUrlRef = useRef(false);
   const tabLeaveReportedRef = useRef(false);
+  const studentResponseLoadKeyRef = useRef<string | null>(null);
+  const [studentAnswersHydrated, setStudentAnswersHydrated] = useState(false);
 
   const isTeacher = session?.profile?.role === "teacher";
-
-  latestStudentAnswersRef.current = studentAnswers;
 
   const activeForm = useMemo(
     () => authForms.find((form) => form.id === activeFormId),
@@ -309,13 +344,6 @@ export default function Home() {
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      setAnonymousSessionId(getOrCreateAnonymousSessionId());
-    }, 0);
-    return () => clearTimeout(timeoutId);
-  }, []);
-
-  useEffect(() => {
-    const timeoutId = setTimeout(() => {
       if (typeof window === "undefined" || loadedExamNamePrefillRef.current) {
         return;
       }
@@ -364,6 +392,13 @@ export default function Home() {
       return;
     }
     const params = new URLSearchParams(window.location.search);
+
+    if (joinUrlRequestsFreshDevice(params)) {
+      setAnonymousSessionId(createFreshAnonymousSessionId());
+    } else {
+      setAnonymousSessionId(getOrCreateAnonymousSessionId());
+    }
+
     const raw = params.get("code") ?? params.get("join");
     if (raw) {
       const normalized = normalizeJoinCode(raw);
@@ -390,6 +425,8 @@ export default function Home() {
     if (u.searchParams.has("resume")) {
       u.searchParams.delete("resume");
     }
+    u.searchParams.delete("new");
+    u.searchParams.delete("student");
     window.history.replaceState({}, "", u.pathname + u.search + u.hash);
   }, []);
 
@@ -447,13 +484,13 @@ export default function Home() {
         return;
       }
       if (session.profile?.role === "teacher") {
-        setMode("teacher");
+        setMode(joinIntentFromUrlRef.current || joinedSession ? "student" : "teacher");
       } else {
         setMode("student");
       }
     }, 0);
     return () => clearTimeout(timeoutId);
-  }, [session]);
+  }, [session, joinedSession]);
 
   useEffect(() => {
     if (session === undefined) {
@@ -559,8 +596,12 @@ export default function Home() {
     }
   };
 
+  const joinedLiveSessionId = joinedSession?.liveSessionId ?? "";
+  const isLiveTeacherFeedbackEnabled =
+    liveTeacherFeedbackEnabledLive || joinedSession?.form.liveTeacherFeedbackEnabled === true;
+
   useEffect(() => {
-    if (!joinedSession || !anonymousSessionId) {
+    if (!joinedLiveSessionId || !anonymousSessionId) {
       return;
     }
 
@@ -568,7 +609,7 @@ export default function Home() {
       try {
         const params = new URLSearchParams({ deviceId: anonymousSessionId });
         const response = await fetch(
-          `/api/public/live-sessions/${joinedSession.liveSessionId}/responses?${params.toString()}`,
+          `/api/public/live-sessions/${joinedLiveSessionId}/responses?${params.toString()}`,
         );
         const raw = (await response.json()) as unknown;
         if (!response.ok) {
@@ -576,21 +617,24 @@ export default function Home() {
           throw new Error(err.error ?? "Request failed.");
         }
         const parsed = parseLiveSessionStudentGet(raw);
-        setStudentAnswers(parsed.answers);
+        const loadKey = `${joinedLiveSessionId}:${anonymousSessionId}`;
+        const isFirstLoadForKey = studentResponseLoadKeyRef.current !== loadKey;
+        studentResponseLoadKeyRef.current = loadKey;
+
+        latestStudentAnswersRef.current = parsed.answers;
         lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(parsed.answers);
-        suspendAutosaveRef.current = false;
+        pendingDirtySinceRef.current = null;
+        setChoiceAnswers(parsed.answers);
+        setTextAnswersAtLoad(parsed.answers);
+        if (isFirstLoadForKey) {
+          setTextareasMountKey((k) => k + 1);
+        }
+        setStudentAnswersHydrated(true);
         setExamSuspended(parsed.suspended);
         setExamFinished(parsed.finished);
         setLiveTeacherFeedback(parsed.liveTeacherFeedback);
-        if (parsed.liveTeacherFeedbackEnabled && joinedSession) {
-          setJoinedSession((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  form: { ...prev.form, liveTeacherFeedbackEnabled: true },
-                }
-              : prev,
-          );
+        if (parsed.liveTeacherFeedbackEnabled) {
+          setLiveTeacherFeedbackEnabledLive(true);
         }
         if (parsed.resumeCode) {
           setStudentResumeCode(parsed.resumeCode);
@@ -599,11 +643,10 @@ export default function Home() {
           setStatusMessage("You have submitted this exam.");
         } else if (parsed.suspended) {
           setStatusMessage("This exam is paused until your teacher allows you to continue.");
-        } else {
+        } else if (isFirstLoadForKey) {
           setStatusMessage("Loaded saved answers.");
         }
       } catch (error) {
-        suspendAutosaveRef.current = false;
         setStatusMessage(error instanceof Error ? error.message : "Failed to load student answers.");
       }
     };
@@ -613,109 +656,93 @@ export default function Home() {
     }, 0);
 
     return () => clearTimeout(timeoutId);
-  }, [joinedSession, anonymousSessionId]);
+  }, [joinedLiveSessionId, anonymousSessionId]);
 
-  useEffect(() => {
-    if (!joinedSession || !anonymousSessionId) {
+  const refreshLiveTeacherFeedback = useCallback(async () => {
+    if (!joinedLiveSessionId || !anonymousSessionId || !isLiveTeacherFeedbackEnabled) {
       return;
     }
-    const id = window.setInterval(() => {
-      void (async () => {
-        try {
-          const params = new URLSearchParams({ deviceId: anonymousSessionId });
-          const response = await fetch(
-            `/api/public/live-sessions/${joinedSession.liveSessionId}/responses?${params.toString()}`,
-          );
-          const raw = (await response.json()) as {
-            answers?: unknown;
-            suspended?: boolean;
-            finished?: boolean;
-            liveTeacherFeedback?: unknown;
-            liveTeacherFeedbackEnabled?: boolean;
-            error?: string;
-          };
-          if (!response.ok) {
-            return;
-          }
-          const parsed = parseLiveSessionStudentGet(raw);
-          setExamSuspended((prevSuspended) => {
-            if (prevSuspended && !parsed.suspended) {
-              setStatusMessage("Your teacher allowed you to continue. You can answer again.");
-            }
-            return parsed.suspended;
-          });
-          setExamFinished((prevFinished) => {
-            if (!prevFinished && parsed.finished) {
-              setStatusMessage("You have submitted this exam.");
-            }
-            return parsed.finished;
-          });
-          if (parsed.suspended || parsed.finished) {
-            setStudentAnswers(parsed.answers);
-            lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(parsed.answers);
-          }
-          setLiveTeacherFeedback(parsed.liveTeacherFeedback);
-          if (parsed.liveTeacherFeedbackEnabled) {
-            setJoinedSession((prev) =>
-              prev
-                ? {
-                    ...prev,
-                    form: { ...prev.form, liveTeacherFeedbackEnabled: true },
-                  }
-                : prev,
-            );
-          }
-          if (parsed.resumeCode) {
-            setStudentResumeCode(parsed.resumeCode);
-          }
-        } catch {
-          /* ignore */
+    const feedback = await fetchStudentLiveTeacherFeedback(
+      joinedLiveSessionId,
+      anonymousSessionId,
+    );
+    if (feedback) {
+      setLiveTeacherFeedback(feedback);
+    }
+  }, [joinedLiveSessionId, anonymousSessionId, isLiveTeacherFeedbackEnabled]);
+
+  const applyStudentExamRemotePatch = useCallback((patch: StudentExamRemotePatch) => {
+    if (patch.liveTeacherFeedback !== undefined) {
+      setLiveTeacherFeedback(patch.liveTeacherFeedback);
+    }
+    if (patch.suspended === true) {
+      setExamSuspended(true);
+      setStatusMessage(
+        "This exam is paused until your teacher allows you to continue.",
+      );
+    } else if (patch.suspended === false) {
+      setExamSuspended((prevSuspended) => {
+        if (prevSuspended) {
+          setStatusMessage("Your teacher allowed you to continue. You can answer again.");
         }
-      })();
-    }, 800);
-    return () => window.clearInterval(id);
-  }, [joinedSession, anonymousSessionId]);
+        return false;
+      });
+    }
+    if (patch.finished === true) {
+      setExamFinished(true);
+      setStatusMessage("You have submitted this exam.");
+    }
+    if (patch.resumeCode) {
+      setStudentResumeCode(patch.resumeCode);
+    }
+  }, []);
+
+  useStudentExamRealtime({
+    liveSessionId: joinedLiveSessionId,
+    deviceId: anonymousSessionId,
+    enabled: Boolean(joinedLiveSessionId && anonymousSessionId && studentAnswersHydrated),
+    onPatch: applyStudentExamRemotePatch,
+    onBroadcastReady: isLiveTeacherFeedbackEnabled
+      ? () => void refreshLiveTeacherFeedback()
+      : undefined,
+  });
 
   useEffect(() => {
-    if (!joinedSession || !anonymousSessionId) {
+    if (!isLiveTeacherFeedbackEnabled || !studentAnswersHydrated || !joinedLiveSessionId) {
       return;
     }
-    const loadFeedback = async () => {
-      try {
-        const params = new URLSearchParams({ deviceId: anonymousSessionId });
-        const response = await fetch(
-          `/api/public/live-sessions/${joinedSession.liveSessionId}/feedback?${params.toString()}`,
-        );
-        const raw = (await response.json()) as {
-          enabled?: boolean;
-          liveTeacherFeedback?: unknown;
-          error?: string;
-        };
-        if (!response.ok) {
-          return;
-        }
-        if (raw.enabled) {
-          setLiveTeacherFeedbackEnabledLive(true);
-          setJoinedSession((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  form: { ...prev.form, liveTeacherFeedbackEnabled: true },
-                }
-              : prev,
-          );
-        }
-        setLiveTeacherFeedback(parseLiveTeacherFeedback(raw.liveTeacherFeedback));
-      } catch {
-        /* ignore */
+    const syncOnVisible = () => {
+      if (document.visibilityState === "visible") {
+        void refreshLiveTeacherFeedback();
       }
     };
-    void loadFeedback();
-    const id = window.setInterval(() => {
-      void loadFeedback();
-    }, 800);
-    return () => window.clearInterval(id);
-  }, [joinedSession, anonymousSessionId]);
+    document.addEventListener("visibilitychange", syncOnVisible);
+    window.addEventListener("focus", syncOnVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", syncOnVisible);
+      window.removeEventListener("focus", syncOnVisible);
+    };
+  }, [
+    isLiveTeacherFeedbackEnabled,
+    studentAnswersHydrated,
+    joinedLiveSessionId,
+    refreshLiveTeacherFeedback,
+  ]);
+
+  useEffect(() => {
+    if (!isLiveTeacherFeedbackEnabled || !studentAnswersHydrated || !joinedLiveSessionId) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      void refreshLiveTeacherFeedback();
+    }, 400);
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    isLiveTeacherFeedbackEnabled,
+    studentAnswersHydrated,
+    joinedLiveSessionId,
+    refreshLiveTeacherFeedback,
+  ]);
 
   const persistStudentAnswers = useCallback(async () => {
     if (
@@ -737,33 +764,31 @@ export default function Home() {
     }
 
     try {
-      setAutosaveBanner("Saving…");
-      const res = await fetch(`/api/public/live-sessions/${joinedSession.liveSessionId}/responses`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          deviceId: anonymousSessionId,
-          displayName: activeExamDisplayName,
-          answers: currentAnswers,
-        }),
-      });
-      const raw = (await res.json()) as { error?: string };
-      if (!res.ok) {
-        setAutosaveBanner(raw.error ?? "Autosave failed. Use Save answers.");
-        return;
-      }
+      autosaveBannerRef.current?.setMessage("Saving…");
+      await requestJson<{ ok: true }>(
+        `/api/public/live-sessions/${joinedSession.liveSessionId}/responses`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            deviceId: anonymousSessionId,
+            displayName: activeExamDisplayName,
+            answers: currentAnswers,
+          }),
+        },
+      );
       lastPersistedAnswersJsonRef.current = currentJson;
       pendingDirtySinceRef.current = null;
       if (autosaveBannerClearRef.current !== undefined) {
         window.clearTimeout(autosaveBannerClearRef.current);
       }
-      setAutosaveBanner("All changes saved");
+      autosaveBannerRef.current?.setMessage("All changes saved");
       autosaveBannerClearRef.current = window.setTimeout(() => {
         autosaveBannerClearRef.current = undefined;
-        setAutosaveBanner((prev) => (prev === "All changes saved" ? "" : prev));
+        autosaveBannerRef.current?.setMessage("");
       }, 2600);
     } catch {
-      setAutosaveBanner("Autosave failed. Use Save answers.");
+      autosaveBannerRef.current?.setMessage("Autosave failed. Use Save answers.");
     }
   }, [
     joinedSession,
@@ -825,16 +850,27 @@ export default function Home() {
     persistStudentAnswers,
   ]);
 
-  const patchStudentAnswer = useCallback(
+  const patchTextAnswer = useCallback(
     (questionId: string, next: string) => {
-      setStudentAnswers((currentAnswers) => {
-        const updated = { ...currentAnswers, [questionId]: next };
-        latestStudentAnswersRef.current = updated;
-        return updated;
-      });
+      latestStudentAnswersRef.current = {
+        ...latestStudentAnswersRef.current,
+        [questionId]: next,
+      };
+      scheduleTypingHeartbeat();
       scheduleStudentAutosave();
     },
-    [scheduleStudentAutosave],
+    [scheduleTypingHeartbeat, scheduleStudentAutosave],
+  );
+
+  const patchChoiceAnswer = useCallback(
+    (questionId: string, next: string) => {
+      const updated = { ...latestStudentAnswersRef.current, [questionId]: next };
+      latestStudentAnswersRef.current = updated;
+      setChoiceAnswers(updated);
+      scheduleTypingHeartbeat();
+      scheduleStudentAutosave();
+    },
+    [scheduleTypingHeartbeat, scheduleStudentAutosave],
   );
 
   useEffect(() => {
@@ -852,7 +888,7 @@ export default function Home() {
     }
     void (async () => {
       try {
-        await fetch(`/api/public/live-sessions/${joinedSession.liveSessionId}/register`, {
+        const res = await fetch(`/api/public/live-sessions/${joinedSession.liveSessionId}/register`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -860,54 +896,22 @@ export default function Home() {
             displayName: activeExamDisplayName,
           }),
         });
+        if (res.ok && joinCodeInput) {
+          void notifyLiveBoardRefresh(joinCodeInput);
+        }
       } catch {
         /* ignore */
       }
     })();
-  }, [joinedSession?.liveSessionId, anonymousSessionId, activeExamDisplayName]);
-
-  useEffect(() => {
-    if (
-      !joinedSession ||
-      !anonymousSessionId ||
-      !activeExamDisplayName ||
-      !sessionOpen ||
-      examSuspended ||
-      examFinished
-    ) {
-      return;
-    }
-    const liveSessionId = joinedSession.liveSessionId;
-    const deviceId = anonymousSessionId;
-    const displayName = activeExamDisplayName;
-    const ping = () => {
-      void fetch(`/api/public/live-sessions/${liveSessionId}/heartbeat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          deviceId,
-          displayName,
-          isTyping: false,
-          interaction: false,
-        }),
-      });
-    };
-    ping();
-    const id = window.setInterval(ping, 25000);
-    return () => window.clearInterval(id);
-  }, [
-    joinedSession,
-    anonymousSessionId,
-    activeExamDisplayName,
-    sessionOpen,
-    examSuspended,
-    examFinished,
-  ]);
+  }, [joinedSession?.liveSessionId, anonymousSessionId, activeExamDisplayName, joinCodeInput]);
 
   useEffect(() => {
     return () => {
       if (typingHeartbeatTimerRef.current !== undefined) {
         window.clearTimeout(typingHeartbeatTimerRef.current);
+      }
+      if (autosaveTimerRef.current !== undefined) {
+        window.clearTimeout(autosaveTimerRef.current);
       }
       if (autosaveBannerClearRef.current !== undefined) {
         window.clearTimeout(autosaveBannerClearRef.current);
@@ -920,6 +924,30 @@ export default function Home() {
       tabLeaveReportedRef.current = false;
     }
   }, [examSuspended]);
+
+  useEffect(() => {
+    if (!joinedSession || !anonymousSessionId || !examSuspended) {
+      return;
+    }
+    const liveSessionId = joinedSession.liveSessionId;
+    const checkIfResumed = () => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+      void fetchStudentExamStatus(liveSessionId, anonymousSessionId).then((status) => {
+        if (status && !status.suspended) {
+          applyStudentExamRemotePatch({ suspended: false });
+        }
+      });
+    };
+    checkIfResumed();
+    document.addEventListener("visibilitychange", checkIfResumed);
+    window.addEventListener("focus", checkIfResumed);
+    return () => {
+      document.removeEventListener("visibilitychange", checkIfResumed);
+      window.removeEventListener("focus", checkIfResumed);
+    };
+  }, [joinedSession, anonymousSessionId, examSuspended, applyStudentExamRemotePatch]);
 
   useEffect(() => {
     if (
@@ -990,7 +1018,7 @@ export default function Home() {
         if (isDocumentHidden()) {
           reportTabLeave();
         }
-      }, 50);
+      }, 400);
     };
 
     document.addEventListener("visibilitychange", onVisibility);
@@ -1012,7 +1040,14 @@ export default function Home() {
         window.clearTimeout(blurTimer);
       }
     };
-  }, [joinedSession, sessionOpen, examSuspended, examFinished, anonymousSessionId, activeExamDisplayName]);
+  }, [
+    joinedLiveSessionId,
+    sessionOpen,
+    examSuspended,
+    examFinished,
+    anonymousSessionId,
+    activeExamDisplayName,
+  ]);
 
   useEffect(() => {
     if (mode !== "teacher" || !isTeacher) {
@@ -1195,11 +1230,11 @@ export default function Home() {
         questions: form.questions.filter((question) => question.id !== questionId),
       }));
       delete lastPersistedBuilderQuestionJsonByIdRef.current[questionId];
-      setStudentAnswers((currentAnswers) => {
-        const nextAnswers = { ...currentAnswers };
-        delete nextAnswers[questionId];
-        return nextAnswers;
-      });
+      const nextAnswers = { ...latestStudentAnswersRef.current };
+      delete nextAnswers[questionId];
+      latestStudentAnswersRef.current = nextAnswers;
+      setChoiceAnswers(nextAnswers);
+      setTextAnswersAtLoad(nextAnswers);
       await syncListsAfterTeacherChange();
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Failed to remove question.");
@@ -1218,7 +1253,6 @@ export default function Home() {
     setIsMutating(true);
     setStatusMessage("");
     try {
-      suspendAutosaveRef.current = true;
       const data = await requestJson<ResumeApiResponse>(
         `/api/public/resume?code=${encodeURIComponent(code)}`,
       );
@@ -1246,6 +1280,11 @@ export default function Home() {
         closesAt: data.closesAt,
       });
       setLiveTeacherFeedbackEnabledLive(data.form.liveTeacherFeedbackEnabled);
+      latestStudentAnswersRef.current = {};
+      lastPersistedAnswersJsonRef.current = "";
+      pendingDirtySinceRef.current = null;
+      studentResponseLoadKeyRef.current = null;
+      setStudentAnswersHydrated(false);
       setExamSuspended(false);
       setExamFinished(false);
       setStatusMessage(
@@ -1276,7 +1315,9 @@ export default function Home() {
     setIsMutating(true);
     setStatusMessage("");
     try {
-      suspendAutosaveRef.current = true;
+      if (isTeacher && mode === "student") {
+        setAnonymousSessionId(createFreshAnonymousSessionId());
+      }
       const data = await requestJson<JoinApiResponse>(`/api/public/join?code=${encodeURIComponent(code)}`);
       setJoinedSession({
         liveSessionId: data.liveSessionId,
@@ -1294,9 +1335,16 @@ export default function Home() {
       } catch {
         /* ignore */
       }
-      setStudentAnswers({});
+      latestStudentAnswersRef.current = {};
+      lastPersistedAnswersJsonRef.current = "";
+      pendingDirtySinceRef.current = null;
+      studentResponseLoadKeyRef.current = null;
+      setChoiceAnswers({});
+      setTextAnswersAtLoad({});
+      setStudentAnswersHydrated(false);
       setExamSuspended(false);
       setExamFinished(false);
+      autosaveBannerRef.current?.setMessage("");
       setStatusMessage("You are in the live session.");
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Could not join that session.");
@@ -1306,17 +1354,19 @@ export default function Home() {
   };
 
   const leaveJoinedSession = () => {
-    suspendAutosaveRef.current = true;
+    setJoinedSession(null);
+    latestStudentAnswersRef.current = {};
     lastPersistedAnswersJsonRef.current = "";
-    lastAutosaveSentAtRef.current = 0;
     pendingDirtySinceRef.current = null;
     if (autosaveTimerRef.current !== undefined) {
       window.clearTimeout(autosaveTimerRef.current);
       autosaveTimerRef.current = undefined;
     }
-    setAutosaveBanner("");
-    setJoinedSession(null);
-    setStudentAnswers({});
+    autosaveBannerRef.current?.setMessage("");
+    studentResponseLoadKeyRef.current = null;
+    setChoiceAnswers({});
+    setTextAnswersAtLoad({});
+    setStudentAnswersHydrated(false);
     setExamSuspended(false);
     setExamFinished(false);
     setActiveExamDisplayName("");
@@ -1334,6 +1384,8 @@ export default function Home() {
 
     setIsMutating(true);
     setStatusMessage("");
+    const answers = latestStudentAnswersRef.current;
+    suspendAutosaveRef.current = true;
     try {
       await requestJson<{ ok: true }>(
         `/api/public/live-sessions/${joinedSession.liveSessionId}/responses`,
@@ -1343,15 +1395,18 @@ export default function Home() {
           body: JSON.stringify({
             deviceId: anonymousSessionId,
             displayName: activeExamDisplayName,
-            answers: studentAnswers,
+            answers,
           }),
         },
       );
-      lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(studentAnswers);
+      lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(answers);
+      pendingDirtySinceRef.current = null;
+      autosaveBannerRef.current?.setMessage("All changes saved");
       setStatusMessage("Answers saved.");
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Failed to save answers.");
     } finally {
+      suspendAutosaveRef.current = false;
       setIsMutating(false);
     }
   };
@@ -1363,6 +1418,8 @@ export default function Home() {
 
     setIsMutating(true);
     setStatusMessage("");
+    const answers = latestStudentAnswersRef.current;
+    suspendAutosaveRef.current = true;
     try {
       await requestJson<{ ok: true }>(
         `/api/public/live-sessions/${joinedSession.liveSessionId}/responses`,
@@ -1372,11 +1429,12 @@ export default function Home() {
           body: JSON.stringify({
             deviceId: anonymousSessionId,
             displayName: activeExamDisplayName,
-            answers: studentAnswers,
+            answers,
           }),
         },
       );
-      lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(studentAnswers);
+      lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(answers);
+      pendingDirtySinceRef.current = null;
       await requestJson<{ ok: true }>(
         `/api/public/live-sessions/${joinedSession.liveSessionId}/finish`,
         {
@@ -1390,20 +1448,22 @@ export default function Home() {
       );
       setExamFinished(true);
       setStatusMessage("Exam submitted. You can still read your answers.");
+      if (joinCodeInput) {
+        void notifyLiveBoardRefresh(joinCodeInput);
+      }
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Could not submit the exam.");
     } finally {
+      suspendAutosaveRef.current = false;
       setIsMutating(false);
     }
   };
 
   const hasVerifiedExamName = isValidLiveSessionDisplayName(activeExamDisplayName);
 
-  /** Teacher “Student view”: preview the selected form without a join code. Real students join via code + name. */
+  /** Live exam form — only after joining a session (no builder preview in student view). */
   const studentExamForm =
-    (joinedSession && hasVerifiedExamName ? joinedSession.form : null) ??
-    (mode === "student" && isTeacher && activeForm && !joinedSession ? activeForm : null);
-  const isStudentExamPreview = Boolean(studentExamForm && !joinedSession);
+    joinedSession && hasVerifiedExamName ? joinedSession.form : null;
   const studentExamQuestions = useMemo(() => {
     if (!studentExamForm) {
       return [];
@@ -1515,13 +1575,6 @@ export default function Home() {
           </button>
         )}
       </div>
-      {isTeacher && mode === "student" ? (
-        <p className="mt-3 text-sm text-zinc-500">
-          You can scroll down to preview the form as students see it—no code needed. Use a join code when
-          you want to test saving answers in a live session.
-        </p>
-      ) : null}
-
       {!joinedSession ? (
         <div className="mt-6 rounded-lg border border-dashed border-zinc-300 bg-zinc-50/80 px-4 py-4">
           <p className="text-sm font-medium text-zinc-900">Already in this exam?</p>
@@ -1689,7 +1742,7 @@ export default function Home() {
           </div>
         ) : null}
 
-        {session && !showTeacherTools ? joinSessionSection : null}
+        {(session && !showTeacherTools) || (isTeacher && mode === "student") ? joinSessionSection : null}
 
         {isLoadingForms && showTeacherTools ? (
           <LoadingBar className="max-w-xs" label="Loading forms" />
@@ -2020,15 +2073,7 @@ export default function Home() {
                   </p>
                 ) : null}
               </div>
-            ) : (
-              <div className="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950">
-                <p className="font-medium">Student preview (no join code)</p>
-                <p className="mt-1 text-sky-900">
-                  This is how the form looks to the class. Answers you type here are only on this page
-                  until you join a live session with a code—then Save will store them for that session.
-                </p>
-              </div>
-            )}
+            ) : null}
 
             {joinedSession && studentResumeCode ? (
               <StudentExamReconnect resumeCode={studentResumeCode} />
@@ -2064,7 +2109,7 @@ export default function Home() {
                               type="radio"
                               name={question.id}
                               value={option}
-                              checked={studentAnswers[question.id] === option}
+                              checked={choiceAnswers[question.id] === option}
                               disabled={
                                 (Boolean(joinedSession) && !sessionOpen) ||
                                 Boolean(examSuspended) ||
@@ -2072,7 +2117,7 @@ export default function Home() {
                               }
                               onChange={(event) => {
                                 scheduleTypingHeartbeat();
-                                patchStudentAnswer(question.id, event.target.value);
+                                patchChoiceAnswer(question.id, event.target.value);
                               }}
                             />
                             <span>{option || `Option ${optionIndex + 1}`}</span>
@@ -2082,9 +2127,10 @@ export default function Home() {
                     ) : (
                       <div className="space-y-3">
                         <StudentExamTextarea
+                          key={`${question.id}-${textareasMountKey}`}
                           id={question.id}
                           rows={4}
-                          value={studentAnswers[question.id] ?? ""}
+                          defaultValue={textAnswersAtLoad[question.id] ?? ""}
                           disabled={
                             (Boolean(joinedSession) && !sessionOpen) ||
                             Boolean(examSuspended) ||
@@ -2093,9 +2139,9 @@ export default function Home() {
                           protect={Boolean(
                             joinedSession && sessionOpen && !examSuspended && !examFinished,
                           )}
-                          onChange={(next) => {
+                          onValueChange={(next) => {
                             scheduleTypingHeartbeat();
-                            patchStudentAnswer(question.id, next);
+                            patchTextAnswer(question.id, next);
                           }}
                           placeholder="Type your response..."
                           className="tp-input"
@@ -2121,7 +2167,6 @@ export default function Home() {
                   !anonymousSessionId ||
                   !joinedSession ||
                   !sessionOpen ||
-                  isStudentExamPreview ||
                   examSuspended ||
                   examFinished
                 }
@@ -2133,28 +2178,19 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => void submitExam()}
-                  disabled={isMutating || !anonymousSessionId || isStudentExamPreview}
+                  disabled={isMutating || !anonymousSessionId}
                   className="rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
                 >
                   Submit
                 </button>
               ) : null}
-              {isStudentExamPreview ? (
-                <p className="text-sm text-zinc-600">
-                  Join a live session with a code above to enable saving.
-                </p>
-              ) : null}
             </div>
-            {autosaveBanner ? (
-              <p className="mt-2 text-xs text-zinc-600" aria-live="polite">
-                {autosaveBanner}
-              </p>
-            ) : null}
+            <StudentAutosaveBanner ref={autosaveBannerRef} className="mt-2 text-xs text-zinc-600" />
           </section>
         ) : !showTeacherTools ? (
           <p className="text-zinc-600">
             {isTeacher && mode === "student"
-              ? "Create a form in Teacher view to preview it here, or join with your session code."
+              ? "Enter your name and join with a session code to take the exam like a student."
               : "Join with your code to see the form."}
           </p>
         ) : null}

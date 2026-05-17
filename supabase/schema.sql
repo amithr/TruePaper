@@ -263,6 +263,17 @@ create policy "form_responses_select"
     )
   );
 
+drop policy if exists "form_responses_select_anon_own_live" on public.form_responses;
+create policy "form_responses_select_anon_own_live"
+  on public.form_responses for select
+  to anon
+  using (
+    student_id is null
+    and live_session_id is not null
+    and anonymous_session_id is not null
+    and lower(anonymous_session_id) = lower(coalesce(auth.jwt() ->> 'device_id', ''))
+  );
+
 drop policy if exists "form_sessions_select_teacher" on public.form_sessions;
 create policy "form_sessions_select_teacher"
   on public.form_sessions for select
@@ -640,7 +651,7 @@ $$;
 create or replace function public.get_live_session_student_response(p_live_session_id uuid, p_device_id text)
 returns jsonb
 language plpgsql
-stable
+volatile
 security definer
 set search_path = public
 as $$
@@ -663,6 +674,7 @@ begin
       'finished', false,
       'displayName', '',
       'liveTeacherFeedback', '{}'::jsonb,
+      'liveTeacherFeedbackEnabled', false,
       'resumeCode', null
     );
   end if;
@@ -675,6 +687,7 @@ begin
       'finished', false,
       'displayName', '',
       'liveTeacherFeedback', '{}'::jsonb,
+      'liveTeacherFeedbackEnabled', false,
       'resumeCode', null
     );
   end if;
@@ -686,6 +699,7 @@ begin
       'finished', false,
       'displayName', '',
       'liveTeacherFeedback', '{}'::jsonb,
+      'liveTeacherFeedbackEnabled', false,
       'resumeCode', null
     );
   end if;
@@ -700,8 +714,9 @@ begin
          coalesce(fr.live_teacher_feedback, '{}'::jsonb),
          (fr.suspended_at is not null),
          (fr.finished_at is not null),
-         coalesce(nullif(trim(fr.student_display_name), ''), '')
-  into ans, live_fb, susp, fin, disp
+         coalesce(nullif(trim(fr.student_display_name), ''), ''),
+         fr.student_resume_code
+  into ans, live_fb, susp, fin, disp, resume_code
   from public.form_responses fr
   where fr.live_session_id = p_live_session_id
     and lower(fr.anonymous_session_id) = lower(p_device_id)
@@ -713,8 +728,19 @@ begin
     susp := false;
     fin := false;
     disp := '';
-  else
-    resume_code := public.ensure_student_resume_code(p_live_session_id, p_device_id);
+    resume_code := null;
+  elsif resume_code is null then
+    begin
+      resume_code := public.generate_student_resume_code();
+      update public.form_responses
+      set student_resume_code = resume_code
+      where live_session_id = p_live_session_id
+        and lower(anonymous_session_id) = lower(p_device_id)
+        and student_id is null
+        and student_resume_code is null;
+    exception when others then
+      resume_code := null;
+    end;
   end if;
 
   return jsonb_build_object(
@@ -1297,18 +1323,20 @@ create or replace function public.teacher_clear_live_session_student_suspension(
   p_live_session_id uuid,
   p_device_id text
 )
-returns void
+returns jsonb
 language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  n integer;
 begin
   if auth.uid() is null then
     raise exception 'not authenticated';
   end if;
 
   if p_device_id is null
-     or p_device_id !~ '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then
+     or lower(p_device_id) !~ '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then
     raise exception 'invalid device id';
   end if;
 
@@ -1323,8 +1351,15 @@ begin
   update public.form_responses
   set suspended_at = null, updated_at = now()
   where live_session_id = p_live_session_id
-    and anonymous_session_id = p_device_id
+    and lower(anonymous_session_id) = lower(p_device_id)
     and student_id is null;
+
+  get diagnostics n = row_count;
+  if n = 0 then
+    raise exception 'student response not found';
+  end if;
+
+  return jsonb_build_object('ok', true);
 end;
 $$;
 
@@ -1446,6 +1481,23 @@ begin
          and tablename = 'form_responses'
      ) then
     execute 'alter publication supabase_realtime add table public.form_responses';
+  end if;
+end;
+$$;
+
+alter table public.form_sessions replica identity full;
+
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
+     and not exists (
+       select 1
+       from pg_publication_tables
+       where pubname = 'supabase_realtime'
+         and schemaname = 'public'
+         and tablename = 'form_sessions'
+     ) then
+    execute 'alter publication supabase_realtime add table public.form_sessions';
   end if;
 end;
 $$;

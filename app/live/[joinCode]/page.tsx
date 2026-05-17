@@ -5,9 +5,11 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { LoadingBar } from "@/components/LoadingBar";
+import { LIVE_BOARD_BROADCAST_EVENT, liveBoardChannelName } from "@/lib/broadcast-live-board";
 import { isValidJoinCodeFormat, normalizeJoinCode } from "@/lib/join-code";
 import type { LivePublicBoardPayload } from "@/lib/live-public-board";
 import { isNoTimeLimitSession } from "@/lib/session-window";
+import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
 
 function formatCountdown(ms: number): string {
   if (ms <= 0) {
@@ -100,14 +102,20 @@ export default function LiveClassDisplayPage() {
   }, [loadBoard]);
 
   useEffect(() => {
-    if (!codeOk || !board) {
+    if (!codeOk) {
       return;
     }
-    const id = window.setInterval(() => {
-      void loadBoard({ silent: true });
-    }, 5000);
-    return () => window.clearInterval(id);
-  }, [codeOk, board, loadBoard]);
+    const supabase = createBrowserSupabaseClient();
+    const channel = supabase
+      .channel(liveBoardChannelName(code))
+      .on("broadcast", { event: LIVE_BOARD_BROADCAST_EVENT }, () => {
+        void loadBoard({ silent: true });
+      })
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [codeOk, code, loadBoard]);
 
   useEffect(() => {
     const id = window.setInterval(() => setNowTick(Date.now()), 1000);

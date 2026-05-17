@@ -21,6 +21,8 @@ export type Form = {
   /** When true, teachers can send live comments visible to students under text questions. */
   liveTeacherFeedbackEnabled: boolean;
   questions: Question[];
+  /** Present when loaded with GET /api/forms?summary=1 (avoids shipping every question). */
+  questionCount?: number;
 };
 
 export type StudentAnswers = Record<string, string>;

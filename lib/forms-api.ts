@@ -51,3 +51,17 @@ export const buildForms = (forms: FormRow[], questions: QuestionRow[]): Form[] =
     ),
   }));
 };
+
+export const buildFormSummaries = (
+  forms: FormRow[],
+  questionCountByFormId: Map<string, number>,
+): Form[] =>
+  forms.map((form) => ({
+    id: form.id,
+    title: form.title,
+    description: form.description ?? "",
+    createdBy: form.created_by,
+    liveTeacherFeedbackEnabled: form.live_teacher_feedback_enabled === true,
+    questions: [],
+    questionCount: questionCountByFormId.get(form.id) ?? 0,
+  }));

@@ -8,6 +8,7 @@ import { LoadingBar } from "@/components/LoadingBar";
 import type { Form, StudentAnswers } from "@/lib/forms";
 import { isNoTimeLimitSession } from "@/lib/session-window";
 import { parseStudentAnswersJson, stableStringifyStudentAnswers } from "@/lib/student-answers-json";
+import { notifyStudentExamFeedback } from "@/lib/notify-student-exam-feedback";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
 import {
   parseLiveTeacherFeedback,
@@ -15,7 +16,7 @@ import {
 } from "@/lib/live-teacher-feedback";
 import { formatResumeCodeForDisplay } from "@/lib/resume-code";
 import { buttonLabel, ui } from "@/lib/ui";
-type ApiError = { error?: string };
+import { requestJson } from "@/lib/request-json";
 
 type SnapshotJson = {
   session: {
@@ -44,16 +45,7 @@ type SessionUser = { id: string; email?: string | null };
 type SessionProfile = { id: string; role: "teacher" | "student"; display_name: string | null };
 type SessionData = { user: SessionUser; profile: SessionProfile | null };
 
-type RealtimeMode = "connecting" | "live" | "poll";
-
-async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
-  const response = await fetch(input, init);
-  const data = (await response.json()) as T & ApiError;
-  if (!response.ok) {
-    throw new Error(data.error ?? "Request failed.");
-  }
-  return data;
-}
+type RealtimeMode = "connecting" | "live" | "offline";
 
 function formatCountdown(ms: number): string {
   if (ms <= 0) {
@@ -110,10 +102,6 @@ function mergeSnapshotFromRow(prev: SnapshotJson, row: Record<string, unknown>):
   };
 }
 
-/** Fast poll so teachers see typing even when Supabase Realtime is unavailable. */
-const LIVE_ANSWERS_POLL_MS = 400;
-const REALTIME_CONNECT_TIMEOUT_MS = 5000;
-
 export default function WatchStudentExamPage() {
   const router = useRouter();
   const params = useParams();
@@ -138,14 +126,16 @@ export default function WatchStudentExamPage() {
   );
   const liveFeedbackSaveTimerRef = useRef<Record<string, number>>({});
   const latestLiveFeedbackDraftsRef = useRef<Record<string, string>>({});
-  const editingLiveFeedbackQuestionIdRef = useRef<string | null>(null);
+  /** True while local text differs from last successful server save for that question. */
+  const dirtyLiveFeedbackRef = useRef<Record<string, boolean>>({});
+  const syncedLiveFeedbackJsonRef = useRef<string>("");
 
   const mergeLiveFeedbackForDisplay = useCallback(
     (server: LiveTeacherFeedbackByQuestionId): LiveTeacherFeedbackByQuestionId => {
       const merged = { ...server };
       for (const [questionId, draft] of Object.entries(latestLiveFeedbackDraftsRef.current)) {
         const pending =
-          editingLiveFeedbackQuestionIdRef.current === questionId ||
+          dirtyLiveFeedbackRef.current[questionId] ||
           liveFeedbackSaveTimerRef.current[questionId] !== undefined ||
           liveFeedbackSavingQuestionIds.has(questionId);
         if (pending && draft !== undefined) {
@@ -242,26 +232,27 @@ export default function WatchStudentExamPage() {
     if (!snapshot) {
       return;
     }
+    const serverJson = JSON.stringify(snapshot.liveTeacherFeedback);
+    if (serverJson === syncedLiveFeedbackJsonRef.current) {
+      return;
+    }
+    syncedLiveFeedbackJsonRef.current = serverJson;
     setLiveFeedbackDraftsByQuestionId((prev) => {
       const next = { ...snapshot.liveTeacherFeedback };
       for (const questionId of Object.keys(prev)) {
-        const keepLocal =
-          editingLiveFeedbackQuestionIdRef.current === questionId ||
-          liveFeedbackSaveTimerRef.current[questionId] !== undefined ||
-          liveFeedbackSavingQuestionIds.has(questionId);
-        if (keepLocal) {
+        if (dirtyLiveFeedbackRef.current[questionId]) {
           next[questionId] = prev[questionId] ?? "";
         }
       }
       return next;
     });
-  }, [snapshot?.updatedAt, snapshot?.liveTeacherFeedback, liveFeedbackSavingQuestionIds]);
+  }, [snapshot?.liveTeacherFeedback]);
 
   latestLiveFeedbackDraftsRef.current = liveFeedbackDraftsByQuestionId;
 
   const persistLiveFeedback = useCallback(
     async (questionId: string) => {
-      if (!liveSessionId || !deviceId) {
+      if (!liveSessionId || !deviceIdNorm) {
         return;
       }
       const message = latestLiveFeedbackDraftsRef.current[questionId] ?? "";
@@ -271,13 +262,15 @@ export default function WatchStudentExamPage() {
           ok: true;
           liveTeacherFeedback: LiveTeacherFeedbackByQuestionId;
         }>(
-          `/api/forms/live-sessions/${liveSessionId}/participants/${encodeURIComponent(deviceId)}/live-feedback`,
+          `/api/forms/live-sessions/${liveSessionId}/participants/${encodeURIComponent(deviceIdNorm)}/live-feedback`,
           {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ questionId, message }),
           },
         );
+        dirtyLiveFeedbackRef.current[questionId] = false;
+        syncedLiveFeedbackJsonRef.current = JSON.stringify(result.liveTeacherFeedback);
         setSnapshot((prev) =>
           prev ? { ...prev, liveTeacherFeedback: result.liveTeacherFeedback } : prev,
         );
@@ -285,6 +278,7 @@ export default function WatchStudentExamPage() {
           ...prev,
           ...result.liveTeacherFeedback,
         }));
+        void notifyStudentExamFeedback(liveSessionId, deviceIdNorm, result.liveTeacherFeedback);
         setLoadError("");
       } catch (e) {
         setLoadError(e instanceof Error ? e.message : "Could not save feedback to student.");
@@ -296,7 +290,7 @@ export default function WatchStudentExamPage() {
         });
       }
     },
-    [liveSessionId, deviceId],
+    [liveSessionId, deviceIdNorm],
   );
 
   const scheduleLiveFeedbackSave = useCallback(
@@ -389,7 +383,7 @@ export default function WatchStudentExamPage() {
           void refresh();
         }
         if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-          setRealtimeMode("poll");
+          setRealtimeMode("offline");
         }
       });
 
@@ -398,26 +392,6 @@ export default function WatchStudentExamPage() {
       void supabase.removeChannel(channel);
     };
   }, [session, snapshot?.form.id, liveSessionId, deviceIdNorm, refresh]);
-
-  useEffect(() => {
-    if (realtimeMode !== "connecting" || session === undefined || session === null) {
-      return;
-    }
-    const id = window.setTimeout(() => {
-      setRealtimeMode((mode) => (mode === "connecting" ? "poll" : mode));
-    }, REALTIME_CONNECT_TIMEOUT_MS);
-    return () => window.clearTimeout(id);
-  }, [realtimeMode, session]);
-
-  useEffect(() => {
-    if (session === undefined || session === null || !snapshot || snapshot.student.finished) {
-      return;
-    }
-    const id = window.setInterval(() => {
-      void refresh();
-    }, LIVE_ANSWERS_POLL_MS);
-    return () => window.clearInterval(id);
-  }, [session, snapshot?.student.finished, refresh]);
 
   useEffect(() => {
     const id = window.setInterval(() => setNowTick(Date.now()), 1000);
@@ -462,9 +436,9 @@ export default function WatchStudentExamPage() {
 
   const streamLine =
     realtimeMode === "live"
-      ? "Answers refresh as the student types (autosave + live updates)."
-      : realtimeMode === "poll"
-        ? "Answers refresh as the student types (autosave every few hundred ms)."
+      ? "Answers update live when the student saves or changes their response."
+      : realtimeMode === "offline"
+        ? "Live updates disconnected. Use Refresh or reload the page."
         : "Connecting to live updates…";
 
   const focusRing =
@@ -631,15 +605,12 @@ export default function WatchStudentExamPage() {
                             <textarea
                               rows={3}
                               value={liveFeedbackDraftsByQuestionId[question.id] ?? ""}
-                              onFocus={() => {
-                                editingLiveFeedbackQuestionIdRef.current = question.id;
-                              }}
                               onBlur={() => {
-                                editingLiveFeedbackQuestionIdRef.current = null;
                                 flushLiveFeedbackSave(question.id);
                               }}
                               onChange={(event) => {
                                 const next = event.target.value;
+                                dirtyLiveFeedbackRef.current[question.id] = true;
                                 setLiveFeedbackDraftsByQuestionId((current) => ({
                                   ...current,
                                   [question.id]: next,

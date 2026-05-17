@@ -1,3 +1,9 @@
+export type SuspendedStudentRow = {
+  anonymousSessionId: string;
+  displayName: string;
+  suspendedAt: string;
+};
+
 export type TeacherSessionSummary = {
   id: string;
   formId: string;

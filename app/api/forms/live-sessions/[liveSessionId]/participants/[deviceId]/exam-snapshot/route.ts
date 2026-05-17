@@ -26,7 +26,7 @@ function sessionWindowOpen(opensAt: string, closesAt: string, nowMs: number): bo
 
 export async function GET(_request: Request, { params }: Params) {
   const { liveSessionId, deviceId: rawDeviceId } = await params;
-  const deviceId = decodeURIComponent(rawDeviceId).trim();
+  const deviceId = decodeURIComponent(rawDeviceId).trim().toLowerCase();
 
   if (!isValidAnonymousSessionId(deviceId)) {
     return NextResponse.json({ error: "Invalid device id." }, { status: 400 });

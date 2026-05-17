@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 
 import { finalizeLiveSessionIfClosed } from "@/lib/live-session-finalize";
+import { isMissingColumnError } from "@/lib/is-missing-db-column";
 import { isLiveParticipantActivelyEngaged } from "@/lib/participant-status";
 import { getSessionUser } from "@/lib/request-auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
-import type { TeacherSessionSummary } from "@/lib/teacher-sessions";
+import type { SuspendedStudentRow, TeacherSessionSummary } from "@/lib/teacher-sessions";
 
 type FormNested = { title: string } | { title: string }[] | null;
 
@@ -19,6 +20,13 @@ function readFormTitle(forms: FormNested): string {
 function sessionWindowOpen(opensAt: string, closesAt: string, nowMs: number): boolean {
   return nowMs >= new Date(opensAt).getTime() && nowMs <= new Date(closesAt).getTime();
 }
+
+type SuspensionQueryRow = {
+  live_session_id: string | null;
+  anonymous_session_id: string | null;
+  student_display_name?: string | null;
+  suspended_at: string | null;
+};
 
 export async function GET() {
   const supabase = await createSupabaseServerClient();
@@ -58,16 +66,14 @@ export async function GET() {
     sessions.map((s) => [s.id, sessionWindowOpen(s.opens_at, s.closes_at, nowMs)]),
   );
 
+  const runningIds = sessions.filter((s) => windowOpenBySessionId.get(s.id)).map((s) => s.id);
+
+  // Finalize closed sessions in the background — do not block the dashboard response.
   for (const s of sessions) {
     if (!windowOpenBySessionId.get(s.id)) {
-      try {
-        await finalizeLiveSessionIfClosed(supabase, s.id);
-      } catch (e) {
-        return NextResponse.json(
-          { error: e instanceof Error ? e.message : "Could not finalize sessions." },
-          { status: 500 },
-        );
-      }
+      void finalizeLiveSessionIfClosed(supabase, s.id).catch(() => {
+        /* best-effort */
+      });
     }
   }
 
@@ -132,5 +138,46 @@ export async function GET() {
     };
   });
 
-  return NextResponse.json({ sessions: summaries });
+  const suspensionsBySession: Record<string, SuspendedStudentRow[]> = {};
+  if (runningIds.length > 0) {
+    const primary = await supabase
+      .from("form_responses")
+      .select("live_session_id, anonymous_session_id, student_display_name, suspended_at")
+      .in("live_session_id", runningIds)
+      .not("suspended_at", "is", null);
+
+    let suspensionRows: SuspensionQueryRow[] | null = primary.data as SuspensionQueryRow[] | null;
+    let suspensionError = primary.error;
+
+    if (suspensionError && isMissingColumnError(suspensionError, "student_display_name")) {
+      const retry = await supabase
+        .from("form_responses")
+        .select("live_session_id, anonymous_session_id, suspended_at")
+        .in("live_session_id", runningIds)
+        .not("suspended_at", "is", null);
+      suspensionRows = retry.data as SuspensionQueryRow[] | null;
+      suspensionError = retry.error;
+    }
+
+    if (suspensionError) {
+      return NextResponse.json({ error: suspensionError.message }, { status: 500 });
+    }
+
+    for (const row of suspensionRows ?? []) {
+      const lid = row.live_session_id;
+      const deviceId = row.anonymous_session_id;
+      if (!lid || !deviceId || !row.suspended_at) {
+        continue;
+      }
+      const list = suspensionsBySession[lid] ?? [];
+      list.push({
+        anonymousSessionId: deviceId,
+        displayName: row.student_display_name?.trim() ?? "",
+        suspendedAt: row.suspended_at,
+      });
+      suspensionsBySession[lid] = list;
+    }
+  }
+
+  return NextResponse.json({ sessions: summaries, suspensionsBySession });
 }

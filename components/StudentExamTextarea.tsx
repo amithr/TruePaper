@@ -2,9 +2,7 @@
 
 import {
   useCallback,
-  useEffect,
   useRef,
-  useState,
   type ChangeEvent,
   type ClipboardEvent,
   type CompositionEvent,
@@ -15,8 +13,9 @@ import {
 
 type Props = {
   id: string;
-  value: string;
-  onChange: (next: string) => void;
+  /** Initial text when this question mounts (e.g. after load). Not updated on parent re-renders. */
+  defaultValue?: string;
+  onValueChange: (next: string) => void;
   disabled?: boolean;
   /** When true, apply client-side anti-paste layers that still allow typing. */
   protect: boolean;
@@ -26,17 +25,13 @@ type Props = {
 };
 
 /**
- * Aggressive paste blocking for live exams. Not bypass-proof.
- *
- * Not used here (would block normal typing or are out of scope for this component):
- * - readonly / disabled while answering
- * - pointer-events:none on the field; full-screen overlay (blocks focus/clicks)
- * - canvas-based input, Shadow DOM, full fake-div keyboard-only editor
+ * Uncontrolled textarea for live exams so autosave / realtime re-renders never reset typed text.
+ * Parent must remount via `key` when loading saved answers from the server.
  */
 export function StudentExamTextarea({
   id,
-  value,
-  onChange,
+  defaultValue = "",
+  onValueChange,
   disabled = false,
   protect,
   rows = 4,
@@ -44,28 +39,28 @@ export function StudentExamTextarea({
   className,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
-  const lastGoodRef = useRef(value);
-  const [domKey, setDomKey] = useState(0);
+  const lastGoodRef = useRef(defaultValue);
 
-  useEffect(() => {
-    lastGoodRef.current = value;
-  }, [value]);
-
-  const bumpRemount = useCallback(() => {
-    setDomKey((k) => k + 1);
-  }, []);
+  const emit = useCallback(
+    (next: string) => {
+      lastGoodRef.current = next;
+      onValueChange(next);
+    },
+    [onValueChange],
+  );
 
   const revertToLastGood = useCallback(() => {
     const prev = lastGoodRef.current;
-    onChange(prev);
-    bumpRemount();
-  }, [onChange, bumpRemount]);
+    if (ref.current) {
+      ref.current.value = prev;
+    }
+    emit(prev);
+  }, [emit]);
 
   const applyFromDom = useCallback(
     (next: string, inputType: string | undefined) => {
       if (!protect || disabled) {
-        onChange(next);
-        lastGoodRef.current = next;
+        emit(next);
         return;
       }
 
@@ -75,8 +70,7 @@ export function StudentExamTextarea({
         inputType &&
         (inputType.includes("omposition") || inputType === "insertFromComposition")
       ) {
-        onChange(next);
-        lastGoodRef.current = next;
+        emit(next);
         return;
       }
 
@@ -99,10 +93,9 @@ export function StudentExamTextarea({
         return;
       }
 
-      onChange(next);
-      lastGoodRef.current = next;
+      emit(next);
     },
-    [protect, disabled, onChange, revertToLastGood],
+    [protect, disabled, emit, revertToLastGood],
   );
 
   const handleBeforeInput = useCallback(
@@ -171,7 +164,6 @@ export function StudentExamTextarea({
       }
       if (e.shiftKey && e.key === "Insert") {
         e.preventDefault();
-        return;
       }
     },
     [protect, disabled],
@@ -184,12 +176,12 @@ export function StudentExamTextarea({
       }
       const ne = e.nativeEvent as InputEvent;
       if (ne.isComposing) {
-        onChange(e.currentTarget.value);
+        emit(e.currentTarget.value);
         return;
       }
       applyFromDom(e.currentTarget.value, ne.inputType);
     },
-    [protect, disabled, onChange, applyFromDom],
+    [protect, disabled, emit, applyFromDom],
   );
 
   const handleChange = useCallback(
@@ -197,35 +189,18 @@ export function StudentExamTextarea({
       if (protect && !disabled) {
         return;
       }
-      onChange(e.target.value);
-      lastGoodRef.current = e.target.value;
+      emit(e.target.value);
     },
-    [protect, disabled, onChange],
+    [protect, disabled, emit],
   );
-
-  if (!protect) {
-    return (
-      <textarea
-        id={id}
-        name={id}
-        rows={rows}
-        value={value}
-        disabled={disabled}
-        onChange={handleChange}
-        placeholder={placeholder}
-        className={className}
-      />
-    );
-  }
 
   return (
     <textarea
-      key={domKey}
       ref={ref}
       id={id}
       name={id}
       rows={rows}
-      value={value}
+      defaultValue={defaultValue}
       disabled={disabled}
       spellCheck={false}
       autoComplete="off"

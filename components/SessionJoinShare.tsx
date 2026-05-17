@@ -1,14 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import QRCode from "react-qr-code";
 
 import { copyToClipboard } from "@/lib/copy-to-clipboard";
+import { buildStudentJoinUrl } from "@/lib/student-join-url";
 import { buttonLabel } from "@/lib/ui";
 
 type Props = {
   joinCode: string;
-  /** When false, QR is not offered (keeps bundle lighter if ever tree-shaken). */
   showQr?: boolean;
   className?: string;
 };
@@ -20,19 +20,11 @@ export function SessionJoinShare({ joinCode, showQr = true, className }: Props) 
   const [copied, setCopied] = useState<"link" | "code" | null>(null);
   const [showQrPanel, setShowQrPanel] = useState(false);
   const [origin, setOrigin] = useState("");
+  const [qrJoinUrl, setQrJoinUrl] = useState("");
 
   useEffect(() => {
     setOrigin(window.location.origin);
   }, []);
-
-  const joinUrl = useMemo(() => {
-    if (!origin) {
-      return "";
-    }
-    const u = new URL("/", origin);
-    u.searchParams.set("code", joinCode);
-    return u.toString();
-  }, [joinCode, origin]);
 
   const flashCopied = useCallback((kind: "link" | "code") => {
     setCopied(kind);
@@ -40,14 +32,18 @@ export function SessionJoinShare({ joinCode, showQr = true, className }: Props) 
   }, []);
 
   const onCopyLink = useCallback(async () => {
-    if (!joinUrl) {
+    if (!origin) {
       return;
     }
-    const ok = await copyToClipboard(joinUrl);
+    const link = buildStudentJoinUrl(origin, joinCode);
+    if (!link) {
+      return;
+    }
+    const ok = await copyToClipboard(link);
     if (ok) {
       flashCopied("link");
     }
-  }, [joinUrl, flashCopied]);
+  }, [origin, joinCode, flashCopied]);
 
   const onCopyCode = useCallback(async () => {
     const ok = await copyToClipboard(joinCode);
@@ -56,10 +52,20 @@ export function SessionJoinShare({ joinCode, showQr = true, className }: Props) 
     }
   }, [joinCode, flashCopied]);
 
+  const onToggleQr = useCallback(() => {
+    setShowQrPanel((v) => {
+      const next = !v;
+      if (next && origin) {
+        setQrJoinUrl(buildStudentJoinUrl(origin, joinCode));
+      }
+      return next;
+    });
+  }, [origin, joinCode]);
+
   return (
     <div className={className}>
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" onClick={() => void onCopyLink()} disabled={!joinUrl} className={btn}>
+        <button type="button" onClick={() => void onCopyLink()} disabled={!origin} className={btn}>
           {copied === "link" ? buttonLabel("Join link copied!") : buttonLabel("Copy join link")}
         </button>
         <button type="button" onClick={() => void onCopyCode()} className={btn}>
@@ -68,7 +74,7 @@ export function SessionJoinShare({ joinCode, showQr = true, className }: Props) 
         {showQr ? (
           <button
             type="button"
-            onClick={() => setShowQrPanel((v) => !v)}
+            onClick={onToggleQr}
             className={btn}
             aria-expanded={showQrPanel}
           >
@@ -76,11 +82,13 @@ export function SessionJoinShare({ joinCode, showQr = true, className }: Props) 
           </button>
         ) : null}
       </div>
-      {showQr && showQrPanel && joinUrl ? (
+      {showQr && showQrPanel && qrJoinUrl ? (
         <div className="mt-3 inline-block rounded-lg border border-zinc-200 bg-white p-3">
-          <p className="mb-2 text-xs text-zinc-600">Scan to open the join page with this code prefilled.</p>
+          <p className="mb-2 text-xs text-zinc-600">
+            Each scan opens a new student attempt on that device (not a shared browser identity).
+          </p>
           <div className="rounded-md bg-white p-2">
-            <QRCode value={joinUrl} size={128} className="h-32 w-32" />
+            <QRCode value={qrJoinUrl} size={128} className="h-32 w-32" />
           </div>
         </div>
       ) : null}

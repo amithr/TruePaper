@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { notifyLiveSessionActivity } from "@/lib/notify-live-session-activity";
 import { getSessionUser } from "@/lib/request-auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -44,6 +45,8 @@ export async function POST(_request: Request, { params }: Params) {
   const payload = data as { ok?: boolean; closesAt?: string; finishedCount?: number } | null;
   const closesAt =
     typeof payload?.closesAt === "string" ? payload.closesAt : new Date().toISOString();
+
+  void notifyLiveSessionActivity(liveSessionId);
 
   return NextResponse.json({
     ok: true,

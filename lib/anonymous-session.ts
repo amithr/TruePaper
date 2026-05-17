@@ -13,9 +13,22 @@ export function getOrCreateAnonymousSessionId(): string {
   if (existing && isValidAnonymousSessionId(existing)) {
     return existing;
   }
+  return createFreshAnonymousSessionId();
+}
+
+/** New browser identity for this device (overwrites stored id). */
+export function createFreshAnonymousSessionId(): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
   const id = crypto.randomUUID();
   window.localStorage.setItem(STORAGE_KEY, id);
   return id;
+}
+
+/** Join links with these params always start a separate student attempt. */
+export function joinUrlRequestsFreshDevice(searchParams: URLSearchParams): boolean {
+  return searchParams.get("new") === "1" || searchParams.has("student");
 }
 
 /** Restore this device after clearing site data or switching browsers (used with a personal rejoin code). */

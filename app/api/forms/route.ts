@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { buildForms } from "@/lib/forms-api";
+import { buildFormSummaries, buildForms } from "@/lib/forms-api";
 import type { Form } from "@/lib/forms";
 import { getSessionUser } from "@/lib/request-auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -10,13 +10,15 @@ type CreateFormBody = {
   description?: string;
 };
 
-export async function GET() {
+export async function GET(request: Request) {
   const supabase = await createSupabaseServerClient();
   const session = await getSessionUser(supabase);
 
   if (!session) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
   }
+
+  const summaryOnly = new URL(request.url).searchParams.get("summary") === "1";
 
   const { data: forms, error: formsError } = await supabase
     .from("forms")
@@ -29,6 +31,26 @@ export async function GET() {
 
   if (!forms || forms.length === 0) {
     return NextResponse.json({ forms: [] satisfies Form[] });
+  }
+
+  if (summaryOnly) {
+    const formIds = forms.map((form) => form.id);
+    const { data: questionRows, error: countError } = await supabase
+      .from("questions")
+      .select("form_id")
+      .in("form_id", formIds);
+
+    if (countError) {
+      return NextResponse.json({ error: countError.message }, { status: 500 });
+    }
+
+    const questionCountByFormId = new Map<string, number>();
+    for (const row of questionRows ?? []) {
+      const fid = row.form_id as string;
+      questionCountByFormId.set(fid, (questionCountByFormId.get(fid) ?? 0) + 1);
+    }
+
+    return NextResponse.json({ forms: buildFormSummaries(forms, questionCountByFormId) });
   }
 
   const formIds = forms.map((form) => form.id);
