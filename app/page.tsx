@@ -19,7 +19,9 @@ import {
   joinUrlRequestsFreshDevice,
   persistAnonymousSessionId,
 } from "@/lib/anonymous-session";
+import { deferEffect } from "@/lib/defer-effect";
 import { postExamTabLeave } from "@/lib/exam-tab-leave";
+import { useLatestRef } from "@/lib/use-latest-ref";
 import type { Form, Question, QuestionType, StudentAnswers } from "@/lib/forms";
 import { isValidLiveSessionDisplayName, normalizeLiveSessionDisplayName } from "@/lib/live-session-display-name";
 import { parseLiveSessionStudentGet } from "@/lib/live-session-student-get";
@@ -217,7 +219,6 @@ export default function Home() {
   const lastPersistedBuilderQuestionJsonByIdRef = useRef<Record<string, string>>({});
   const builderAutosaveInFlightRef = useRef(false);
   const builderAutosaveBannerClearRef = useRef<number | undefined>(undefined);
-  const latestActiveFormRef = useRef<Form | undefined>(undefined);
   const [isLoadingForms, setIsLoadingForms] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -236,7 +237,7 @@ export default function Home() {
     [authForms, activeFormId],
   );
 
-  latestActiveFormRef.current = activeForm;
+  const latestActiveFormRef = useLatestRef(activeForm);
 
   const closesAtForStudent = joinedSession?.closesAt ?? null;
   const sessionOpen =
@@ -393,65 +394,46 @@ export default function Home() {
     if (typeof window === "undefined") {
       return;
     }
-    const params = new URLSearchParams(window.location.search);
+    deferEffect(() => {
+      const params = new URLSearchParams(window.location.search);
 
-    if (joinUrlRequestsFreshDevice(params)) {
-      setAnonymousSessionId(createFreshAnonymousSessionId());
-    } else {
-      setAnonymousSessionId(getOrCreateAnonymousSessionId());
-    }
+      if (joinUrlRequestsFreshDevice(params)) {
+        setAnonymousSessionId(createFreshAnonymousSessionId());
+      } else {
+        setAnonymousSessionId(getOrCreateAnonymousSessionId());
+      }
 
-    const raw = params.get("code") ?? params.get("join");
-    if (raw) {
-      const normalized = normalizeJoinCode(raw);
-      if (isValidJoinCodeFormat(normalized)) {
-        setJoinCodeInput(normalized);
-        setPendingAutoJoinCode(normalized);
-        joinIntentFromUrlRef.current = true;
+      const raw = params.get("code") ?? params.get("join");
+      if (raw) {
+        const normalized = normalizeJoinCode(raw);
+        if (isValidJoinCodeFormat(normalized)) {
+          setJoinCodeInput(normalized);
+          setPendingAutoJoinCode(normalized);
+          joinIntentFromUrlRef.current = true;
+        }
       }
-    }
-    const resumeRaw = params.get("resume");
-    if (resumeRaw) {
-      const normalizedResume = normalizeResumeCode(resumeRaw);
-      if (isValidResumeCodeFormat(normalizedResume)) {
-        setRejoinCodeInput(normalizedResume);
-        setPendingAutoResumeCode(normalizedResume);
-        joinIntentFromUrlRef.current = true;
+      const resumeRaw = params.get("resume");
+      if (resumeRaw) {
+        const normalizedResume = normalizeResumeCode(resumeRaw);
+        if (isValidResumeCodeFormat(normalizedResume)) {
+          setRejoinCodeInput(normalizedResume);
+          setPendingAutoResumeCode(normalizedResume);
+          joinIntentFromUrlRef.current = true;
+        }
       }
-    }
-    const u = new URL(window.location.href);
-    if (u.searchParams.has("code") || u.searchParams.has("join")) {
-      u.searchParams.delete("code");
-      u.searchParams.delete("join");
-    }
-    if (u.searchParams.has("resume")) {
-      u.searchParams.delete("resume");
-    }
-    u.searchParams.delete("new");
-    u.searchParams.delete("student");
-    window.history.replaceState({}, "", u.pathname + u.search + u.hash);
+      const u = new URL(window.location.href);
+      if (u.searchParams.has("code") || u.searchParams.has("join")) {
+        u.searchParams.delete("code");
+        u.searchParams.delete("join");
+      }
+      if (u.searchParams.has("resume")) {
+        u.searchParams.delete("resume");
+      }
+      u.searchParams.delete("new");
+      u.searchParams.delete("student");
+      window.history.replaceState({}, "", u.pathname + u.search + u.hash);
+    });
   }, []);
-
-  useEffect(() => {
-    if (!pendingAutoJoinCode || joinedSession || isMutating || pendingAutoResumeCode) {
-      return;
-    }
-    const normalizedDisplayName = normalizeLiveSessionDisplayName(joinDisplayNameInput);
-    if (!isValidLiveSessionDisplayName(normalizedDisplayName)) {
-      setStatusMessage("Join code loaded from link. Enter your name, then tap Join.");
-      return;
-    }
-    void joinWithCode(pendingAutoJoinCode);
-    setPendingAutoJoinCode("");
-  }, [pendingAutoJoinCode, joinDisplayNameInput, joinedSession, isMutating, pendingAutoResumeCode]);
-
-  useEffect(() => {
-    if (!pendingAutoResumeCode || joinedSession || isMutating) {
-      return;
-    }
-    void rejoinWithResumeCode(pendingAutoResumeCode);
-    setPendingAutoResumeCode("");
-  }, [pendingAutoResumeCode, joinedSession, isMutating]);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -546,14 +528,16 @@ export default function Home() {
     if (!authForms.some((f) => f.id === formId)) {
       return;
     }
-    setActiveFormId(formId);
-    setMode("teacher");
-    const { pathname, hash } = window.location;
-    window.history.replaceState(
-      {},
-      "",
-      `${pathname}?form=${encodeURIComponent(formId)}${hash}`,
-    );
+    deferEffect(() => {
+      setActiveFormId(formId);
+      setMode("teacher");
+      const { pathname, hash } = window.location;
+      window.history.replaceState(
+        {},
+        "",
+        `${pathname}?form=${encodeURIComponent(formId)}${hash}`,
+      );
+    });
   }, [session, authForms]);
 
   /**
@@ -591,12 +575,12 @@ export default function Home() {
     router.replace("/dashboard");
   }, [session, router]);
 
-  const syncListsAfterTeacherChange = async () => {
+  const syncListsAfterTeacherChange = useCallback(async () => {
     if (session?.profile?.role === "teacher") {
       const auth = await requestJson<{ forms: Form[] }>("/api/forms");
       setAuthForms(auth.forms);
     }
-  };
+  }, [session?.profile?.role]);
 
   const joinedLiveSessionId = joinedSession?.liveSessionId ?? "";
   const isLiveTeacherFeedbackEnabled =
@@ -918,7 +902,7 @@ export default function Home() {
         /* ignore */
       }
     })();
-  }, [joinedSession?.liveSessionId, anonymousSessionId, activeExamDisplayName, joinCodeInput]);
+  }, [joinedSession, anonymousSessionId, activeExamDisplayName, joinCodeInput]);
 
   useEffect(() => {
     return () => {
@@ -1055,14 +1039,7 @@ export default function Home() {
         window.clearTimeout(blurTimer);
       }
     };
-  }, [
-    joinedLiveSessionId,
-    sessionOpen,
-    examSuspended,
-    examFinished,
-    anonymousSessionId,
-    activeExamDisplayName,
-  ]);
+  }, [joinedSession, sessionOpen, examSuspended, examFinished, anonymousSessionId, activeExamDisplayName]);
 
   useEffect(() => {
     if (mode !== "teacher" || !isTeacher) {
@@ -1120,7 +1097,7 @@ export default function Home() {
       persistedQuestions[question.id] = serializeBuilderQuestion(question);
     }
     lastPersistedBuilderQuestionJsonByIdRef.current = persistedQuestions;
-  }, [activeForm?.id]);
+  }, [activeForm]);
 
   useEffect(() => {
     if (!activeFormId || mode !== "teacher" || !isTeacher) {
@@ -1201,7 +1178,7 @@ export default function Home() {
       void runBuilderAutosave();
     }, BUILDER_AUTOSAVE_MS);
     return () => window.clearInterval(id);
-  }, [activeFormId, mode, isTeacher]);
+  }, [activeFormId, mode, isTeacher, latestActiveFormRef, syncListsAfterTeacherChange]);
 
   const addQuestion = async (type: QuestionType) => {
     if (!activeForm) {
@@ -1366,6 +1343,38 @@ export default function Home() {
       setIsMutating(false);
     }
   };
+
+  const joinWithCodeRef = useLatestRef(joinWithCode);
+  const rejoinWithResumeCodeRef = useLatestRef(rejoinWithResumeCode);
+
+  useEffect(() => {
+    if (!pendingAutoJoinCode || joinedSession || isMutating || pendingAutoResumeCode) {
+      return;
+    }
+    const normalizedDisplayName = normalizeLiveSessionDisplayName(joinDisplayNameInput);
+    if (!isValidLiveSessionDisplayName(normalizedDisplayName)) {
+      deferEffect(() => {
+        setStatusMessage("Join code loaded from link. Enter your name, then tap Join.");
+      });
+      return;
+    }
+    const code = pendingAutoJoinCode;
+    deferEffect(() => {
+      void joinWithCodeRef.current(code);
+      setPendingAutoJoinCode("");
+    });
+  }, [pendingAutoJoinCode, joinDisplayNameInput, joinedSession, isMutating, pendingAutoResumeCode, joinWithCodeRef]);
+
+  useEffect(() => {
+    if (!pendingAutoResumeCode || joinedSession || isMutating) {
+      return;
+    }
+    const code = pendingAutoResumeCode;
+    deferEffect(() => {
+      void rejoinWithResumeCodeRef.current(code);
+      setPendingAutoResumeCode("");
+    });
+  }, [pendingAutoResumeCode, joinedSession, isMutating, rejoinWithResumeCodeRef]);
 
   const leaveJoinedSession = () => {
     setJoinedSession(null);

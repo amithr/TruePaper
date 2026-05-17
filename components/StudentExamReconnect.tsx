@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import QRCode from "react-qr-code";
 
 import { copyToClipboard } from "@/lib/copy-to-clipboard";
@@ -18,11 +18,9 @@ const btn =
 export function StudentExamReconnect({ resumeCode, className }: Props) {
   const [copied, setCopied] = useState<"link" | "code" | null>(null);
   const [showQrPanel, setShowQrPanel] = useState(false);
-  const [origin, setOrigin] = useState("");
-
-  useEffect(() => {
-    setOrigin(window.location.origin);
-  }, []);
+  const [origin] = useState(() =>
+    typeof window !== "undefined" ? window.location.origin : "",
+  );
 
   const normalizedCode = resumeCode.trim().toUpperCase();
   const displayCode = formatResumeCodeForDisplay(normalizedCode);

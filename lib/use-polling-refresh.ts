@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
+
+import { useLatestRef } from "@/lib/use-latest-ref";
 
 type Options = {
   enabled: boolean;
@@ -17,8 +19,7 @@ export function usePollingRefresh({
   pollWhenHidden = false,
   onRefresh,
 }: Options): void {
-  const onRefreshRef = useRef(onRefresh);
-  onRefreshRef.current = onRefresh;
+  const onRefreshRef = useLatestRef(onRefresh);
 
   useEffect(() => {
     if (!enabled || intervalMs <= 0) {
@@ -35,5 +36,5 @@ export function usePollingRefresh({
     tick();
     const id = window.setInterval(tick, intervalMs);
     return () => window.clearInterval(id);
-  }, [enabled, intervalMs, pollWhenHidden]);
+  }, [enabled, intervalMs, pollWhenHidden, onRefreshRef]);
 }

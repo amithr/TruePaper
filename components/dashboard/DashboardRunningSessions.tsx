@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
+import { deferEffect } from "@/lib/defer-effect";
+
 import { SessionJoinShare } from "@/components/SessionJoinShare";
 import { LIVE_SESSION_OVERVIEW_EVENT, liveSessionOverviewChannelName } from "@/lib/broadcast-live-session-overview";
 import { notifyStudentExamResumed } from "@/lib/notify-student-exam-resumed";
@@ -68,8 +70,10 @@ export function DashboardRunningSessions({
   }, [onError]);
 
   useEffect(() => {
-    setSessions(initialSessions);
-    setSuspensionsBySession(initialSuspensions);
+    deferEffect(() => {
+      setSessions(initialSessions);
+      setSuspensionsBySession(initialSuspensions);
+    });
   }, [initialSessions, initialSuspensions]);
 
   useEffect(() => {

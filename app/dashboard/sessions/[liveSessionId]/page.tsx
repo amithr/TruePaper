@@ -12,6 +12,7 @@ import {
   LIVE_SESSION_OVERVIEW_EVENT,
   liveSessionOverviewChannelName,
 } from "@/lib/broadcast-live-session-overview";
+import { deferEffect } from "@/lib/defer-effect";
 import { notifyStudentExamResumed } from "@/lib/notify-student-exam-resumed";
 import { useBroadcastRefresh } from "@/lib/use-broadcast-refresh";
 import { usePollingRefresh } from "@/lib/use-polling-refresh";
@@ -142,7 +143,9 @@ export default function LiveSessionDetailPage() {
     if (session === undefined || session === null) {
       return;
     }
-    void refreshOverview();
+    deferEffect(() => {
+      void refreshOverview();
+    });
   }, [session, refreshOverview]);
 
   usePostgresRealtimeRefresh(

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import QRCode from "react-qr-code";
 
 import { copyToClipboard } from "@/lib/copy-to-clipboard";
@@ -19,12 +19,10 @@ const btn =
 export function SessionJoinShare({ joinCode, showQr = true, className }: Props) {
   const [copied, setCopied] = useState<"link" | "code" | null>(null);
   const [showQrPanel, setShowQrPanel] = useState(false);
-  const [origin, setOrigin] = useState("");
+  const [origin] = useState(() =>
+    typeof window !== "undefined" ? window.location.origin : "",
+  );
   const [qrJoinUrl, setQrJoinUrl] = useState("");
-
-  useEffect(() => {
-    setOrigin(window.location.origin);
-  }, []);
 
   const flashCopied = useCallback((kind: "link" | "code") => {
     setCopied(kind);

@@ -1,11 +1,7 @@
 import { NextResponse } from "next/server";
 
-type Params = {
-  params: Promise<{ formId: string }>;
-};
-
 /** Replaced by `/api/public/live-sessions/[liveSessionId]/responses` (join-code sessions). */
-export async function GET(_request: Request, _context: Params) {
+export async function GET() {
   return NextResponse.json(
     {
       error:
@@ -15,7 +11,7 @@ export async function GET(_request: Request, _context: Params) {
   );
 }
 
-export async function PUT(_request: Request, _context: Params) {
+export async function PUT() {
   return NextResponse.json(
     {
       error:

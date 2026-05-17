@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { deferEffect } from "@/lib/defer-effect";
+
 import { LoadingBar } from "@/components/LoadingBar";
 import type { Form } from "@/lib/forms";
 import { buttonLabel, focusRing, ui } from "@/lib/ui";
@@ -65,7 +67,9 @@ export function DashboardFormLibrary({ onError }: Props) {
 
   useEffect(() => {
     const maxPage = Math.max(0, formLibraryTotalPages - 1);
-    setFormLibraryPage((p) => Math.min(p, maxPage));
+    deferEffect(() => {
+      setFormLibraryPage((p) => Math.min(p, maxPage));
+    });
   }, [formLibraryTotalPages]);
 
   const formLibraryPageSlice = useMemo(() => {

@@ -1,7 +1,7 @@
 "use client";
 
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 
 import {
   STUDENT_EXAM_BROADCAST_EVENT,
@@ -10,6 +10,7 @@ import {
 import { studentExamRemotePatchFromRow, type StudentExamRemotePatch } from "@/lib/student-exam-remote-patch";
 import { isAnswersOnlyFormResponseUpdate } from "@/lib/student-exam-realtime-filter";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
+import { useLatestRef } from "@/lib/use-latest-ref";
 
 type Options = {
   liveSessionId: string;
@@ -38,10 +39,8 @@ export function useStudentExamRealtime({
   onPatch,
   onBroadcastReady,
 }: Options): void {
-  const onPatchRef = useRef(onPatch);
-  onPatchRef.current = onPatch;
-  const onBroadcastReadyRef = useRef(onBroadcastReady);
-  onBroadcastReadyRef.current = onBroadcastReady;
+  const onPatchRef = useLatestRef(onPatch);
+  const onBroadcastReadyRef = useLatestRef(onBroadcastReady);
 
   useEffect(() => {
     if (!enabled || !liveSessionId || !deviceId) {
@@ -139,5 +138,5 @@ export function useStudentExamRealtime({
         void supabase.removeChannel(channel);
       }
     };
-  }, [liveSessionId, deviceId, enabled]);
+  }, [liveSessionId, deviceId, enabled, onPatchRef, onBroadcastReadyRef]);
 }

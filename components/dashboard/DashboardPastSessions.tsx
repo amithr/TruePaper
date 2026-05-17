@@ -6,7 +6,8 @@ import { useCallback, useEffect, useState } from "react";
 import { LoadingBar } from "@/components/LoadingBar";
 import { PAST_SESSIONS_PAGE_SIZE } from "@/lib/teacher-dashboard-server";
 import type { TeacherSessionSummary } from "@/lib/teacher-sessions";
-import { buttonLabel, focusRing, ui } from "@/lib/ui";
+import { deferEffect } from "@/lib/defer-effect";
+import { buttonLabel, ui } from "@/lib/ui";
 import { requestJson } from "@/lib/request-json";
 
 type Props = {
@@ -46,7 +47,9 @@ export function DashboardPastSessions({ onError }: Props) {
   );
 
   useEffect(() => {
-    void loadPage(0);
+    deferEffect(() => {
+      void loadPage(0);
+    });
   }, [loadPage]);
 
   return (

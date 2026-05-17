@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import type { Form, Question, QuestionType } from "@/lib/forms";
+import type { Form, QuestionType } from "@/lib/forms";
 import { isValidResumeCodeFormat, normalizeResumeCode } from "@/lib/resume-code";
 import { createSupabaseAnonServiceClient } from "@/lib/supabase/anon-service";
 

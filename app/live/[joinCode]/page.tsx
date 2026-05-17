@@ -9,6 +9,7 @@ import { LIVE_BOARD_BROADCAST_EVENT, liveBoardChannelName } from "@/lib/broadcas
 import { isValidJoinCodeFormat, normalizeJoinCode } from "@/lib/join-code";
 import type { LivePublicBoardPayload } from "@/lib/live-public-board";
 import { isNoTimeLimitSession } from "@/lib/session-window";
+import { deferEffect } from "@/lib/defer-effect";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
 
 function formatCountdown(ms: number): string {
@@ -98,7 +99,9 @@ export default function LiveClassDisplayPage() {
   }, [code, codeOk]);
 
   useEffect(() => {
-    void loadBoard();
+    deferEffect(() => {
+      void loadBoard();
+    });
   }, [loadBoard]);
 
   useEffect(() => {

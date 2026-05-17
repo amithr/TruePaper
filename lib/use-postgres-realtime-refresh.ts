@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
+import { useLatestRef } from "@/lib/use-latest-ref";
 
 type PostgresSubscription = {
   table: "form_responses" | "form_sessions";
@@ -30,17 +31,22 @@ export function usePostgresRealtimeRefresh(
 ): void {
   const debounceMs = options.debounceMs ?? DEFAULT_DEBOUNCE_MS;
   const minIntervalMs = options.minIntervalMs ?? 0;
-  const onRefreshRef = useRef(onRefresh);
-  onRefreshRef.current = onRefresh;
+  const onRefreshRef = useLatestRef(onRefresh);
   const lastRefreshAtRef = useRef(0);
 
   const subsKey = subscriptions
     .map((s) => `${s.table}:${s.filter ?? ""}`)
     .sort()
     .join("|");
+  const stableSubscriptions = useMemo(
+    () => subscriptions,
+    // subscriptions content is fully represented by subsKey
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- subsKey
+    [subsKey],
+  );
 
   useEffect(() => {
-    if (!enabled || subscriptions.length === 0) {
+    if (!enabled || stableSubscriptions.length === 0) {
       return;
     }
 
@@ -63,7 +69,7 @@ export function usePostgresRealtimeRefresh(
       }, waitMs);
     };
 
-    for (const sub of subscriptions) {
+    for (const sub of stableSubscriptions) {
       channel = channel.on(
         "postgres_changes",
         {
@@ -84,5 +90,5 @@ export function usePostgresRealtimeRefresh(
       window.clearTimeout(debounceTimer);
       void supabase.removeChannel(channel);
     };
-  }, [enabled, channelName, subsKey, debounceMs, minIntervalMs]);
+  }, [enabled, channelName, stableSubscriptions, debounceMs, minIntervalMs, onRefreshRef]);
 }

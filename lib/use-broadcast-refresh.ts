@@ -1,9 +1,10 @@
 "use client";
 
 import type { RealtimeChannel } from "@supabase/supabase-js";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo } from "react";
 
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
+import { useLatestRef } from "@/lib/use-latest-ref";
 
 const DEFAULT_DEBOUNCE_MS = 300;
 
@@ -17,13 +18,18 @@ export function useBroadcastRefresh(
   onRefresh: () => void,
   debounceMs = DEFAULT_DEBOUNCE_MS,
 ): void {
-  const onRefreshRef = useRef(onRefresh);
-  onRefreshRef.current = onRefresh;
+  const onRefreshRef = useLatestRef(onRefresh);
 
   const channelsKey = [...channelNames].sort().join("|");
+  const stableChannelNames = useMemo(
+    () => [...channelNames].sort(),
+    // channelNames content is fully represented by channelsKey
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- channelsKey
+    [channelsKey],
+  );
 
   useEffect(() => {
-    if (!enabled || channelNames.length === 0) {
+    if (!enabled || stableChannelNames.length === 0) {
       return;
     }
 
@@ -39,7 +45,7 @@ export function useBroadcastRefresh(
       }, debounceMs);
     };
 
-    for (const name of channelNames) {
+    for (const name of stableChannelNames) {
       const channel = supabase
         .channel(name)
         .on("broadcast", { event }, () => {
@@ -55,5 +61,5 @@ export function useBroadcastRefresh(
         void supabase.removeChannel(channel);
       }
     };
-  }, [enabled, channelsKey, event, debounceMs]);
+  }, [enabled, stableChannelNames, event, debounceMs, onRefreshRef]);
 }
