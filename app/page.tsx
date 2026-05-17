@@ -127,8 +127,10 @@ function examProtectionHandlers(enabled: boolean) {
 }
 
 /** Debounce after the last keystroke; max-wait forces a save during continuous typing (teacher live view). */
-const AUTOSAVE_DEBOUNCE_MS = 600;
-const AUTOSAVE_MAX_WAIT_MS = 2000;
+const E2E_AUTOSAVE =
+  typeof process !== "undefined" && process.env.NEXT_PUBLIC_E2E_AUTOSAVE === "1";
+const AUTOSAVE_DEBOUNCE_MS = E2E_AUTOSAVE ? 200 : 600;
+const AUTOSAVE_MAX_WAIT_MS = E2E_AUTOSAVE ? 800 : 2000;
 
 const BUILDER_AUTOSAVE_MS = 5000;
 
@@ -625,7 +627,7 @@ export default function Home() {
         setStudentAnswersHydrated(true);
         setExamSuspended(parsed.suspended);
         setExamFinished(parsed.finished);
-        setLiveTeacherFeedback(parsed.liveTeacherFeedback);
+        setLiveTeacherFeedback((prev) => ({ ...prev, ...parsed.liveTeacherFeedback }));
         if (parsed.liveTeacherFeedbackEnabled) {
           setLiveTeacherFeedbackEnabledLive(true);
         }
@@ -663,7 +665,7 @@ export default function Home() {
     if (snapshot.enabled) {
       setLiveTeacherFeedbackEnabledLive(true);
     }
-    setLiveTeacherFeedback(snapshot.feedback);
+    setLiveTeacherFeedback((prev) => ({ ...prev, ...snapshot.feedback }));
   }, [joinedLiveSessionId, anonymousSessionId]);
 
   const applyStudentExamRemotePatch = useCallback((patch: StudentExamRemotePatch) => {
@@ -700,7 +702,6 @@ export default function Home() {
     deviceId: anonymousSessionId,
     enabled: Boolean(joinedLiveSessionId && anonymousSessionId && studentAnswersHydrated),
     onPatch: applyStudentExamRemotePatch,
-    onBroadcastReady: () => void refreshLiveTeacherFeedback(),
   });
 
   useEffect(() => {

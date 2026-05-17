@@ -19,8 +19,6 @@ type Options = {
   deviceId: string;
   enabled: boolean;
   onPatch: (patch: StudentExamRemotePatch) => void;
-  /** Fires when the broadcast channel is subscribed (sync after connect). */
-  onBroadcastReady?: () => void;
 };
 
 function parseBroadcastPayload(payload: unknown): StudentExamRemotePatch | null {
@@ -39,10 +37,8 @@ export function useStudentExamRealtime({
   deviceId,
   enabled,
   onPatch,
-  onBroadcastReady,
 }: Options): void {
   const onPatchRef = useLatestRef(onPatch);
-  const onBroadcastReadyRef = useLatestRef(onBroadcastReady);
 
   useEffect(() => {
     if (!enabled || !liveSessionId || !deviceId) {
@@ -105,11 +101,7 @@ export function useStudentExamRealtime({
             });
           }
         })
-        .subscribe((status) => {
-          if (status === "SUBSCRIBED" && !cancelled) {
-            onBroadcastReadyRef.current?.();
-          }
-        });
+        .subscribe();
       channels.push(channel);
     };
 
@@ -155,5 +147,5 @@ export function useStudentExamRealtime({
         void supabase.removeChannel(channel);
       }
     };
-  }, [liveSessionId, deviceId, enabled, onPatchRef, onBroadcastReadyRef]);
+  }, [liveSessionId, deviceId, enabled, onPatchRef]);
 }

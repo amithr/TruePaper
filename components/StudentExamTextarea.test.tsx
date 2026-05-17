@@ -81,7 +81,7 @@ describe("StudentExamTextarea", () => {
     );
   });
 
-  it("accepts Playwright fill via change event when protect is on", () => {
+  it("accepts Playwright fill via change when protect is on and prop lags behind DOM", () => {
     function ProtectedHarness() {
       const [value, setValue] = useState("");
       return (

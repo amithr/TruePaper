@@ -38,4 +38,13 @@ describe("isAnswersOnlyFormResponseUpdate", () => {
   it("skips heartbeat-style updates with no meaningful field changes", () => {
     expect(isAnswersOnlyFormResponseUpdate(baseRow, { ...baseRow })).toBe(true);
   });
+
+  it("does not skip teacher feedback saves when realtime omits the old row", () => {
+    const newRow = {
+      ...baseRow,
+      live_teacher_feedback: { q1: "Saved comment" },
+    };
+
+    expect(isAnswersOnlyFormResponseUpdate(undefined, newRow)).toBe(false);
+  });
 });

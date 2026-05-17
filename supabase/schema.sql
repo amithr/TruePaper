@@ -678,6 +678,7 @@ declare
   fin boolean := false;
   disp text := '';
   resume_code text := null;
+  session_open boolean := false;
 begin
   if p_device_id is null
      or lower(p_device_id) !~ '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then
@@ -705,17 +706,9 @@ begin
     );
   end if;
 
-  if timezone('utc', now()) < fs.opens_at or timezone('utc', now()) > fs.closes_at then
-    return jsonb_build_object(
-      'answers', '{}'::jsonb,
-      'suspended', false,
-      'finished', false,
-      'displayName', '',
-      'liveTeacherFeedback', '{}'::jsonb,
-      'liveTeacherFeedbackEnabled', false,
-      'resumeCode', null
-    );
-  end if;
+  session_open :=
+    timezone('utc', now()) >= fs.opens_at
+    and timezone('utc', now()) <= fs.closes_at;
 
   fid := fs.form_id;
   select coalesce(f.live_teacher_feedback_enabled, false)
@@ -736,13 +729,25 @@ begin
     and fr.student_id is null;
 
   if not found then
+    if not session_open then
+      return jsonb_build_object(
+        'answers', '{}'::jsonb,
+        'suspended', false,
+        'finished', false,
+        'displayName', '',
+        'liveTeacherFeedback', '{}'::jsonb,
+        'liveTeacherFeedbackEnabled', feedback_enabled,
+        'resumeCode', null
+      );
+    end if;
+
     ans := '{}'::jsonb;
     live_fb := '{}'::jsonb;
     susp := false;
     fin := false;
     disp := '';
     resume_code := null;
-  elsif resume_code is null then
+  elsif session_open and resume_code is null then
     begin
       resume_code := public.generate_student_resume_code();
       update public.form_responses

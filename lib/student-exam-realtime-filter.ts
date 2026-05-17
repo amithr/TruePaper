@@ -1,9 +1,26 @@
+function hasStoredLiveTeacherFeedback(row: Record<string, unknown>): boolean {
+  const raw = row.live_teacher_feedback;
+  if (raw === null || raw === undefined) {
+    return false;
+  }
+  return JSON.stringify(raw) !== "{}";
+}
+
 /** Skip postgres payloads that only reflect answer autosave or presence heartbeats. */
 export function isAnswersOnlyFormResponseUpdate(
   oldRow: Record<string, unknown> | undefined,
   newRow: Record<string, unknown>,
 ): boolean {
-  if (!oldRow) {
+  if (!oldRow || Object.keys(oldRow).length === 0) {
+    if (hasStoredLiveTeacherFeedback(newRow)) {
+      return false;
+    }
+    if (newRow.suspended_at != null || newRow.finished_at != null) {
+      return false;
+    }
+    if (newRow.student_resume_code != null && newRow.student_resume_code !== "") {
+      return false;
+    }
     return true;
   }
 

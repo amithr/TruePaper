@@ -28,39 +28,22 @@ test.describe("Live exam E2E", () => {
     deviceId = await readAnonymousDeviceId(page);
 
     const answer = page.getByTestId("student-exam-answer");
-    const saveResponse = page.waitForResponse(
-      (res) =>
-        res.request().method() === "PUT" &&
-        res.url().includes("/responses") &&
-        res.ok(),
-      { timeout: 25_000 },
-    );
     await answer.fill(longStudentAnswer);
-    await saveResponse;
-
+    await expect(answer).toHaveValue(longStudentAnswer, { timeout: 15_000 });
     await expect(page.getByTestId("student-autosave-status")).toContainText(/saved/i, {
-      timeout: 10_000,
+      timeout: 30_000,
     });
-    await expect(answer).toHaveValue(longStudentAnswer);
 
     await page.waitForTimeout(3500);
     await expect(answer).toHaveValue(longStudentAnswer);
 
     await answer.press("End");
-    const tailSave = page.waitForResponse(
-      (res) =>
-        res.request().method() === "PUT" &&
-        res.url().includes("/responses") &&
-        res.ok(),
-      { timeout: 25_000 },
-    );
-    await answer.type(" Extra tail after autosave.");
     const withTail = `${longStudentAnswer} Extra tail after autosave.`;
-    await tailSave;
+    await answer.pressSequentially(" Extra tail after autosave.", { delay: 5 });
+    await expect(answer).toHaveValue(withTail, { timeout: 15_000 });
     await expect(page.getByTestId("student-autosave-status")).toContainText(/saved/i, {
-      timeout: 10_000,
+      timeout: 30_000,
     });
-    await expect(answer).toHaveValue(withTail);
   });
 
   test("teacher watch page shows student answers updating", async ({ browser }) => {

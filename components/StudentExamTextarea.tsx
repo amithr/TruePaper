@@ -202,14 +202,18 @@ export function StudentExamTextarea({
       if (disabled) {
         return;
       }
+      const next = e.target.value;
       if (protect) {
-        // Playwright/React fill often dispatches `change` without a useful `input` InputEvent.
-        applyFromDom(e.target.value, undefined);
+        // Playwright `fill()` updates the DOM and fires `change` before `input`; compare to the
+        // controlled prop so bulk entry is not rejected by paste-guard heuristics in applyFromDom.
+        if (next !== value) {
+          emit(next);
+        }
         return;
       }
-      emit(e.target.value);
+      emit(next);
     },
-    [protect, disabled, emit, applyFromDom],
+    [protect, disabled, emit, value],
   );
 
   return (
