@@ -28,6 +28,7 @@ import { isValidResumeCodeFormat, normalizeResumeCode } from "@/lib/resume-code"
 import { isNoTimeLimitSession } from "@/lib/session-window";
 import { LIVE_BOARD_BROADCAST_EVENT, liveBoardChannelName } from "@/lib/broadcast-live-board";
 import type { StudentExamRemotePatch } from "@/lib/student-exam-remote-patch";
+import { mergeStudentAnswersForSave } from "@/lib/collect-student-exam-answers";
 import { fetchStudentExamStatus } from "@/lib/fetch-student-exam-status";
 import { fetchStudentLiveTeacherFeedback } from "@/lib/fetch-student-live-feedback";
 import { requestJson } from "@/lib/request-json";
@@ -202,6 +203,7 @@ export default function Home() {
   const typingHeartbeatTimerRef = useRef<number | undefined>(undefined);
   const lastPointerInteractionPingAtRef = useRef(0);
   const loadedExamNamePrefillRef = useRef(false);
+  const examFormRef = useRef<HTMLFormElement>(null);
   const latestStudentAnswersRef = useRef<StudentAnswers>({});
   const lastPersistedAnswersJsonRef = useRef("");
   const suspendAutosaveRef = useRef(false);
@@ -621,12 +623,12 @@ export default function Home() {
         const isFirstLoadForKey = studentResponseLoadKeyRef.current !== loadKey;
         studentResponseLoadKeyRef.current = loadKey;
 
-        latestStudentAnswersRef.current = parsed.answers;
-        lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(parsed.answers);
         pendingDirtySinceRef.current = null;
-        setChoiceAnswers(parsed.answers);
-        setTextAnswersAtLoad(parsed.answers);
         if (isFirstLoadForKey) {
+          latestStudentAnswersRef.current = parsed.answers;
+          lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(parsed.answers);
+          setChoiceAnswers(parsed.answers);
+          setTextAnswersAtLoad(parsed.answers);
           setTextareasMountKey((k) => k + 1);
         }
         setStudentAnswersHydrated(true);
@@ -756,7 +758,13 @@ export default function Home() {
     ) {
       return;
     }
-    const currentAnswers = latestStudentAnswersRef.current;
+    const textQuestions = joinedSession.form.questions.filter((q) => q.type === "text");
+    const currentAnswers = mergeStudentAnswersForSave(
+      latestStudentAnswersRef.current,
+      examFormRef.current,
+      textQuestions,
+    );
+    latestStudentAnswersRef.current = currentAnswers;
     const currentJson = stableStringifyStudentAnswers(currentAnswers);
     if (currentJson === lastPersistedAnswersJsonRef.current) {
       pendingDirtySinceRef.current = null;
@@ -1384,7 +1392,13 @@ export default function Home() {
 
     setIsMutating(true);
     setStatusMessage("");
-    const answers = latestStudentAnswersRef.current;
+    const textQuestions = joinedSession.form.questions.filter((q) => q.type === "text");
+    const answers = mergeStudentAnswersForSave(
+      latestStudentAnswersRef.current,
+      examFormRef.current,
+      textQuestions,
+    );
+    latestStudentAnswersRef.current = answers;
     suspendAutosaveRef.current = true;
     try {
       await requestJson<{ ok: true }>(
@@ -1418,8 +1432,18 @@ export default function Home() {
 
     setIsMutating(true);
     setStatusMessage("");
-    const answers = latestStudentAnswersRef.current;
+    const textQuestions = joinedSession.form.questions.filter((q) => q.type === "text");
+    const answers = mergeStudentAnswersForSave(
+      latestStudentAnswersRef.current,
+      examFormRef.current,
+      textQuestions,
+    );
+    latestStudentAnswersRef.current = answers;
     suspendAutosaveRef.current = true;
+    if (autosaveTimerRef.current !== undefined) {
+      window.clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = undefined;
+    }
     try {
       await requestJson<{ ok: true }>(
         `/api/public/live-sessions/${joinedSession.liveSessionId}/responses`,
@@ -1433,8 +1457,6 @@ export default function Home() {
           }),
         },
       );
-      lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(answers);
-      pendingDirtySinceRef.current = null;
       await requestJson<{ ok: true }>(
         `/api/public/live-sessions/${joinedSession.liveSessionId}/finish`,
         {
@@ -1446,11 +1468,13 @@ export default function Home() {
           }),
         },
       );
-      setExamFinished(true);
-      setStatusMessage("Exam submitted. You can still read your answers.");
-      if (joinCodeInput) {
-        void notifyLiveBoardRefresh(joinCodeInput);
+      const codeForBoard = joinCodeInput;
+      leaveJoinedSession();
+      if (codeForBoard) {
+        void notifyLiveBoardRefresh(codeForBoard);
       }
+      router.replace("/");
+      router.refresh();
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Could not submit the exam.");
     } finally {
@@ -2091,7 +2115,7 @@ export default function Home() {
                 This form has no questions yet.
               </p>
             ) : (
-              <form className={ui.questionList}>
+              <form ref={examFormRef} className={ui.questionList}>
                 {studentExamQuestions.map((question, index) => (
                   <article key={question.id} className={ui.questionCardNested}>
                     <h3 className="mb-3 text-base font-semibold text-[var(--tp-text)]">

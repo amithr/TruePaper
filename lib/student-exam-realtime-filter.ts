@@ -4,7 +4,7 @@ export function isAnswersOnlyFormResponseUpdate(
   newRow: Record<string, unknown>,
 ): boolean {
   if (!oldRow) {
-    return false;
+    return true;
   }
 
   const answersChanged = JSON.stringify(oldRow.answers) !== JSON.stringify(newRow.answers);
@@ -19,7 +19,7 @@ export function isAnswersOnlyFormResponseUpdate(
   }
 
   if (!answersChanged) {
-    return false;
+    return true;
   }
 
   return suspendedSame && finishedSame && feedbackSame && resumeSame;
