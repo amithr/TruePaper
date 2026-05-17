@@ -221,6 +221,8 @@ export default function Home() {
   const builderAutosaveBannerClearRef = useRef<number | undefined>(undefined);
   const [isLoadingForms, setIsLoadingForms] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
+  /** Join / rejoin in flight — separate from teacher builder and exam save mutations. */
+  const [isJoiningSession, setIsJoiningSession] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [urlAuthNotice, setUrlAuthNotice] = useState("");
   const [nowTick, setNowTick] = useState(() => Date.now());
@@ -1241,7 +1243,7 @@ export default function Home() {
       return;
     }
 
-    setIsMutating(true);
+    setIsJoiningSession(true);
     setStatusMessage("");
     try {
       const data = await requestJson<ResumeApiResponse>(
@@ -1287,7 +1289,7 @@ export default function Home() {
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Could not rejoin that exam.");
     } finally {
-      setIsMutating(false);
+      setIsJoiningSession(false);
     }
   };
 
@@ -1304,7 +1306,7 @@ export default function Home() {
       return;
     }
 
-    setIsMutating(true);
+    setIsJoiningSession(true);
     setStatusMessage("");
     try {
       if (isTeacher && mode === "student") {
@@ -1340,7 +1342,7 @@ export default function Home() {
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Could not join that session.");
     } finally {
-      setIsMutating(false);
+      setIsJoiningSession(false);
     }
   };
 
@@ -1348,7 +1350,7 @@ export default function Home() {
   const rejoinWithResumeCodeRef = useLatestRef(rejoinWithResumeCode);
 
   useEffect(() => {
-    if (!pendingAutoJoinCode || joinedSession || isMutating || pendingAutoResumeCode) {
+    if (!pendingAutoJoinCode || joinedSession || isJoiningSession || pendingAutoResumeCode) {
       return;
     }
     const normalizedDisplayName = normalizeLiveSessionDisplayName(joinDisplayNameInput);
@@ -1363,10 +1365,10 @@ export default function Home() {
       void joinWithCodeRef.current(code);
       setPendingAutoJoinCode("");
     });
-  }, [pendingAutoJoinCode, joinDisplayNameInput, joinedSession, isMutating, pendingAutoResumeCode, joinWithCodeRef]);
+  }, [pendingAutoJoinCode, joinDisplayNameInput, joinedSession, isJoiningSession, pendingAutoResumeCode, joinWithCodeRef]);
 
   useEffect(() => {
-    if (!pendingAutoResumeCode || joinedSession || isMutating) {
+    if (!pendingAutoResumeCode || joinedSession || isJoiningSession) {
       return;
     }
     const code = pendingAutoResumeCode;
@@ -1374,9 +1376,10 @@ export default function Home() {
       void rejoinWithResumeCodeRef.current(code);
       setPendingAutoResumeCode("");
     });
-  }, [pendingAutoResumeCode, joinedSession, isMutating, rejoinWithResumeCodeRef]);
+  }, [pendingAutoResumeCode, joinedSession, isJoiningSession, rejoinWithResumeCodeRef]);
 
   const leaveJoinedSession = () => {
+    setIsJoiningSession(false);
     setJoinedSession(null);
     latestStudentAnswersRef.current = {};
     lastPersistedAnswersJsonRef.current = "";
@@ -1596,13 +1599,14 @@ export default function Home() {
             data-testid="student-join-submit"
             onClick={() => void joinWithCode(joinCodeInput)}
             disabled={
-              isMutating ||
+              isJoiningSession ||
               !isValidJoinCodeFormat(normalizeJoinCode(joinCodeInput)) ||
               !isValidLiveSessionDisplayName(normalizeLiveSessionDisplayName(joinDisplayNameInput))
             }
+            aria-busy={isJoiningSession}
             className="justify-self-start tp-btn-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 disabled:opacity-50"
           >
-            Join
+            {isJoiningSession ? buttonLabel("Joining…") : "Join"}
           </button>
         ) : (
           <button
@@ -1640,10 +1644,13 @@ export default function Home() {
             <button
               type="button"
               onClick={() => void rejoinWithResumeCode(rejoinCodeInput)}
-              disabled={isMutating || !isValidResumeCodeFormat(normalizeResumeCode(rejoinCodeInput))}
+              disabled={
+                isJoiningSession || !isValidResumeCodeFormat(normalizeResumeCode(rejoinCodeInput))
+              }
+              aria-busy={isJoiningSession}
               className="justify-self-start tp-btn-primary disabled:opacity-50"
             >
-              {buttonLabel("Rejoin my exam")}
+              {isJoiningSession ? buttonLabel("Rejoining…") : buttonLabel("Rejoin my exam")}
             </button>
           </div>
         </div>
@@ -1669,7 +1676,7 @@ export default function Home() {
             </button>
           </div>
         ) : null}
-        {session === null ? (
+        {!session ? (
           <div className="mb-8 space-y-8">
             {joinSessionSection}
             <div className="rounded-xl border border-zinc-200 bg-zinc-50/80 p-6">
