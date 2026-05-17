@@ -29,12 +29,14 @@ import { isNoTimeLimitSession } from "@/lib/session-window";
 import { LIVE_BOARD_BROADCAST_EVENT, liveBoardChannelName } from "@/lib/broadcast-live-board";
 import type { StudentExamRemotePatch } from "@/lib/student-exam-remote-patch";
 import { mergeStudentAnswersForSave } from "@/lib/collect-student-exam-answers";
+import { shouldApplyServerAnswersOnLoad } from "@/lib/student-exam-answer-hydration";
 import { fetchStudentExamStatus } from "@/lib/fetch-student-exam-status";
 import { fetchStudentLiveTeacherFeedback } from "@/lib/fetch-student-live-feedback";
 import { hasLiveTeacherFeedbackContent } from "@/lib/live-teacher-feedback";
 import { requestJson } from "@/lib/request-json";
 import { stableStringifyStudentAnswers } from "@/lib/student-answers-json";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
+import { usePollingRefresh } from "@/lib/use-polling-refresh";
 import { useStudentExamRealtime } from "@/lib/use-student-exam-realtime";
 import { buttonLabel, focusRing, ui } from "@/lib/ui";
 
@@ -623,7 +625,7 @@ export default function Home() {
 
         if (isFirstLoadForKey) {
           const hasLocalEdits = pendingDirtySinceRef.current !== null;
-          if (!hasLocalEdits) {
+          if (shouldApplyServerAnswersOnLoad(isFirstLoadForKey, hasLocalEdits)) {
             latestStudentAnswersRef.current = parsed.answers;
             lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(parsed.answers);
             setExamAnswers(parsed.answers);
@@ -739,6 +741,14 @@ export default function Home() {
     }, 400);
     return () => window.clearTimeout(timeoutId);
   }, [studentAnswersHydrated, joinedLiveSessionId, anonymousSessionId, refreshLiveTeacherFeedback]);
+
+  usePollingRefresh({
+    enabled:
+      Boolean(joinedLiveSessionId && anonymousSessionId && studentAnswersHydrated) &&
+      isLiveTeacherFeedbackEnabled,
+    intervalMs: 5000,
+    onRefresh: () => void refreshLiveTeacherFeedback(),
+  });
 
   const persistStudentAnswers = useCallback(async () => {
     if (

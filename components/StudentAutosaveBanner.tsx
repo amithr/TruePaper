@@ -24,7 +24,11 @@ export const StudentAutosaveBanner = forwardRef<StudentAutosaveBannerHandle, Pro
     }
 
     return (
-      <p className={className ?? "text-sm text-zinc-600"} aria-live="polite">
+      <p
+        data-testid="student-autosave-status"
+        className={className ?? "text-sm text-zinc-600"}
+        aria-live="polite"
+      >
         {message}
       </p>
     );

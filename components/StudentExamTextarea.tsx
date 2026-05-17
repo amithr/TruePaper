@@ -199,6 +199,7 @@ export function StudentExamTextarea({
       ref={ref}
       id={id}
       name={id}
+      data-testid="student-exam-answer"
       rows={rows}
       value={value}
       disabled={disabled}

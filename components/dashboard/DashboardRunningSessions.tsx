@@ -9,6 +9,7 @@ import { notifyStudentExamResumed } from "@/lib/notify-student-exam-resumed";
 import { isNoTimeLimitSession } from "@/lib/session-window";
 import type { SuspendedStudentRow, TeacherSessionSummary } from "@/lib/teacher-sessions";
 import { useBroadcastRefresh } from "@/lib/use-broadcast-refresh";
+import { usePollingRefresh } from "@/lib/use-polling-refresh";
 import { usePostgresRealtimeRefresh } from "@/lib/use-postgres-realtime-refresh";
 import { buttonLabel, focusRing, ui } from "@/lib/ui";
 import { messageForBackgroundRefreshError } from "@/lib/background-network-error";
@@ -81,9 +82,9 @@ export function DashboardRunningSessions({
   usePostgresRealtimeRefresh(
     true,
     "teacher-dashboard-active",
-    [{ table: "form_sessions" }],
+    [{ table: "form_responses" }, { table: "form_sessions" }],
     refreshActive,
-    { debounceMs: 800, minIntervalMs: 4000 },
+    { debounceMs: 600, minIntervalMs: 2000 },
   );
 
   useBroadcastRefresh(
@@ -91,8 +92,14 @@ export function DashboardRunningSessions({
     overviewChannels,
     LIVE_SESSION_OVERVIEW_EVENT,
     refreshActive,
-    1500,
+    600,
   );
+
+  usePollingRefresh({
+    enabled: sessions.length > 0,
+    intervalMs: 8000,
+    onRefresh: () => void refreshActive(),
+  });
 
   const resumeStudent = async (liveSessionId: string, deviceId: string) => {
     try {

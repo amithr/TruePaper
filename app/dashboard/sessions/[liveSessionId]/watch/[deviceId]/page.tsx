@@ -8,8 +8,18 @@ import { LoadingBar } from "@/components/LoadingBar";
 import type { Form, StudentAnswers } from "@/lib/forms";
 import { isNoTimeLimitSession } from "@/lib/session-window";
 import { parseStudentAnswersJson, stableStringifyStudentAnswers } from "@/lib/student-answers-json";
+import {
+  LIVE_SESSION_OVERVIEW_EVENT,
+  liveSessionOverviewChannelName,
+} from "@/lib/broadcast-live-session-overview";
+import {
+  TEACHER_WATCH_BROADCAST_EVENT,
+  teacherWatchChannelName,
+} from "@/lib/broadcast-teacher-watch";
 import { notifyStudentExamFeedback } from "@/lib/notify-student-exam-feedback";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
+import { useBroadcastRefresh } from "@/lib/use-broadcast-refresh";
+import { usePollingRefresh } from "@/lib/use-polling-refresh";
 import {
   parseLiveTeacherFeedback,
   type LiveTeacherFeedbackByQuestionId,
@@ -219,6 +229,32 @@ export default function WatchStudentExamPage() {
     }
     void refresh();
   }, [session, refresh]);
+
+  useBroadcastRefresh(
+    session !== undefined && session !== null && Boolean(liveSessionId && deviceIdNorm),
+    [teacherWatchChannelName(liveSessionId, deviceIdNorm)],
+    TEACHER_WATCH_BROADCAST_EVENT,
+    () => void refresh(),
+    350,
+  );
+
+  useBroadcastRefresh(
+    session !== undefined && session !== null && Boolean(liveSessionId),
+    liveSessionId ? [liveSessionOverviewChannelName(liveSessionId)] : [],
+    LIVE_SESSION_OVERVIEW_EVENT,
+    () => void refresh(),
+    350,
+  );
+
+  usePollingRefresh({
+    enabled:
+      session !== undefined &&
+      session !== null &&
+      Boolean(snapshot?.session.sessionOpen) &&
+      Boolean(liveSessionId && deviceIdNorm),
+    intervalMs: 3000,
+    onRefresh: () => void refresh(),
+  });
 
   useEffect(() => {
     if (!snapshot) {
@@ -590,6 +626,7 @@ export default function WatchStudentExamPage() {
                       <textarea
                         readOnly
                         rows={6}
+                        data-testid="teacher-watch-answer"
                         value={snapshot.answers[question.id] ?? ""}
                         placeholder="No response yet."
                         className="w-full resize-y rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
@@ -607,6 +644,7 @@ export default function WatchStudentExamPage() {
                             )}
                             <textarea
                               rows={3}
+                              data-testid="teacher-live-feedback-input"
                               value={liveFeedbackDraftsByQuestionId[question.id] ?? ""}
                               onBlur={() => {
                                 flushLiveFeedbackSave(question.id);

@@ -14,6 +14,7 @@ import {
 } from "@/lib/broadcast-live-session-overview";
 import { notifyStudentExamResumed } from "@/lib/notify-student-exam-resumed";
 import { useBroadcastRefresh } from "@/lib/use-broadcast-refresh";
+import { usePollingRefresh } from "@/lib/use-polling-refresh";
 import { usePostgresRealtimeRefresh } from "@/lib/use-postgres-realtime-refresh";
 import { buttonLabel, focusRing, ui } from "@/lib/ui";
 
@@ -152,7 +153,7 @@ export default function LiveSessionDetailPage() {
       { table: "form_sessions", filter: `id=eq.${liveSessionId}` },
     ],
     refreshOverview,
-    { debounceMs: 1200, minIntervalMs: 3000 },
+    { debounceMs: 500, minIntervalMs: 1000 },
   );
 
   useBroadcastRefresh(
@@ -160,7 +161,15 @@ export default function LiveSessionDetailPage() {
     liveSessionId ? [liveSessionOverviewChannelName(liveSessionId)] : [],
     LIVE_SESSION_OVERVIEW_EVENT,
     refreshOverview,
+    500,
   );
+
+  usePollingRefresh({
+    enabled:
+      session !== undefined && session !== null && Boolean(overview?.session.sessionOpen),
+    intervalMs: 4000,
+    onRefresh: () => void refreshOverview(),
+  });
 
   useEffect(() => {
     const id = window.setInterval(() => setNowTick(Date.now()), 1000);
