@@ -17,7 +17,7 @@ export function DashboardLazySection({
   rootMargin = "240px",
 }: Props) {
   const [visible, setVisible] = useState(false);
-  const ref = useRef<HTMLElement>(null);
+  const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const el = ref.current;

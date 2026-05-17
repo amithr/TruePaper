@@ -17,6 +17,7 @@ import { useBroadcastRefresh } from "@/lib/use-broadcast-refresh";
 import { usePostgresRealtimeRefresh } from "@/lib/use-postgres-realtime-refresh";
 import { buttonLabel, focusRing, ui } from "@/lib/ui";
 
+import { messageForBackgroundRefreshError } from "@/lib/background-network-error";
 import { requestJson } from "@/lib/request-json";
 
 type SessionUser = { id: string; email?: string | null };
@@ -103,8 +104,10 @@ export default function LiveSessionDetailPage() {
       setOverview(data);
       setLastOverviewSyncAt(Date.now());
     } catch (e) {
-      setLoadError(e instanceof Error ? e.message : "Failed to load session.");
-      setOverview(null);
+      const message = messageForBackgroundRefreshError(e, "Failed to load session.");
+      if (message) {
+        setLoadError(message);
+      }
     }
   }, [liveSessionId]);
 
@@ -149,6 +152,7 @@ export default function LiveSessionDetailPage() {
       { table: "form_sessions", filter: `id=eq.${liveSessionId}` },
     ],
     refreshOverview,
+    { debounceMs: 1200, minIntervalMs: 3000 },
   );
 
   useBroadcastRefresh(

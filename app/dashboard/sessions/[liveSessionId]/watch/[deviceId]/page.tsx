@@ -16,6 +16,7 @@ import {
 } from "@/lib/live-teacher-feedback";
 import { formatResumeCodeForDisplay } from "@/lib/resume-code";
 import { buttonLabel, ui } from "@/lib/ui";
+import { messageForBackgroundRefreshError } from "@/lib/background-network-error";
 import { requestJson } from "@/lib/request-json";
 
 type SnapshotJson = {
@@ -179,8 +180,10 @@ export default function WatchStudentExamPage() {
         };
       });
     } catch (e) {
-      setSnapshot(null);
-      setLoadError(e instanceof Error ? e.message : "Failed to load.");
+      const message = messageForBackgroundRefreshError(e, "Failed to load.");
+      if (message) {
+        setLoadError(message);
+      }
     }
   }, [liveSessionId, deviceId, mergeLiveFeedbackForDisplay]);
 

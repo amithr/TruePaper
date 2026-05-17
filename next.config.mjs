@@ -7,6 +7,8 @@ const projectRoot = path.dirname(require.resolve("./package.json"));
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   outputFileTracingRoot: projectRoot,
+  // Next 16 defaults to Turbopack for `next build`; we use webpack (see package.json build script).
+  turbopack: {},
   webpack: (config) => {
     config.resolve ??= {};
     config.resolve.modules = [

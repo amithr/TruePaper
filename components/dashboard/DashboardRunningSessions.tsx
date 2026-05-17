@@ -11,6 +11,7 @@ import type { SuspendedStudentRow, TeacherSessionSummary } from "@/lib/teacher-s
 import { useBroadcastRefresh } from "@/lib/use-broadcast-refresh";
 import { usePostgresRealtimeRefresh } from "@/lib/use-postgres-realtime-refresh";
 import { buttonLabel, focusRing, ui } from "@/lib/ui";
+import { messageForBackgroundRefreshError } from "@/lib/background-network-error";
 import { requestJson } from "@/lib/request-json";
 
 function formatCountdown(ms: number): string {
@@ -53,8 +54,15 @@ export function DashboardRunningSessions({
       setSessions(data.sessions);
       setSuspensionsBySession(data.suspensionsBySession ?? {});
       setLastSyncedAt(Date.now());
+      onError("");
     } catch (e) {
-      onError(e instanceof Error ? e.message : "Failed to refresh live sessions.");
+      const message = messageForBackgroundRefreshError(
+        e,
+        "Failed to refresh live sessions.",
+      );
+      if (message) {
+        onError(message);
+      }
     }
   }, [onError]);
 
@@ -73,8 +81,9 @@ export function DashboardRunningSessions({
   usePostgresRealtimeRefresh(
     true,
     "teacher-dashboard-active",
-    [{ table: "form_responses" }, { table: "form_sessions" }],
+    [{ table: "form_sessions" }],
     refreshActive,
+    { debounceMs: 800, minIntervalMs: 4000 },
   );
 
   useBroadcastRefresh(
@@ -82,6 +91,7 @@ export function DashboardRunningSessions({
     overviewChannels,
     LIVE_SESSION_OVERVIEW_EVENT,
     refreshActive,
+    1500,
   );
 
   const resumeStudent = async (liveSessionId: string, deviceId: string) => {

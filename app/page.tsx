@@ -740,21 +740,6 @@ export default function Home() {
     return () => window.clearTimeout(timeoutId);
   }, [studentAnswersHydrated, joinedLiveSessionId, anonymousSessionId, refreshLiveTeacherFeedback]);
 
-  useEffect(() => {
-    if (!isLiveTeacherFeedbackEnabled || !studentAnswersHydrated || !joinedLiveSessionId) {
-      return;
-    }
-    const intervalId = window.setInterval(() => {
-      void refreshLiveTeacherFeedback();
-    }, 12_000);
-    return () => window.clearInterval(intervalId);
-  }, [
-    isLiveTeacherFeedbackEnabled,
-    studentAnswersHydrated,
-    joinedLiveSessionId,
-    refreshLiveTeacherFeedback,
-  ]);
-
   const persistStudentAnswers = useCallback(async () => {
     if (
       !joinedSession ||
