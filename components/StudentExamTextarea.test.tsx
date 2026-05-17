@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -79,6 +79,30 @@ describe("StudentExamTextarea", () => {
     expect(screen.getByTestId("last-persisted")).toHaveTextContent(
       JSON.stringify({ "q-essay": fullText }),
     );
+  });
+
+  it("accepts Playwright fill via change event when protect is on", () => {
+    function ProtectedHarness() {
+      const [value, setValue] = useState("");
+      return (
+        <StudentExamTextarea
+          id="q-essay"
+          value={value}
+          protect
+          onValueChange={setValue}
+        />
+      );
+    }
+
+    render(<ProtectedHarness />);
+    const field = screen.getByRole("textbox") as HTMLTextAreaElement;
+    const longText =
+      "E2E autosave check: students must keep the full essay visible while saves run. " +
+      "Lorem ipsum dolor sit amet, consectetur adipiscing elit. ".repeat(4);
+
+    fireEvent.change(field, { target: { value: longText } });
+
+    expect(field).toHaveValue(longText);
   });
 
   it("accepts Playwright-style first fill (insertReplacementText) when protect is on", () => {

@@ -199,12 +199,17 @@ export function StudentExamTextarea({
 
   const handleChange = useCallback(
     (e: ChangeEvent<HTMLTextAreaElement>) => {
-      if (protect && !disabled) {
+      if (disabled) {
+        return;
+      }
+      if (protect) {
+        // Playwright/React fill often dispatches `change` without a useful `input` InputEvent.
+        applyFromDom(e.target.value, undefined);
         return;
       }
       emit(e.target.value);
     },
-    [protect, disabled, emit],
+    [protect, disabled, emit, applyFromDom],
   );
 
   return (

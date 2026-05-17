@@ -242,15 +242,17 @@ export default function Home() {
   const latestActiveFormRef = useLatestRef(activeForm);
 
   const closesAtForStudent = joinedSession?.closesAt ?? null;
+  const joinedSessionNoTimeLimit = joinedSession
+    ? isNoTimeLimitSession(joinedSession.opensAt, joinedSession.closesAt)
+    : false;
   const sessionOpen =
     closesAtForStudent && joinedSession
-      ? nowTick >= new Date(joinedSession.opensAt).getTime() &&
-        nowTick <= new Date(closesAtForStudent).getTime()
+      ? nowTick + 500 >= new Date(joinedSession.opensAt).getTime() &&
+        (joinedSessionNoTimeLimit ||
+          nowTick <= new Date(closesAtForStudent).getTime() + 500)
       : false;
 
   const studentMsLeft = closesAtForStudent ? new Date(closesAtForStudent).getTime() - nowTick : 0;
-  const joinedSessionNoTimeLimit =
-    joinedSession ? isNoTimeLimitSession(joinedSession.opensAt, joinedSession.closesAt) : false;
 
   const scheduleTypingHeartbeat = useCallback(() => {
     if (
@@ -758,6 +760,7 @@ export default function Home() {
     const currentJson = stableStringifyStudentAnswers(currentAnswers);
     if (currentJson === lastPersistedAnswersJsonRef.current) {
       pendingDirtySinceRef.current = null;
+      autosaveBannerRef.current?.setMessage("");
       return;
     }
 
@@ -819,6 +822,8 @@ export default function Home() {
     if (pendingDirtySinceRef.current === null) {
       pendingDirtySinceRef.current = Date.now();
     }
+
+    autosaveBannerRef.current?.setMessage("Saving…");
 
     const now = Date.now();
     const dirtyFor = now - (pendingDirtySinceRef.current ?? now);

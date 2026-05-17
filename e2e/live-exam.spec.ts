@@ -28,10 +28,18 @@ test.describe("Live exam E2E", () => {
     deviceId = await readAnonymousDeviceId(page);
 
     const answer = page.getByTestId("student-exam-answer");
+    const saveResponse = page.waitForResponse(
+      (res) =>
+        res.request().method() === "PUT" &&
+        res.url().includes("/responses") &&
+        res.ok(),
+      { timeout: 25_000 },
+    );
     await answer.fill(longStudentAnswer);
+    await saveResponse;
 
     await expect(page.getByTestId("student-autosave-status")).toContainText(/saved/i, {
-      timeout: 20_000,
+      timeout: 10_000,
     });
     await expect(answer).toHaveValue(longStudentAnswer);
 
@@ -39,10 +47,18 @@ test.describe("Live exam E2E", () => {
     await expect(answer).toHaveValue(longStudentAnswer);
 
     await answer.press("End");
+    const tailSave = page.waitForResponse(
+      (res) =>
+        res.request().method() === "PUT" &&
+        res.url().includes("/responses") &&
+        res.ok(),
+      { timeout: 25_000 },
+    );
     await answer.type(" Extra tail after autosave.");
     const withTail = `${longStudentAnswer} Extra tail after autosave.`;
+    await tailSave;
     await expect(page.getByTestId("student-autosave-status")).toContainText(/saved/i, {
-      timeout: 20_000,
+      timeout: 10_000,
     });
     await expect(answer).toHaveValue(withTail);
   });
