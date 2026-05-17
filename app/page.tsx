@@ -636,8 +636,6 @@ export default function Home() {
           setStatusMessage("You have submitted this exam.");
         } else if (parsed.suspended) {
           setStatusMessage("This exam is paused until your teacher allows you to continue.");
-        } else if (isFirstLoadForKey) {
-          setStatusMessage("Loaded saved answers.");
         }
       } catch (error) {
         setStatusMessage(error instanceof Error ? error.message : "Failed to load student answers.");
@@ -1311,11 +1309,7 @@ export default function Home() {
       setStudentAnswersHydrated(false);
       setExamSuspended(false);
       setExamFinished(false);
-      setStatusMessage(
-        displayName
-          ? `Welcome back, ${displayName}. Loading your saved answers…`
-          : "Welcome back. Loading your saved answers…",
-      );
+      setStatusMessage("");
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Could not rejoin that exam.");
     } finally {
@@ -2161,12 +2155,6 @@ export default function Home() {
                 <p className="mt-1 text-zinc-600">{studentExamForm.description}</p>
               ) : null}
             </header>
-
-            {examAnswersLoading ? (
-              <p className="rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-700">
-                Loading your saved answers…
-              </p>
-            ) : null}
 
             {studentExamQuestions.length === 0 ? (
               <p className="rounded-lg border border-dashed border-zinc-300 p-4 text-zinc-600">

@@ -85,9 +85,6 @@ export function useStudentExamRealtime({
           const patch = parseBroadcastPayload(payload);
           if (patch) {
             applyPatch(patch);
-            if (patch.liveTeacherFeedback !== undefined) {
-              onBroadcastReadyRef.current?.();
-            }
           }
         })
         .on("broadcast", { event: STUDENT_EXAM_FEEDBACK_DRAFT_EVENT }, ({ payload }) => {
@@ -100,14 +97,12 @@ export function useStudentExamRealtime({
             applyPatch({
               liveTeacherFeedback: { [row.questionId]: message },
             });
-            onBroadcastReadyRef.current?.();
             return;
           }
           if (row.liveTeacherFeedback !== undefined) {
             applyPatch({
               liveTeacherFeedback: parseLiveTeacherFeedback(row.liveTeacherFeedback),
             });
-            onBroadcastReadyRef.current?.();
           }
         })
         .subscribe((status) => {

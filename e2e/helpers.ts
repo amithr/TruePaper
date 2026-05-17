@@ -48,7 +48,7 @@ export async function joinStudentSession(
     await expect(examAnswer).toBeVisible({ timeout: 30_000 });
   }
 
-  await expect(page.getByText("Loading your saved answers")).toBeHidden({ timeout: 30_000 });
+  await expect(examAnswer).toBeEnabled({ timeout: 30_000 });
 }
 
 export async function readAnonymousDeviceId(page: Page): Promise<string> {
