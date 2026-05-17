@@ -32,7 +32,9 @@ export async function joinStudentSession(
   await page.goto(`/?${query}`);
   await page.getByPlaceholder("e.g. Jordan Lee").fill(displayName);
   await expect(page.getByPlaceholder("ABCD12")).toHaveValue(joinCode);
-  await page.getByRole("button", { name: "Join" }).click();
+  const joinButton = page.getByRole("button", { name: "Join", exact: true });
+  await expect(joinButton).toBeEnabled();
+  await joinButton.click();
   await expect(page.getByTestId("student-exam-answer")).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("Loading your saved answers")).toBeHidden({ timeout: 30_000 });
 }
