@@ -1840,7 +1840,7 @@ export default function Home() {
           </div>
         ) : null}
 
-        {(!showTeacherTools && session !== undefined) || (isTeacher && mode === "student")
+        {(session && !showTeacherTools) || (isTeacher && mode === "student")
           ? joinSessionSection
           : null}
 

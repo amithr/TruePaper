@@ -43,11 +43,12 @@ export async function joinStudentSession(
   await page.goto(`/?${query}`);
   await page.waitForLoadState("domcontentloaded");
 
-  await expect(page.getByTestId("student-join-submit")).toBeVisible({ timeout: 30_000 });
-  await page.getByPlaceholder("e.g. Jordan Lee").fill(displayName);
-  await expect(page.getByPlaceholder("ABCD12")).toHaveValue(joinCode);
+  const joinSection = page.locator("#join-session");
+  await expect(joinSection).toBeVisible({ timeout: 30_000 });
+  await joinSection.getByPlaceholder("e.g. Jordan Lee").fill(displayName);
+  await expect(joinSection.getByPlaceholder("ABCD12")).toHaveValue(joinCode);
 
-  const joinButton = page.getByTestId("student-join-submit");
+  const joinButton = joinSection.getByTestId("student-join-submit");
   const examAnswer = page.getByTestId("student-exam-answer");
 
   // Join links auto-join once the name is valid; otherwise use the Join button.
