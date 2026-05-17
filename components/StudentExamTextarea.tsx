@@ -83,12 +83,21 @@ export function StudentExamTextarea({
         return;
       }
       if (inputType === "insertReplacementText" && Math.abs(next.length - prev.length) > 48) {
+        // First entry into an empty field (typing, dictation, accessibility) — not paste-over existing work.
+        if (prev.length === 0 && next.length > 0) {
+          emit(next);
+          return;
+        }
         revertToLastGood();
         return;
       }
 
       const delta = next.length - prev.length;
       if (Math.abs(delta) > 64) {
+        if (prev.length === 0 && next.length > 0) {
+          emit(next);
+          return;
+        }
         revertToLastGood();
         return;
       }
@@ -171,7 +180,11 @@ export function StudentExamTextarea({
 
   const handleInput = useCallback(
     (e: FormEvent<HTMLTextAreaElement>) => {
-      if (!protect || disabled) {
+      if (disabled) {
+        return;
+      }
+      if (!protect) {
+        emit(e.currentTarget.value);
         return;
       }
       const ne = e.nativeEvent as InputEvent;

@@ -81,6 +81,61 @@ describe("StudentExamTextarea", () => {
     );
   });
 
+  it("accepts Playwright-style first fill (insertReplacementText) when protect is on", () => {
+    function ProtectedHarness() {
+      const [value, setValue] = useState("");
+      return (
+        <StudentExamTextarea
+          id="q-essay"
+          value={value}
+          protect
+          onValueChange={setValue}
+        />
+      );
+    }
+
+    render(<ProtectedHarness />);
+    const field = screen.getByRole("textbox") as HTMLTextAreaElement;
+    const longText =
+      "E2E autosave check: students must keep the full essay visible while saves run. " +
+      "Lorem ipsum dolor sit amet, consectetur adipiscing elit. ".repeat(4);
+
+    field.value = longText;
+    field.dispatchEvent(
+      new InputEvent("input", {
+        bubbles: true,
+        inputType: "insertReplacementText",
+      }),
+    );
+
+    expect(field).toHaveValue(longText);
+  });
+
+  it("accepts the first long answer when protect is on (empty field → essay)", async () => {
+    const user = userEvent.setup();
+    const fullText =
+      "E2E autosave check: students must keep the full essay visible while saves run. " +
+      "Lorem ipsum dolor sit amet, consectetur adipiscing elit. ".repeat(4);
+
+    function ProtectedHarness() {
+      const [value, setValue] = useState("");
+      return (
+        <StudentExamTextarea
+          id="q-essay"
+          value={value}
+          protect
+          onValueChange={setValue}
+        />
+      );
+    }
+
+    render(<ProtectedHarness />);
+    const field = screen.getByRole("textbox");
+    await user.click(field);
+    await user.type(field, fullText);
+    expect(field).toHaveValue(fullText);
+  });
+
   it("does not clear when parent re-renders with the same controlled value", async () => {
     const user = userEvent.setup();
 
