@@ -2,6 +2,7 @@
 
 import {
   useCallback,
+  useEffect,
   useRef,
   type ChangeEvent,
   type ClipboardEvent,
@@ -13,8 +14,7 @@ import {
 
 type Props = {
   id: string;
-  /** Initial text when this question mounts (e.g. after load). Not updated on parent re-renders. */
-  defaultValue?: string;
+  value: string;
   onValueChange: (next: string) => void;
   disabled?: boolean;
   /** When true, apply client-side anti-paste layers that still allow typing. */
@@ -25,12 +25,11 @@ type Props = {
 };
 
 /**
- * Uncontrolled textarea for live exams so autosave / realtime re-renders never reset typed text.
- * Parent must remount via `key` when loading saved answers from the server.
+ * Controlled textarea for live exams. Parent owns answer state; value only changes via onValueChange.
  */
 export function StudentExamTextarea({
   id,
-  defaultValue = "",
+  value,
   onValueChange,
   disabled = false,
   protect,
@@ -39,7 +38,11 @@ export function StudentExamTextarea({
   className,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
-  const lastGoodRef = useRef(defaultValue);
+  const lastGoodRef = useRef(value);
+
+  useEffect(() => {
+    lastGoodRef.current = value;
+  }, [value]);
 
   const emit = useCallback(
     (next: string) => {
@@ -51,9 +54,6 @@ export function StudentExamTextarea({
 
   const revertToLastGood = useCallback(() => {
     const prev = lastGoodRef.current;
-    if (ref.current) {
-      ref.current.value = prev;
-    }
     emit(prev);
   }, [emit]);
 
@@ -200,7 +200,7 @@ export function StudentExamTextarea({
       id={id}
       name={id}
       rows={rows}
-      defaultValue={defaultValue}
+      value={value}
       disabled={disabled}
       spellCheck={false}
       autoComplete="off"

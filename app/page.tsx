@@ -31,6 +31,7 @@ import type { StudentExamRemotePatch } from "@/lib/student-exam-remote-patch";
 import { mergeStudentAnswersForSave } from "@/lib/collect-student-exam-answers";
 import { fetchStudentExamStatus } from "@/lib/fetch-student-exam-status";
 import { fetchStudentLiveTeacherFeedback } from "@/lib/fetch-student-live-feedback";
+import { hasLiveTeacherFeedbackContent } from "@/lib/live-teacher-feedback";
 import { requestJson } from "@/lib/request-json";
 import { stableStringifyStudentAnswers } from "@/lib/student-answers-json";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
@@ -190,10 +191,8 @@ export default function Home() {
   const [joinedSession, setJoinedSession] = useState<JoinedLiveSession | null>(null);
   const [teacherLiveBanner, setTeacherLiveBanner] = useState<TeacherLiveBanner | null>(null);
   const [anonymousSessionId, setAnonymousSessionId] = useState("");
-  /** Multiple-choice only; text answers live in the DOM + latestStudentAnswersRef. */
-  const [choiceAnswers, setChoiceAnswers] = useState<StudentAnswers>({});
-  /** Snapshot for textarea defaultValue on join/load only — never updated while typing. */
-  const [textAnswersAtLoad, setTextAnswersAtLoad] = useState<StudentAnswers>({});
+  /** Local exam answers (controlled inputs). Hydrated from server once per session/device. */
+  const [examAnswers, setExamAnswers] = useState<StudentAnswers>({});
   const [examSuspended, setExamSuspended] = useState(false);
   const [examFinished, setExamFinished] = useState(false);
   const [liveTeacherFeedback, setLiveTeacherFeedback] = useState<Record<string, string>>({});
@@ -217,7 +216,6 @@ export default function Home() {
   const builderAutosaveInFlightRef = useRef(false);
   const builderAutosaveBannerClearRef = useRef<number | undefined>(undefined);
   const latestActiveFormRef = useRef<Form | undefined>(undefined);
-  const [textareasMountKey, setTextareasMountKey] = useState(0);
   const [isLoadingForms, setIsLoadingForms] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -623,13 +621,14 @@ export default function Home() {
         const isFirstLoadForKey = studentResponseLoadKeyRef.current !== loadKey;
         studentResponseLoadKeyRef.current = loadKey;
 
-        pendingDirtySinceRef.current = null;
         if (isFirstLoadForKey) {
-          latestStudentAnswersRef.current = parsed.answers;
-          lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(parsed.answers);
-          setChoiceAnswers(parsed.answers);
-          setTextAnswersAtLoad(parsed.answers);
-          setTextareasMountKey((k) => k + 1);
+          const hasLocalEdits = pendingDirtySinceRef.current !== null;
+          if (!hasLocalEdits) {
+            latestStudentAnswersRef.current = parsed.answers;
+            lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(parsed.answers);
+            setExamAnswers(parsed.answers);
+            pendingDirtySinceRef.current = null;
+          }
         }
         setStudentAnswersHydrated(true);
         setExamSuspended(parsed.suspended);
@@ -661,21 +660,28 @@ export default function Home() {
   }, [joinedLiveSessionId, anonymousSessionId]);
 
   const refreshLiveTeacherFeedback = useCallback(async () => {
-    if (!joinedLiveSessionId || !anonymousSessionId || !isLiveTeacherFeedbackEnabled) {
+    if (!joinedLiveSessionId || !anonymousSessionId) {
       return;
     }
-    const feedback = await fetchStudentLiveTeacherFeedback(
+    const snapshot = await fetchStudentLiveTeacherFeedback(
       joinedLiveSessionId,
       anonymousSessionId,
     );
-    if (feedback) {
-      setLiveTeacherFeedback(feedback);
+    if (!snapshot) {
+      return;
     }
-  }, [joinedLiveSessionId, anonymousSessionId, isLiveTeacherFeedbackEnabled]);
+    if (snapshot.enabled) {
+      setLiveTeacherFeedbackEnabledLive(true);
+    }
+    setLiveTeacherFeedback(snapshot.feedback);
+  }, [joinedLiveSessionId, anonymousSessionId]);
 
   const applyStudentExamRemotePatch = useCallback((patch: StudentExamRemotePatch) => {
     if (patch.liveTeacherFeedback !== undefined) {
       setLiveTeacherFeedback(patch.liveTeacherFeedback);
+      if (hasLiveTeacherFeedbackContent(patch.liveTeacherFeedback)) {
+        setLiveTeacherFeedbackEnabledLive(true);
+      }
     }
     if (patch.suspended === true) {
       setExamSuspended(true);
@@ -704,13 +710,11 @@ export default function Home() {
     deviceId: anonymousSessionId,
     enabled: Boolean(joinedLiveSessionId && anonymousSessionId && studentAnswersHydrated),
     onPatch: applyStudentExamRemotePatch,
-    onBroadcastReady: isLiveTeacherFeedbackEnabled
-      ? () => void refreshLiveTeacherFeedback()
-      : undefined,
+    onBroadcastReady: () => void refreshLiveTeacherFeedback(),
   });
 
   useEffect(() => {
-    if (!isLiveTeacherFeedbackEnabled || !studentAnswersHydrated || !joinedLiveSessionId) {
+    if (!studentAnswersHydrated || !joinedLiveSessionId || !anonymousSessionId) {
       return;
     }
     const syncOnVisible = () => {
@@ -724,21 +728,26 @@ export default function Home() {
       document.removeEventListener("visibilitychange", syncOnVisible);
       window.removeEventListener("focus", syncOnVisible);
     };
-  }, [
-    isLiveTeacherFeedbackEnabled,
-    studentAnswersHydrated,
-    joinedLiveSessionId,
-    refreshLiveTeacherFeedback,
-  ]);
+  }, [studentAnswersHydrated, joinedLiveSessionId, anonymousSessionId, refreshLiveTeacherFeedback]);
 
   useEffect(() => {
-    if (!isLiveTeacherFeedbackEnabled || !studentAnswersHydrated || !joinedLiveSessionId) {
+    if (!studentAnswersHydrated || !joinedLiveSessionId || !anonymousSessionId) {
       return;
     }
     const timeoutId = window.setTimeout(() => {
       void refreshLiveTeacherFeedback();
     }, 400);
     return () => window.clearTimeout(timeoutId);
+  }, [studentAnswersHydrated, joinedLiveSessionId, anonymousSessionId, refreshLiveTeacherFeedback]);
+
+  useEffect(() => {
+    if (!isLiveTeacherFeedbackEnabled || !studentAnswersHydrated || !joinedLiveSessionId) {
+      return;
+    }
+    const intervalId = window.setInterval(() => {
+      void refreshLiveTeacherFeedback();
+    }, 12_000);
+    return () => window.clearInterval(intervalId);
   }, [
     isLiveTeacherFeedbackEnabled,
     studentAnswersHydrated,
@@ -860,10 +869,11 @@ export default function Home() {
 
   const patchTextAnswer = useCallback(
     (questionId: string, next: string) => {
-      latestStudentAnswersRef.current = {
-        ...latestStudentAnswersRef.current,
-        [questionId]: next,
-      };
+      setExamAnswers((prev) => {
+        const updated = { ...prev, [questionId]: next };
+        latestStudentAnswersRef.current = updated;
+        return updated;
+      });
       scheduleTypingHeartbeat();
       scheduleStudentAutosave();
     },
@@ -872,9 +882,11 @@ export default function Home() {
 
   const patchChoiceAnswer = useCallback(
     (questionId: string, next: string) => {
-      const updated = { ...latestStudentAnswersRef.current, [questionId]: next };
-      latestStudentAnswersRef.current = updated;
-      setChoiceAnswers(updated);
+      setExamAnswers((prev) => {
+        const updated = { ...prev, [questionId]: next };
+        latestStudentAnswersRef.current = updated;
+        return updated;
+      });
       scheduleTypingHeartbeat();
       scheduleStudentAutosave();
     },
@@ -1241,8 +1253,7 @@ export default function Home() {
       const nextAnswers = { ...latestStudentAnswersRef.current };
       delete nextAnswers[questionId];
       latestStudentAnswersRef.current = nextAnswers;
-      setChoiceAnswers(nextAnswers);
-      setTextAnswersAtLoad(nextAnswers);
+      setExamAnswers(nextAnswers);
       await syncListsAfterTeacherChange();
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Failed to remove question.");
@@ -1292,6 +1303,7 @@ export default function Home() {
       lastPersistedAnswersJsonRef.current = "";
       pendingDirtySinceRef.current = null;
       studentResponseLoadKeyRef.current = null;
+      setExamAnswers({});
       setStudentAnswersHydrated(false);
       setExamSuspended(false);
       setExamFinished(false);
@@ -1347,8 +1359,7 @@ export default function Home() {
       lastPersistedAnswersJsonRef.current = "";
       pendingDirtySinceRef.current = null;
       studentResponseLoadKeyRef.current = null;
-      setChoiceAnswers({});
-      setTextAnswersAtLoad({});
+      setExamAnswers({});
       setStudentAnswersHydrated(false);
       setExamSuspended(false);
       setExamFinished(false);
@@ -1372,8 +1383,7 @@ export default function Home() {
     }
     autosaveBannerRef.current?.setMessage("");
     studentResponseLoadKeyRef.current = null;
-    setChoiceAnswers({});
-    setTextAnswersAtLoad({});
+    setExamAnswers({});
     setStudentAnswersHydrated(false);
     setExamSuspended(false);
     setExamFinished(false);
@@ -1499,9 +1509,9 @@ export default function Home() {
 
   const showLiveTeacherFeedback =
     Boolean(joinedSession) &&
-    (liveTeacherFeedbackEnabledLive ||
-      studentExamForm?.liveTeacherFeedbackEnabled ||
-      joinedSession?.form.liveTeacherFeedbackEnabled);
+    (isLiveTeacherFeedbackEnabled || hasLiveTeacherFeedbackContent(liveTeacherFeedback));
+
+  const examAnswersLoading = Boolean(joinedSession) && !studentAnswersHydrated;
 
   if (session === undefined) {
     return (
@@ -2110,6 +2120,12 @@ export default function Home() {
               ) : null}
             </header>
 
+            {examAnswersLoading ? (
+              <p className="rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-700">
+                Loading your saved answers…
+              </p>
+            ) : null}
+
             {studentExamQuestions.length === 0 ? (
               <p className="rounded-lg border border-dashed border-zinc-300 p-4 text-zinc-600">
                 This form has no questions yet.
@@ -2133,8 +2149,9 @@ export default function Home() {
                               type="radio"
                               name={question.id}
                               value={option}
-                              checked={choiceAnswers[question.id] === option}
+                              checked={examAnswers[question.id] === option}
                               disabled={
+                                examAnswersLoading ||
                                 (Boolean(joinedSession) && !sessionOpen) ||
                                 Boolean(examSuspended) ||
                                 Boolean(examFinished)
@@ -2151,17 +2168,21 @@ export default function Home() {
                     ) : (
                       <div className="space-y-3">
                         <StudentExamTextarea
-                          key={`${question.id}-${textareasMountKey}`}
                           id={question.id}
                           rows={4}
-                          defaultValue={textAnswersAtLoad[question.id] ?? ""}
+                          value={examAnswers[question.id] ?? ""}
                           disabled={
+                            examAnswersLoading ||
                             (Boolean(joinedSession) && !sessionOpen) ||
                             Boolean(examSuspended) ||
                             Boolean(examFinished)
                           }
                           protect={Boolean(
-                            joinedSession && sessionOpen && !examSuspended && !examFinished,
+                            joinedSession &&
+                              studentAnswersHydrated &&
+                              sessionOpen &&
+                              !examSuspended &&
+                              !examFinished,
                           )}
                           onValueChange={(next) => {
                             scheduleTypingHeartbeat();

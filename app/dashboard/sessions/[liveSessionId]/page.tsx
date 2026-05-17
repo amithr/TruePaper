@@ -180,7 +180,8 @@ export default function LiveSessionDetailPage() {
       await requestJson<{ ok: true }>(`/api/forms/live-sessions/${liveSessionId}/stop`, {
         method: "POST",
       });
-      await refreshOverview();
+      router.replace("/dashboard");
+      router.refresh();
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : "Could not stop session.");
     } finally {

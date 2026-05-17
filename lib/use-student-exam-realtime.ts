@@ -84,6 +84,9 @@ export function useStudentExamRealtime({
           const patch = parseBroadcastPayload(payload);
           if (patch) {
             applyPatch(patch);
+            if (patch.liveTeacherFeedback !== undefined) {
+              onBroadcastReadyRef.current?.();
+            }
           }
         })
         .subscribe((status) => {

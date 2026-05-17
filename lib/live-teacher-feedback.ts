@@ -1,5 +1,11 @@
 export type LiveTeacherFeedbackByQuestionId = Record<string, string>;
 
+export function hasLiveTeacherFeedbackContent(
+  feedback: LiveTeacherFeedbackByQuestionId,
+): boolean {
+  return Object.values(feedback).some((message) => message.trim().length > 0);
+}
+
 export function parseLiveTeacherFeedback(raw: unknown): LiveTeacherFeedbackByQuestionId {
   if (raw === null || raw === undefined) {
     return {};

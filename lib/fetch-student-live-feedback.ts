@@ -1,10 +1,15 @@
 import { parseLiveTeacherFeedback, type LiveTeacherFeedbackByQuestionId } from "@/lib/live-teacher-feedback";
 
+export type StudentLiveTeacherFeedbackSnapshot = {
+  enabled: boolean;
+  feedback: LiveTeacherFeedbackByQuestionId;
+};
+
 /** Event-driven pull of teacher comments (no polling loop). */
 export async function fetchStudentLiveTeacherFeedback(
   liveSessionId: string,
   deviceId: string,
-): Promise<LiveTeacherFeedbackByQuestionId | null> {
+): Promise<StudentLiveTeacherFeedbackSnapshot | null> {
   try {
     const params = new URLSearchParams({ deviceId });
     const response = await fetch(
@@ -18,10 +23,10 @@ export async function fetchStudentLiveTeacherFeedback(
     if (!response.ok) {
       return null;
     }
-    if (raw.enabled === false) {
-      return {};
-    }
-    return parseLiveTeacherFeedback(raw.liveTeacherFeedback);
+    return {
+      enabled: raw.enabled === true,
+      feedback: parseLiveTeacherFeedback(raw.liveTeacherFeedback),
+    };
   } catch {
     return null;
   }

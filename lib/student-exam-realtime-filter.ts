@@ -7,20 +7,22 @@ export function isAnswersOnlyFormResponseUpdate(
     return true;
   }
 
-  const answersChanged = JSON.stringify(oldRow.answers) !== JSON.stringify(newRow.answers);
+  const answersChanged =
+    JSON.stringify(oldRow.answers) !== JSON.stringify(newRow.answers);
+  const feedbackChanged =
+    JSON.stringify(oldRow.live_teacher_feedback) !==
+    JSON.stringify(newRow.live_teacher_feedback);
   const suspendedSame = oldRow.suspended_at === newRow.suspended_at;
   const finishedSame = oldRow.finished_at === newRow.finished_at;
-  const feedbackSame =
-    JSON.stringify(oldRow.live_teacher_feedback) === JSON.stringify(newRow.live_teacher_feedback);
   const resumeSame = oldRow.student_resume_code === newRow.student_resume_code;
 
-  if (!answersChanged && suspendedSame && finishedSame && feedbackSame && resumeSame) {
-    return true;
+  if (feedbackChanged) {
+    return false;
   }
 
-  if (!answersChanged) {
-    return true;
+  if (answersChanged) {
+    return suspendedSame && finishedSame && resumeSame;
   }
 
-  return suspendedSame && finishedSame && feedbackSame && resumeSame;
+  return suspendedSame && finishedSame && resumeSame;
 }
