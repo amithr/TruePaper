@@ -73,17 +73,16 @@ export function DashboardPastSessions({ onError }: Props) {
         <LoadingBar className="mt-4 max-w-md" label="Loading past sessions" />
       ) : null}
       {!loading && total === 0 ? (
-        <p className="mt-4 tp-empty">No past sessions yet.</p>
+        <p className="mt-4 tp-empty">No sessions yet.</p>
       ) : null}
       {!loading && sessions.length > 0 ? (
         <div className="mt-4 space-y-3">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[32rem] text-left text-sm">
               <thead>
-                <tr className="border-b border-zinc-200 text-zinc-500">
+                <tr className="border-b border-[var(--tp-border)] text-[var(--tp-text-muted)]">
                   <th className="py-2 pr-4 font-medium">Form</th>
                   <th className="py-2 pr-4 font-medium">Code</th>
-                  <th className="py-2 pr-4 font-medium">Opened</th>
                   <th className="py-2 pr-4 font-medium">Closed</th>
                   <th className="py-2 font-medium">Students</th>
                 </tr>
@@ -101,15 +100,22 @@ export function DashboardPastSessions({ onError }: Props) {
                         router.push(`/dashboard/sessions/${s.id}`);
                       }
                     }}
-                    className="cursor-pointer border-b border-zinc-100 last:border-0 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-inset"
+                    className="cursor-pointer border-b border-[var(--tp-border)]/60 last:border-0 hover:bg-[var(--tp-bg-subtle)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--tp-accent-ring)] focus-visible:ring-inset transition-colors"
                   >
-                    <td className="py-3 pr-4 font-medium text-zinc-900 underline decoration-zinc-300 underline-offset-2">
+                    <td className="py-3 pr-4 font-medium text-[var(--tp-text)]">
                       {s.formTitle}
                     </td>
-                    <td className="py-3 pr-4 font-mono tracking-widest">{s.joinCode}</td>
-                    <td className="py-3 pr-4 text-zinc-600">{new Date(s.opensAt).toLocaleString()}</td>
-                    <td className="py-3 pr-4 text-zinc-600">{new Date(s.closesAt).toLocaleString()}</td>
-                    <td className="py-3 text-zinc-900">{s.responseCount}</td>
+                    <td className="py-3 pr-4 font-mono text-xs tracking-[0.25em] text-[var(--tp-text-muted)]">
+                      {s.joinCode}
+                    </td>
+                    <td className="py-3 pr-4 text-[var(--tp-text-secondary)]">
+                      {new Date(s.closesAt).toLocaleDateString([], {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                    </td>
+                    <td className="py-3 text-[var(--tp-text)]">{s.responseCount}</td>
                   </tr>
                 ))}
               </tbody>

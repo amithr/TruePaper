@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { ConfirmButton } from "@/components/ConfirmButton";
 import { LoadingBar } from "@/components/LoadingBar";
 import { SessionJoinShare } from "@/components/SessionJoinShare";
 import { StudentReviewShare } from "@/components/StudentReviewShare";
@@ -63,18 +64,32 @@ function formatCountdown(ms: number): string {
 }
 
 function statusBadgeClass(status: LiveParticipantUiStatus): string {
-  const base = "inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset";
   switch (status) {
     case "blocked":
-      return `${base} bg-[var(--tp-warning-soft)] text-[var(--tp-warning-text)] ring-[var(--tp-warning-border)]`;
+      return "tp-status tp-status-blocked";
     case "finished":
-      return `${base} bg-[var(--tp-success-soft)] text-green-800 ring-[var(--tp-success-border)]`;
+      return "tp-status tp-status-finished";
     case "typing":
-      return `${base} bg-[var(--tp-accent-soft)] text-blue-800 ring-blue-200`;
+      return "tp-status tp-status-typing";
     case "idle":
-      return `${base} bg-[var(--tp-bg-subtle)] text-[var(--tp-text-secondary)] ring-[var(--tp-border)]`;
+      return "tp-status tp-status-idle";
     default:
-      return `${base} bg-violet-50 text-violet-900 ring-violet-200`;
+      return "tp-status tp-status-neutral";
+  }
+}
+
+function statusLabel(status: LiveParticipantUiStatus): string {
+  switch (status) {
+    case "blocked":
+      return "Paused";
+    case "finished":
+      return "Submitted";
+    case "typing":
+      return "Typing";
+    case "idle":
+      return "Idle";
+    default:
+      return status;
   }
 }
 
@@ -182,13 +197,6 @@ export default function LiveSessionDetailPage() {
 
   const stopSession = async () => {
     if (!liveSessionId) {
-      return;
-    }
-    if (
-      !window.confirm(
-        "Stop this live session? Students will not be able to join or save answers in this session window anymore.",
-      )
-    ) {
       return;
     }
     setActionBusy(true);
@@ -306,21 +314,37 @@ export default function LiveSessionDetailPage() {
           </div>
           <div className="flex flex-col items-end gap-2">
             <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              disabled={actionBusy || !sessionRunning}
-              onClick={() => void stopSession()}
-              className={`rounded-md border border-red-300 bg-white px-3 py-2 text-sm font-medium text-red-800 disabled:opacity-50 ${focusRing}`}
-            >
-              {buttonLabel("Stop session")}
-            </button>
-            <button
-              type="button"
-              onClick={() => void refreshOverview()}
-              className={`tp-btn-secondary ${focusRing}`}
-            >
-              {buttonLabel("Refresh now")}
-            </button>
+              <ConfirmButton
+                tone="danger"
+                label={buttonLabel("Stop session")}
+                confirmLabel={buttonLabel("Tap again to stop")}
+                busy={actionBusy}
+                busyLabel={buttonLabel("Stopping…")}
+                disabled={!sessionRunning}
+                onConfirm={stopSession}
+              />
+              <button
+                type="button"
+                onClick={() => void refreshOverview()}
+                className={`tp-btn-ghost ${focusRing}`}
+                aria-label="Refresh"
+              >
+                <svg
+                  aria-hidden
+                  className="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+                  <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+                  <path d="M21 3v5h-5" />
+                  <path d="M3 21v-5h5" />
+                </svg>
+              </button>
             </div>
           </div>
         </div>
@@ -361,15 +385,13 @@ export default function LiveSessionDetailPage() {
             </p>
           ) : (
             <div className="mt-4 overflow-x-auto">
-              <table className="w-full min-w-[44rem] text-left text-sm">
+              <table className="w-full min-w-[40rem] text-left text-sm">
                 <thead>
-                  <tr className="border-b border-zinc-200 text-zinc-500">
-                    <th className="py-2 pr-4 font-medium">Name</th>
-                    <th className="py-2 pr-4 font-medium">Device</th>
+                  <tr className="border-b border-[var(--tp-border)] text-[var(--tp-text-muted)]">
+                    <th className="py-2 pr-4 font-medium">Student</th>
                     <th className="py-2 pr-4 font-medium">Status</th>
                     <th className="py-2 pr-4 font-medium">Last activity</th>
-                    <th className="py-2 pr-4 font-medium">Exam</th>
-                    <th className="py-2 pr-4 font-medium">Results link</th>
+                    <th className="py-2 pr-4 font-medium">Results</th>
                     <th className="py-2 font-medium">Actions</th>
                   </tr>
                 </thead>
@@ -392,34 +414,33 @@ export default function LiveSessionDetailPage() {
                           );
                         }
                       }}
-                      className="cursor-pointer border-b border-zinc-100 last:border-0 hover:bg-zinc-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-inset"
+                      className="cursor-pointer border-b border-[var(--tp-border)]/60 last:border-0 hover:bg-[var(--tp-bg-subtle)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--tp-accent-ring)] focus-visible:ring-inset transition-colors"
                     >
-                      <td className="py-3 pr-4 text-zinc-900">
-                        {p.displayName ? p.displayName : <span className="text-zinc-400">—</span>}
-                      </td>
-                      <td className="py-3 pr-4 font-mono text-xs text-zinc-800">
-                        {maskDeviceId(p.anonymousSessionId)}
+                      <td className="py-3 pr-4">
+                        <div className="flex flex-col">
+                          <span className="font-medium text-[var(--tp-text)]">
+                            {p.displayName ? p.displayName : (
+                              <span className="text-[var(--tp-text-muted)] italic">No name</span>
+                            )}
+                          </span>
+                          <span className="font-mono text-[10px] uppercase tracking-wider text-[var(--tp-text-muted)]">
+                            {maskDeviceId(p.anonymousSessionId)}
+                          </span>
+                        </div>
                       </td>
                       <td className="py-3 pr-4">
-                        <span
-                          className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${statusBadgeClass(p.status)}`}
-                        >
-                          {p.status}
+                        <span className={statusBadgeClass(p.status)}>
+                          <span className="tp-status-dot" />
+                          {statusLabel(p.status)}
                         </span>
                       </td>
-                      <td className="py-3 pr-4 text-zinc-600">
-                        {p.lastActivityAt ? new Date(p.lastActivityAt).toLocaleString() : "—"}
-                      </td>
-                      <td className="py-3 pr-4">
-                        <Link
-                          href={`/dashboard/sessions/${liveSessionId}/watch/${encodeURIComponent(p.anonymousSessionId)}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(event) => event.stopPropagation()}
-                          className="text-sm font-medium text-sky-800 underline decoration-sky-300 underline-offset-2 hover:decoration-sky-600"
-                        >
-                          {p.status === "finished" ? "View submission" : "Watch live"}
-                        </Link>
+                      <td className="py-3 pr-4 text-[var(--tp-text-secondary)]">
+                        {p.lastActivityAt
+                          ? new Date(p.lastActivityAt).toLocaleTimeString([], {
+                              hour: "numeric",
+                              minute: "2-digit",
+                            })
+                          : "—"}
                       </td>
                       <td className="py-3 pr-4" onClick={(event) => event.stopPropagation()}>
                         <StudentReviewShare
@@ -437,12 +458,12 @@ export default function LiveSessionDetailPage() {
                               event.stopPropagation();
                               void resumeStudent(p.anonymousSessionId);
                             }}
-                            className="rounded-md bg-amber-900 px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
+                            className="rounded-[var(--tp-radius-xs)] bg-[var(--tp-amber)] px-2.5 py-1 text-xs font-semibold text-white shadow-sm transition-transform active:scale-95 disabled:opacity-50"
                           >
-                            {buttonLabel("Allow to continue")}
+                            {buttonLabel("Let in")}
                           </button>
                         ) : (
-                          <span className="text-zinc-400">—</span>
+                          <span className="text-[var(--tp-text-muted)]">—</span>
                         )}
                       </td>
                     </tr>

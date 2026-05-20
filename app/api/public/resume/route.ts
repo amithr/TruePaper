@@ -80,6 +80,12 @@ export async function GET(request: Request) {
           { status: 404 },
         );
       }
+      if (reason === "already_submitted") {
+        return NextResponse.json(
+          { error: "You have already submitted this exam and cannot rejoin." },
+          { status: 403 },
+        );
+      }
       return NextResponse.json(
         { error: "That rejoin code was not found. Check the code and try again." },
         { status: 404 },

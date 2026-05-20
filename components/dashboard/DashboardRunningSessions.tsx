@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { deferEffect } from "@/lib/defer-effect";
 
+import { ConfirmButton } from "@/components/ConfirmButton";
 import { SessionJoinShare } from "@/components/SessionJoinShare";
 import { LIVE_SESSION_OVERVIEW_EVENT, liveSessionOverviewChannelName } from "@/lib/broadcast-live-session-overview";
 import { notifyStudentExamResumed } from "@/lib/notify-student-exam-resumed";
@@ -120,13 +121,6 @@ export function DashboardRunningSessions({
   };
 
   const stopRunningSession = async (liveSessionId: string) => {
-    if (
-      !window.confirm(
-        "Stop this live session? Students will not be able to join or save answers in this session window anymore.",
-      )
-    ) {
-      return;
-    }
     setStoppingSessionId(liveSessionId);
     try {
       await requestJson<{ ok: true }>(`/api/forms/live-sessions/${liveSessionId}/stop`, {
@@ -142,86 +136,126 @@ export function DashboardRunningSessions({
 
   return (
     <section id="running-sessions" className="scroll-mt-6 tp-card p-6">
-      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className={ui.sectionTitle}>Live</p>
-          <h2 className="text-xl font-semibold tracking-tight">Currently running sessions</h2>
+          <h2 className="text-xl font-semibold tracking-tight flex items-center gap-2">
+            <span
+              aria-hidden
+              className="inline-block h-2 w-2 rounded-full bg-[var(--tp-mint)]"
+              style={
+                sessions.length > 0
+                  ? { animation: "tp-typing-pulse 1.4s ease-in-out infinite" }
+                  : undefined
+              }
+            />
+            Running sessions
+            {sessions.length > 0 ? (
+              <span className="text-sm font-normal text-[var(--tp-text-muted)]">
+                · {sessions.length}
+              </span>
+            ) : null}
+          </h2>
         </div>
-        <div className="flex flex-col items-end gap-1 text-right">
-          <button
-            type="button"
-            onClick={() => void refreshActive()}
-            className={`text-sm font-medium text-zinc-700 underline ${focusRing}`}
+        <button
+          type="button"
+          onClick={() => void refreshActive()}
+          className={`tp-btn-ghost text-sm ${focusRing}`}
+          title={lastSyncedAt ? `Updated ${new Date(lastSyncedAt).toLocaleTimeString()}` : "Refresh"}
+        >
+          <svg
+            aria-hidden
+            className="h-4 w-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
           >
-            {buttonLabel("Refresh now")}
-          </button>
-          <p className="text-xs text-zinc-500">
-            Last updated {lastSyncedAt ? new Date(lastSyncedAt).toLocaleTimeString() : "—"}
-          </p>
-        </div>
+            <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+            <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+            <path d="M21 3v5h-5" />
+            <path d="M3 21v-5h5" />
+          </svg>
+          Refresh
+        </button>
       </div>
       {sessions.length === 0 ? (
         <p className="tp-empty">
-          No sessions are open right now. Start one from your form library below.
+          No sessions are open. Start one from your form library below.
         </p>
       ) : (
-        <ul className="divide-y divide-zinc-100 rounded-lg border border-zinc-200">
+        <ul className="space-y-3">
           {sessions.map((s) => {
             const msLeft = new Date(s.closesAt).getTime() - nowTick;
             const suspended = suspensionsBySession[s.id] ?? [];
             const noTimeLimit = isNoTimeLimitSession(s.opensAt, s.closesAt);
             return (
-              <li key={s.id} className="px-4 py-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
+              <li
+                key={s.id}
+                className="tp-card tp-card-interactive p-4 sm:p-5 tp-anim-fade-up"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
                     <Link
                       href={`/dashboard/sessions/${s.id}`}
-                      className={`font-medium text-zinc-900 underline decoration-zinc-300 underline-offset-2 hover:decoration-zinc-600 ${focusRing}`}
+                      className={`text-base font-semibold tracking-tight text-[var(--tp-text)] hover:text-[var(--tp-accent-hover)] ${focusRing}`}
                     >
                       {s.formTitle}
                     </Link>
-                    <p className="mt-0.5 font-mono text-sm tracking-widest text-zinc-700">{s.joinCode}</p>
-                    <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-zinc-500">
-                      <Link
-                        href={`/dashboard/sessions/${s.id}`}
-                        className={`font-medium text-zinc-700 underline ${focusRing}`}
-                      >
-                        Open session board
-                      </Link>
-                      <Link
-                        href={`/live/${encodeURIComponent(s.joinCode)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={`tp-link ${focusRing}`}
-                      >
-                        Class display (projector)
-                      </Link>
+                    <p className="mt-1 font-mono text-xs tracking-[0.3em] text-[var(--tp-text-muted)]">
+                      {s.joinCode}
                     </p>
+                    <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs">
+                      <span className="tp-status tp-status-typing">
+                        <span className="tp-status-dot" />
+                        {s.inProgressCount} working
+                      </span>
+                      <span className="tp-status tp-status-finished">
+                        <span className="tp-status-dot" />
+                        {s.finishedCount} done
+                      </span>
+                      <span className="tp-status tp-status-idle">
+                        <span className="tp-status-dot" />
+                        {s.assignedCount} joined
+                      </span>
+                    </div>
                     <div className="mt-3">
                       <SessionJoinShare joinCode={s.joinCode} />
                     </div>
                   </div>
-                  <div className="flex flex-col items-end gap-2 text-right text-sm text-zinc-600">
-                    <div>
-                      <p>
-                        <span className="font-semibold text-zinc-900">{s.assignedCount}</span> assigned
-                        <span className="mx-1 text-zinc-400">·</span>
-                        <span className="font-semibold text-zinc-900">{s.inProgressCount}</span> in progress
-                        <span className="mx-1 text-zinc-400">·</span>
-                        <span className="font-semibold text-zinc-900">{s.finishedCount}</span> finished
-                      </p>
-                      <p className="mt-0.5">
-                        {noTimeLimit ? "No time limit" : `Time left ${formatCountdown(msLeft)}`}
-                      </p>
+                  <div className="flex flex-col items-end gap-2 text-right text-sm">
+                    <div className="text-[var(--tp-text-secondary)]">
+                      {noTimeLimit ? (
+                        <span>No time limit</span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5">
+                          <svg
+                            aria-hidden
+                            className="h-4 w-4 text-[var(--tp-accent)]"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <circle cx="12" cy="12" r="9" />
+                            <path d="M12 7v5l3 2" />
+                          </svg>
+                          <span className="font-mono font-semibold tabular-nums text-[var(--tp-text)]">
+                            {formatCountdown(msLeft)}
+                          </span>
+                        </span>
+                      )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => void stopRunningSession(s.id)}
-                      disabled={stoppingSessionId === s.id}
-                      aria-busy={stoppingSessionId === s.id}
-                      className={`inline-flex min-w-[7.5rem] items-center justify-center gap-1.5 rounded-md border border-red-200 bg-white px-2 py-1 text-xs font-medium text-red-800 disabled:opacity-70 ${focusRing}`}
-                    >
-                      {stoppingSessionId === s.id ? (
+                    <ConfirmButton
+                      tone="danger"
+                      label={buttonLabel("Stop session")}
+                      confirmLabel={buttonLabel("Tap again to stop")}
+                      busy={stoppingSessionId === s.id}
+                      busyLabel={
                         <>
                           <span
                             className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-red-200 border-t-red-800"
@@ -229,34 +263,39 @@ export function DashboardRunningSessions({
                           />
                           {buttonLabel("Stopping…")}
                         </>
-                      ) : (
-                        buttonLabel("Stop session")
-                      )}
-                    </button>
+                      }
+                      onConfirm={() => stopRunningSession(s.id)}
+                    />
                   </div>
                 </div>
                 {suspended.length > 0 ? (
-                  <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-                    <p className="font-medium">Paused (left tab): {suspended.length}</p>
+                  <div className="mt-3 rounded-[var(--tp-radius-sm)] border border-[var(--tp-warning-border)] bg-[var(--tp-warning-soft)] px-3 py-2 text-sm text-[var(--tp-warning-text)]">
+                    <p className="inline-flex items-center gap-1.5 font-semibold">
+                      <span aria-hidden className="tp-status tp-status-blocked">
+                        <span className="tp-status-dot" />
+                        Paused
+                      </span>
+                      {suspended.length} need{suspended.length === 1 ? "s" : ""} approval
+                    </p>
                     <ul className="mt-2 space-y-2">
                       {suspended.map((row) => (
                         <li
                           key={row.anonymousSessionId}
                           className="flex flex-wrap items-center justify-between gap-2"
                         >
-                          <span className="text-xs text-amber-900">
+                          <span className="text-xs">
                             <span className="font-medium">
                               {row.displayName ? row.displayName : "Student"}
                             </span>
-                            <span className="mx-1.5 text-amber-700">·</span>
+                            <span className="mx-1.5 text-[var(--tp-warning-text)] opacity-60">·</span>
                             <span className="font-mono">{maskDeviceId(row.anonymousSessionId)}</span>
                           </span>
                           <button
                             type="button"
                             onClick={() => void resumeStudent(s.id, row.anonymousSessionId)}
-                            className="rounded-md bg-amber-900 px-2 py-1 text-xs font-medium text-white"
+                            className="rounded-[var(--tp-radius-xs)] bg-[var(--tp-amber)] px-2.5 py-1 text-xs font-semibold text-white shadow-sm transition-transform active:scale-95"
                           >
-                            {buttonLabel("Allow to continue")}
+                            {buttonLabel("Let in")}
                           </button>
                         </li>
                       ))}

@@ -49,6 +49,12 @@ export async function POST(request: Request, { params }: Params) {
           { status: 503 },
         );
       }
+      if (error.message.includes("exam already submitted")) {
+        return NextResponse.json(
+          { error: "You have already submitted this exam and cannot rejoin." },
+          { status: 403 },
+        );
+      }
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 

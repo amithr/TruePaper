@@ -81,22 +81,21 @@ export default function StudentReviewPage() {
   return (
     <div className="min-h-screen bg-[var(--tp-bg)] py-8 text-[var(--tp-text)] sm:py-10">
       <main className="mx-auto w-full max-w-3xl space-y-6 px-4 sm:px-6">
-        <header>
-          <p className="text-sm font-medium uppercase tracking-wide text-zinc-500">Your results</p>
+        <header className="tp-card-accent p-6 sm:p-8 tp-anim-fade-up">
+          <p className={ui.sectionTitle}>Your results</p>
           <h1 className="mt-1 text-2xl font-bold tracking-tight">{review.formTitle}</h1>
           {review.formDescription ? (
-            <p className="mt-2 text-zinc-600">{review.formDescription}</p>
+            <p className="mt-2 text-[var(--tp-text-secondary)]">{review.formDescription}</p>
           ) : null}
           {review.displayName ? (
-            <p className="mt-2 text-sm text-zinc-600">
-              Submitted as <span className="font-semibold text-zinc-900">{review.displayName}</span>
+            <p className="mt-3 text-sm text-[var(--tp-text-secondary)]">
+              Submitted as{" "}
+              <span className="font-semibold text-[var(--tp-text)]">
+                {review.displayName}
+              </span>
             </p>
           ) : null}
         </header>
-
-        <p className="rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-700">
-          This page is read-only. Your answers, point values, and teacher feedback are shown below.
-        </p>
 
         <section className="tp-card p-6">
           <div className={ui.questionList}>

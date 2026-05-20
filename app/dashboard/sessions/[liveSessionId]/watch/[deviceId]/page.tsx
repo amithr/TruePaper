@@ -634,30 +634,26 @@ export default function WatchStudentExamPage() {
         </div>
 
         <div
-          className={`rounded-xl border px-4 py-3 text-sm ${
+          className={`rounded-[var(--tp-radius)] border px-4 py-3 text-sm ${
             st.suspended
-              ? "border-amber-300 bg-amber-50 text-amber-950"
+              ? "border-[var(--tp-warning-border)] bg-[var(--tp-warning-soft)] text-[var(--tp-warning-text)]"
               : st.finished
-                ? "border-emerald-200 bg-emerald-50 text-emerald-950"
-                : "border-zinc-200 bg-white text-zinc-800"
+                ? "border-[var(--tp-success-border)] bg-[var(--tp-mint-soft)] text-emerald-900"
+                : "border-[var(--tp-border)] bg-[var(--tp-surface)] text-[var(--tp-text)]"
           }`}
         >
           {!st.hasJoined ? (
-            <p className="font-medium">This student has not opened the session on their device yet.</p>
+            <p className="font-medium">Student hasn’t opened the exam yet.</p>
           ) : st.suspended ? (
-            <p className="font-medium">
-              Session is paused (tab left). Answers below reflect their last autosave or save.
-            </p>
+            <p className="font-medium">Paused — student left the tab.</p>
           ) : st.finished ? (
-            <p className="font-medium">Student has submitted. Answers are read-only.</p>
+            <p className="font-medium">Submitted — answers are read-only.</p>
           ) : (
-            <p className="font-medium">
-              Live view — answers and your feedback appear as you and the student type.
-            </p>
+            <p className="font-medium">Live — answers and feedback sync as you both type.</p>
           )}
           {st.lastActivityAt ? (
-            <p className="mt-1 text-xs opacity-90">
-              Last activity on device: {new Date(st.lastActivityAt).toLocaleString()}
+            <p className="mt-1 text-xs opacity-80">
+              Last activity {new Date(st.lastActivityAt).toLocaleString()}
             </p>
           ) : null}
         </div>
@@ -765,29 +761,23 @@ export default function WatchStudentExamPage() {
                         }
                         const feedbackHint =
                           st.finished || !s.sessionOpen
-                            ? "Autosaved · included on the student results link"
-                            : "Autosaved · visible on their screen";
+                            ? "Saved · on student results link"
+                            : "Saved · visible to student";
+                        const isSavingNow = liveFeedbackSavingQuestionIds.has(question.id);
                         return (
-                        <div className="rounded-md border border-sky-200 bg-sky-50/80 px-3 py-3">
+                        <div className="rounded-[var(--tp-radius-sm)] border border-sky-200 bg-sky-50/70 px-3 py-3">
                           <label className="block text-sm font-medium text-sky-950">
-                            Teacher feedback
-                            {liveFeedbackSavingQuestionIds.has(question.id) ? (
+                            <span className="inline-flex flex-wrap items-center gap-2">
+                              Teacher feedback
                               <span
                                 data-testid="teacher-live-feedback-status"
-                                data-state="saving"
-                                className="ml-2 text-xs font-normal text-sky-800"
+                                data-state={isSavingNow ? "saving" : "saved"}
+                                className="tp-save-indicator"
                               >
-                                Saving…
+                                <span aria-hidden className="tp-save-dot" />
+                                <span>{isSavingNow ? "Saving" : feedbackHint}</span>
                               </span>
-                            ) : (
-                              <span
-                                data-testid="teacher-live-feedback-status"
-                                data-state="saved"
-                                className="ml-2 text-xs font-normal text-sky-800"
-                              >
-                                {feedbackHint}
-                              </span>
-                            )}
+                            </span>
                             <textarea
                               rows={3}
                               data-testid="teacher-live-feedback-input"

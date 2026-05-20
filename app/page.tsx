@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { JoinCodeInput } from "@/components/JoinCodeInput";
 import { LoadingBar } from "@/components/LoadingBar";
 import { SessionJoinShare } from "@/components/SessionJoinShare";
 import { StudentExamReconnect } from "@/components/StudentExamReconnect";
@@ -28,6 +29,7 @@ import { LIVE_BOARD_BROADCAST_EVENT, liveBoardChannelName } from "@/lib/broadcas
 import type { StudentExamRemotePatch } from "@/lib/student-exam-remote-patch";
 import { mergeStudentAnswersForSave } from "@/lib/collect-student-exam-answers";
 import { shouldApplyServerAnswersOnLoad } from "@/lib/student-exam-answer-hydration";
+import { fetchStudentAlreadySubmitted, STUDENT_ALREADY_SUBMITTED_MESSAGE } from "@/lib/fetch-student-submission-status";
 import { fetchStudentExamStatus } from "@/lib/fetch-student-exam-status";
 import { fetchStudentLiveTeacherFeedback } from "@/lib/fetch-student-live-feedback";
 import { hasLiveTeacherFeedbackContent } from "@/lib/live-teacher-feedback";
@@ -221,6 +223,17 @@ export default function Home() {
       return;
     }
     el.textContent = message || "\u00a0";
+  }, []);
+  const clearJoinFormFields = useCallback(() => {
+    setJoinCodeInput("");
+    setJoinDisplayNameInput("");
+    try {
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem("truepaper_last_exam_display_name");
+      }
+    } catch {
+      /* ignore */
+    }
   }, []);
   const lastPersistedBuilderFormDetailsRef = useRef("");
   const lastPersistedBuilderQuestionJsonByIdRef = useRef<Record<string, string>>({});
@@ -619,6 +632,17 @@ export default function Home() {
         studentResponseLoadKeyRef.current = loadKey;
 
         if (isFirstLoadForKey) {
+          if (parsed.finished) {
+            setStudentAnswersHydrated(true);
+            setStatusMessage(STUDENT_ALREADY_SUBMITTED_MESSAGE);
+            clearJoinFormFields();
+            setJoinedSession(null);
+            setActiveExamDisplayName("");
+            setExamAnswers({});
+            setExamFinished(false);
+            setExamSuspended(false);
+            return;
+          }
           const hasLocalEdits = pendingDirtySinceRef.current !== null;
           if (shouldApplyServerAnswersOnLoad(isFirstLoadForKey, hasLocalEdits)) {
             latestStudentAnswersRef.current = parsed.answers;
@@ -953,6 +977,18 @@ export default function Home() {
             displayName: activeExamDisplayName,
           }),
         });
+        if (res.status === 403) {
+          const body = (await res.json()) as { error?: string };
+          clearJoinFormFields();
+          setJoinedSession(null);
+          setActiveExamDisplayName("");
+          setExamAnswers({});
+          setStudentAnswersHydrated(false);
+          setExamFinished(false);
+          setExamSuspended(false);
+          setStatusMessage(body.error ?? STUDENT_ALREADY_SUBMITTED_MESSAGE);
+          return;
+        }
         if (res.ok && joinCodeInput) {
           void notifyLiveBoardRefresh(joinCodeInput);
         }
@@ -1361,10 +1397,18 @@ export default function Home() {
     setIsJoiningSession(true);
     setStatusMessage("");
     try {
+      let deviceIdForJoin = anonymousSessionId;
       if (isTeacher && mode === "student") {
-        setAnonymousSessionId(createFreshAnonymousSessionId());
+        deviceIdForJoin = createFreshAnonymousSessionId();
+        setAnonymousSessionId(deviceIdForJoin);
       }
       const data = await requestJson<JoinApiResponse>(`/api/public/join?code=${encodeURIComponent(code)}`);
+      if (
+        deviceIdForJoin &&
+        (await fetchStudentAlreadySubmitted(data.liveSessionId, deviceIdForJoin))
+      ) {
+        throw new Error(STUDENT_ALREADY_SUBMITTED_MESSAGE);
+      }
       setJoinedSession({
         liveSessionId: data.liveSessionId,
         form: data.form,
@@ -1538,6 +1582,7 @@ export default function Home() {
         },
       );
       const codeForBoard = joinCodeInput;
+      clearJoinFormFields();
       leaveJoinedSession();
       if (codeForBoard) {
         void notifyLiveBoardRefresh(codeForBoard);
@@ -1597,21 +1642,33 @@ export default function Home() {
     : false;
 
   const joinSessionSection = (
-    <section id="join-session" className="mb-8 tp-card p-6">
-      <p className={ui.sectionTitle}>Student</p>
-      <h2 className="mb-3 text-lg font-semibold tracking-tight">Join a live session</h2>
-      <p className="mb-3 text-sm text-zinc-600">
-        Enter the code your teacher gives you (6 characters, no spaces) and your name as it should
-        appear to your teacher. If your teacher shared a join link, the code may already be filled in.
-      </p>
-      <div className="mb-3 grid gap-2 sm:grid-cols-[12rem_minmax(0,1fr)] sm:items-center">
-        <label className="text-sm font-medium">
-          Your name for this session <span className="text-red-600">*</span>
-        </label>
+    <section
+      id="join-session"
+      className="mb-8 tp-card-accent p-6 sm:p-8 tp-anim-fade-up"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className={ui.sectionTitle}>Join</p>
+          <h2 className="mt-1 text-2xl font-bold tracking-tight">Join a live session</h2>
+        </div>
+        <span aria-hidden className="hidden sm:inline-flex tp-brand-mark tp-brand-mark--lg">
+          T
+        </span>
+      </div>
+
+      <div className="mt-6 space-y-5">
         {joinedSession ? (
-          <p className="text-base font-semibold text-zinc-900">{activeExamDisplayName}</p>
+          <div>
+            <p className={ui.sectionTitle}>Your name</p>
+            <p className="mt-1 text-base font-semibold text-[var(--tp-text)]">
+              {activeExamDisplayName}
+            </p>
+          </div>
         ) : (
-          <div className="max-w-md">
+          <label className="block">
+            <span className="block text-sm font-semibold text-[var(--tp-text)]">
+              Your name
+            </span>
             <input
               type="text"
               autoComplete="name"
@@ -1622,64 +1679,66 @@ export default function Home() {
               onChange={(e) => setJoinDisplayNameInput(e.target.value)}
               className="tp-input"
               placeholder="e.g. Jordan Lee"
-              aria-describedby="join-display-name-hint"
             />
-            <p id="join-display-name-hint" className="mt-1 text-xs text-zinc-500">
-              Required before you can join and begin the exam.
-            </p>
+          </label>
+        )}
+
+        <div>
+          <span className="block text-sm font-semibold text-[var(--tp-text)]">
+            Session code
+          </span>
+          <p className="mt-0.5 text-xs text-[var(--tp-text-muted)]">
+            Six characters, from your teacher.
+          </p>
+          <div className="mt-3">
+            <JoinCodeInput
+              value={joinCodeInput}
+              onChange={setJoinCodeInput}
+              disabled={Boolean(joinedSession)}
+              aria-label="Class session code"
+            />
           </div>
-        )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {!joinedSession ? (
+            <button
+              type="button"
+              data-testid="student-join-submit"
+              onClick={() => void joinWithCode(joinCodeInput)}
+              disabled={
+                isJoiningSession ||
+                !isValidJoinCodeFormat(normalizeJoinCode(joinCodeInput)) ||
+                !isValidLiveSessionDisplayName(normalizeLiveSessionDisplayName(joinDisplayNameInput))
+              }
+              aria-busy={isJoiningSession}
+              className={`${ui.btnPrimary} disabled:opacity-50`}
+            >
+              {isJoiningSession ? buttonLabel("Joining…") : "Join exam"}
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={leaveJoinedSession}
+              className={ui.btnSecondary}
+            >
+              {buttonLabel("Leave session")}
+            </button>
+          )}
+        </div>
       </div>
-      <div className="grid gap-2 sm:grid-cols-[12rem_minmax(0,1fr)_auto] sm:items-end">
-        <label className="text-sm font-medium">Session code</label>
-        <input
-          type="text"
-          inputMode="text"
-          autoCapitalize="characters"
-          autoCorrect="off"
-          spellCheck={false}
-          maxLength={8}
-          value={joinCodeInput}
-          onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
-          disabled={Boolean(joinedSession)}
-          className="w-48 rounded-md border border-zinc-300 px-3 py-2 font-mono tracking-widest"
-          placeholder="ABCD12"
-        />
-        {!joinedSession ? (
-          <button
-            type="button"
-            data-testid="student-join-submit"
-            onClick={() => void joinWithCode(joinCodeInput)}
-            disabled={
-              isJoiningSession ||
-              !isValidJoinCodeFormat(normalizeJoinCode(joinCodeInput)) ||
-              !isValidLiveSessionDisplayName(normalizeLiveSessionDisplayName(joinDisplayNameInput))
-            }
-            aria-busy={isJoiningSession}
-            className="justify-self-start tp-btn-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2 disabled:opacity-50"
-          >
-            {isJoiningSession ? buttonLabel("Joining…") : "Join"}
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={leaveJoinedSession}
-            className="justify-self-start rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2"
-          >
-            {buttonLabel("Leave session")}
-          </button>
-        )}
-      </div>
+
       {!joinedSession ? (
-        <div className="mt-6 rounded-lg border border-dashed border-zinc-300 bg-zinc-50/80 px-4 py-4">
-          <p className="text-sm font-medium text-zinc-900">Already in this exam?</p>
-          <p className="mt-1 text-sm text-zinc-600">
-            If you were logged out or cleared this site, enter your <strong>personal rejoin code</strong>{" "}
-            (8 characters from when you joined—not the class session code).
+        <details className="mt-6 rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] px-4 py-3 text-sm">
+          <summary className="cursor-pointer select-none text-sm font-semibold text-[var(--tp-text)]">
+            Already started? Use your personal rejoin code
+          </summary>
+          <p className="mt-2 text-sm text-[var(--tp-text-secondary)]">
+            Eight characters from when you joined — not the class code.
           </p>
           <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
             <label className="block text-sm font-medium">
-              Personal rejoin code
+              <span className="sr-only">Personal rejoin code</span>
               <input
                 type="text"
                 inputMode="text"
@@ -1689,7 +1748,7 @@ export default function Home() {
                 maxLength={10}
                 value={rejoinCodeInput}
                 onChange={(e) => setRejoinCodeInput(e.target.value.toUpperCase())}
-                className="tp-input mt-1 font-mono tracking-widest"
+                className="tp-input font-mono tracking-widest"
                 placeholder="ABCD 1234"
               />
             </label>
@@ -1700,12 +1759,12 @@ export default function Home() {
                 isJoiningSession || !isValidResumeCodeFormat(normalizeResumeCode(rejoinCodeInput))
               }
               aria-busy={isJoiningSession}
-              className="justify-self-start tp-btn-primary disabled:opacity-50"
+              className={`justify-self-start ${ui.btnSecondary} disabled:opacity-50`}
             >
-              {isJoiningSession ? buttonLabel("Rejoining…") : buttonLabel("Rejoin my exam")}
+              {isJoiningSession ? buttonLabel("Rejoining…") : buttonLabel("Rejoin")}
             </button>
           </div>
-        </div>
+        </details>
       ) : null}
     </section>
   );
@@ -1729,69 +1788,88 @@ export default function Home() {
           </div>
         ) : null}
         {!session ? (
-          <div className="mb-8 space-y-8">
+          <div className="mb-8 space-y-6">
             {joinSessionSection}
-            <div className="rounded-xl border border-zinc-200 bg-zinc-50/80 p-6">
-              <h1 className="text-2xl font-bold text-zinc-900">Truepaper</h1>
-              <p className="mt-2 max-w-2xl text-sm text-zinc-600">
-                Teachers build forms and run timed live sessions. Students join on this page with a
-                code—no account needed. Answers stay on this browser until you clear site data.
-              </p>
+            <div className="rounded-[var(--tp-radius)] border border-[var(--tp-border)] bg-[var(--tp-surface)] p-6 sm:p-7">
+              <p className={ui.sectionTitle}>For teachers</p>
+              <h1 className="mt-1 text-xl font-bold text-[var(--tp-text)]">
+                Build forms. Watch your class write.
+              </h1>
               <div className="mt-4 flex flex-wrap gap-2">
                 <Link
                   href="/login"
-                  className={`tp-btn-primary ${focusRing}`}
+                  className={`${ui.btnPrimary} ${focusRing}`}
                 >
-                  {buttonLabel("Teacher log in")}
+                  {buttonLabel("Sign in")}
                 </Link>
                 <Link
                   href="/register"
                   className={`${ui.btnSecondary} ${focusRing}`}
                 >
-                  {buttonLabel("Teacher register")}
+                  {buttonLabel("Create account")}
                 </Link>
               </div>
             </div>
           </div>
         ) : (
-          <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
+          <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
             <div className="min-w-0 flex-1">
               {isTeacher ? (
-                <Link href="/dashboard" className={`text-sm font-medium text-zinc-700 underline ${focusRing}`}>
-                  ← Dashboard
+                <Link
+                  href="/dashboard"
+                  className={`inline-flex items-center gap-1.5 text-sm font-medium text-[var(--tp-text-secondary)] hover:text-[var(--tp-text)] ${focusRing}`}
+                >
+                  <svg
+                    aria-hidden
+                    className="h-4 w-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M19 12H5M12 5l-7 7 7 7" />
+                  </svg>
+                  Dashboard
                 </Link>
               ) : null}
-              <h1 className="text-3xl font-bold">Classroom Form Builder</h1>
-              <p className="text-zinc-600">
-                Teachers sign in to build forms and start live sessions. Students enter the 6-character
-                session code and their name—no account required. Answers are tied to this browser (clear
-                site data to start over on this device).
-              </p>
-              <p className="mt-2 text-sm text-zinc-500">
-                Signed in as {session.user.email ?? session.user.id}
-                {session.profile ? ` · ${session.profile.role}` : ""}
+              <h1 className="mt-2 text-2xl font-bold tracking-tight">Form builder</h1>
+              <p className="mt-1 text-sm text-[var(--tp-text-secondary)]">
+                Build forms and start live sessions. Students join with a code.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               {session && isTeacher ? (
-                <div className={`rounded-lg border border-zinc-300 p-1 ${focusRing}`}>
+                <div
+                  role="tablist"
+                  className="inline-flex items-center rounded-full border border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] p-1"
+                >
                   <button
                     type="button"
+                    role="tab"
+                    aria-selected={mode === "teacher"}
                     onClick={() => setMode("teacher")}
-                    className={`rounded-md px-4 py-2 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-0 ${
-                      mode === "teacher" ? "bg-zinc-900 text-white" : "text-zinc-600"
+                    className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+                      mode === "teacher"
+                        ? "bg-[var(--tp-surface)] text-[var(--tp-text)] shadow-sm"
+                        : "text-[var(--tp-text-secondary)] hover:text-[var(--tp-text)]"
                     }`}
                   >
-                    {buttonLabel("Teacher view")}
+                    {buttonLabel("Teacher")}
                   </button>
                   <button
                     type="button"
+                    role="tab"
+                    aria-selected={mode === "student"}
                     onClick={() => setMode("student")}
-                    className={`rounded-md px-4 py-2 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-0 ${
-                      mode === "student" ? "bg-zinc-900 text-white" : "text-zinc-600"
+                    className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+                      mode === "student"
+                        ? "bg-[var(--tp-surface)] text-[var(--tp-text)] shadow-sm"
+                        : "text-[var(--tp-text-secondary)] hover:text-[var(--tp-text)]"
                     }`}
                   >
-                    {buttonLabel("Student view")}
+                    {buttonLabel("Student")}
                   </button>
                 </div>
               ) : null}
@@ -1799,20 +1877,39 @@ export default function Home() {
                 type="button"
                 onClick={() => void logout()}
                 disabled={isMutating}
-                className={`tp-btn-secondary ${focusRing} disabled:opacity-50`}
+                className={`${ui.btnGhost} ${focusRing} disabled:opacity-50`}
+                aria-label="Log out"
+                title="Log out"
               >
-                {buttonLabel("Log out")}
+                <svg
+                  aria-hidden
+                  className="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M16 17l5-5-5-5M21 12H9M13 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7" />
+                </svg>
               </button>
             </div>
           </div>
         )}
 
         {teacherLiveBanner && showTeacherTools ? (
-          <div className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
-            <p className="font-semibold">Active session: {teacherLiveBanner.formTitle}</p>
+          <div className="mb-6 rounded-[var(--tp-radius)] border border-[var(--tp-success-border)] bg-[var(--tp-mint-soft)] px-4 py-3 text-sm text-emerald-900 tp-anim-fade-up">
+            <p className="font-semibold inline-flex items-center gap-2">
+              <span
+                aria-hidden
+                className="inline-block h-2 w-2 rounded-full bg-[var(--tp-mint)]"
+                style={{ animation: "tp-typing-pulse 1.4s ease-in-out infinite" }}
+              />
+              Live: {teacherLiveBanner.formTitle}
+            </p>
             <p className="mt-1">
-              Join code{" "}
-              <span className="rounded bg-white px-2 py-0.5 font-mono text-base tracking-widest">
+              <span className="rounded bg-white/80 px-2 py-0.5 font-mono text-base tracking-widest">
                 {teacherLiveBanner.joinCode}
               </span>{" "}
               · {teacherBannerNoTimeLimit ? "No time limit" : `Time left ${formatCountdown(teacherBannerMsLeft)}`}
@@ -2126,51 +2223,99 @@ export default function Home() {
           >
             {joinedSession && examFinished ? (
               <div
-                className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-xl border border-emerald-300 bg-white/95 p-6 text-center shadow-lg backdrop-blur-sm"
+                className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-[var(--tp-radius)] border border-[var(--tp-success-border)] bg-white/95 p-6 text-center shadow-lg backdrop-blur-sm tp-anim-fade-in"
                 role="status"
               >
-                <p className="text-lg font-semibold text-emerald-950">Submitted</p>
-                <p className="max-w-md text-sm text-emerald-900">
-                  Your answers are saved and marked complete. You can still read the form below; editing
-                  and saving are turned off.
+                <span aria-hidden className="tp-anim-celebrate">
+                  <svg
+                    className="h-12 w-12 text-[var(--tp-mint)]"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="m9 12 2 2 4-4" />
+                  </svg>
+                </span>
+                <p className="text-lg font-semibold text-[var(--tp-text)]">Submitted</p>
+                <p className="max-w-md text-sm text-[var(--tp-text-secondary)]">
+                  Your answers are saved. You can keep this tab open.
                 </p>
               </div>
             ) : null}
             {joinedSession && examSuspended ? (
               <div
-                className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-xl border border-amber-300 bg-white/95 p-6 text-center shadow-lg backdrop-blur-sm"
+                className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-[var(--tp-radius)] border border-[var(--tp-warning-border)] bg-white/95 p-6 text-center shadow-lg backdrop-blur-sm tp-anim-fade-in"
                 role="alert"
               >
-                <p className="text-lg font-semibold text-amber-950">Paused</p>
-                <p className="max-w-md text-sm text-amber-900">
-                  This page was hidden during the live session. Only your teacher can allow you to
-                  continue. Keep this tab visible once you are allowed back in.
+                <span aria-hidden>
+                  <svg
+                    className="h-10 w-10 text-[var(--tp-amber)]"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M10 9v6M14 9v6" />
+                  </svg>
+                </span>
+                <p className="text-lg font-semibold text-[var(--tp-text)]">Paused</p>
+                <p className="max-w-md text-sm text-[var(--tp-text-secondary)]">
+                  Keep this tab visible. Your teacher will let you back in.
                 </p>
               </div>
             ) : null}
             {joinedSession ? (
               <div
-                className={`rounded-lg border px-4 py-3 text-sm ${
+                className={`sticky top-2 z-10 flex flex-wrap items-center justify-between gap-3 rounded-[var(--tp-radius-sm)] border px-4 py-2.5 text-sm shadow-sm ${
                   sessionOpen
-                    ? "border-zinc-200 bg-zinc-50 text-zinc-800"
-                    : "border-amber-200 bg-amber-50 text-amber-950"
+                    ? "border-[var(--tp-border)] bg-white/95 backdrop-blur-sm text-[var(--tp-text)]"
+                    : "border-[var(--tp-warning-border)] bg-[var(--tp-warning-soft)] text-[var(--tp-warning-text)]"
                 }`}
               >
-                <p className="font-medium">
-                  {examFinished
-                    ? "You have submitted. The timer below is for the class session window."
-                    : sessionOpen
-                      ? joinedSessionNoTimeLimit
-                        ? "This session has no time limit."
-                        : `Time remaining in this session: ${formatCountdown(studentMsLeft)}`
-                      : nowTick < new Date(joinedSession.opensAt).getTime()
-                        ? "This session has not opened yet."
-                        : "This session has ended. You can still read your answers; saving may be blocked."}
-                </p>
+                <span className="inline-flex items-center gap-2">
+                  {sessionOpen && !joinedSessionNoTimeLimit && !examFinished ? (
+                    <>
+                      <svg
+                        aria-hidden
+                        className="h-4 w-4 text-[var(--tp-accent)]"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <circle cx="12" cy="12" r="9" />
+                        <path d="M12 7v5l3 2" />
+                      </svg>
+                      <span className="font-mono tabular-nums text-base font-semibold">
+                        {formatCountdown(studentMsLeft)}
+                      </span>
+                      <span className="text-xs text-[var(--tp-text-secondary)]">left</span>
+                    </>
+                  ) : (
+                    <span className="font-medium">
+                      {examFinished
+                        ? "Submitted"
+                        : sessionOpen
+                          ? "No time limit"
+                          : nowTick < new Date(joinedSession.opensAt).getTime()
+                            ? "Session not yet open"
+                            : "Session has ended"}
+                    </span>
+                  )}
+                </span>
                 {activeExamDisplayName ? (
-                  <p className="mt-1 text-zinc-600">
-                    Answering as <span className="font-semibold text-zinc-900">{activeExamDisplayName}</span>
-                  </p>
+                  <span className="text-xs text-[var(--tp-text-secondary)]">
+                    {activeExamDisplayName}
+                  </span>
                 ) : null}
               </div>
             ) : null}
@@ -2263,47 +2408,61 @@ export default function Home() {
               </form>
             )}
 
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <button
-                type="button"
-                onClick={() => void saveStudentAnswers()}
-                disabled={
-                  isMutating ||
-                  !anonymousSessionId ||
-                  !joinedSession ||
-                  !sessionOpen ||
-                  examSuspended ||
-                  examFinished
-                }
-                className="tp-btn-primary disabled:opacity-50"
+            <div className="flex flex-col-reverse items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p
+                ref={autosaveStatusElRef}
+                data-testid="student-autosave-status"
+                aria-live="polite"
+                className="text-xs text-[var(--tp-text-secondary)]"
               >
-                {buttonLabel("Save answers")}
-              </button>
-              {joinedSession && sessionOpen && !examSuspended && !examFinished ? (
+                {"\u00a0"}
+              </p>
+              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                 <button
                   type="button"
-                  onClick={() => void submitExam()}
-                  disabled={isMutating || !anonymousSessionId}
-                  className="rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                  onClick={() => void saveStudentAnswers()}
+                  disabled={
+                    isMutating ||
+                    !anonymousSessionId ||
+                    !joinedSession ||
+                    !sessionOpen ||
+                    examSuspended ||
+                    examFinished
+                  }
+                  className={`${ui.btnSecondary} disabled:opacity-50`}
                 >
-                  Submit
+                  {buttonLabel("Save now")}
                 </button>
-              ) : null}
+                {joinedSession && sessionOpen && !examSuspended && !examFinished ? (
+                  <button
+                    type="button"
+                    onClick={() => void submitExam()}
+                    disabled={isMutating || !anonymousSessionId}
+                    className={`${ui.btnPrimary} disabled:opacity-50`}
+                  >
+                    <svg
+                      aria-hidden
+                      className="h-4 w-4"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M5 12l5 5L20 7" />
+                    </svg>
+                    Submit exam
+                  </button>
+                ) : null}
+              </div>
             </div>
-            <p
-              ref={autosaveStatusElRef}
-              data-testid="student-autosave-status"
-              aria-live="polite"
-              className="mt-2 text-xs text-zinc-600"
-            >
-              {"\u00a0"}
-            </p>
           </section>
         ) : !showTeacherTools ? (
-          <p className="text-zinc-600">
+          <p className="text-[var(--tp-text-secondary)]">
             {isTeacher && mode === "student"
-              ? "Enter your name and join with a session code to take the exam like a student."
-              : "Join with your code to see the form."}
+              ? "Enter your name and join with a session code to try the exam as a student."
+              : "Enter a code above to begin."}
           </p>
         ) : null}
 

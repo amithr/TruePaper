@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, type FormEvent } from "react";
 
+import { AuthLayout } from "@/components/AuthLayout";
 import {
   isValidLiveSessionDisplayName,
   normalizeLiveSessionDisplayName,
@@ -98,27 +99,24 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className={ui.page}>
-      <main className={`${ui.pageMainNarrow} tp-card p-8 sm:p-10`}>
-        <p className={ui.sectionTitle}>Teacher account</p>
-        <h1 className="mt-2 text-2xl font-bold tracking-tight">Create account</h1>
-        <p className="mt-2 text-sm text-[var(--tp-text-secondary)]">
-          Students can fill out forms without an account. This page is for teachers who build forms.
-        </p>
-        <p className="mt-2 text-sm text-[var(--tp-text-secondary)]">
+    <AuthLayout
+      eyebrow="Teacher"
+      title="Create your account"
+      subtitle="Students don’t need accounts — this is for teachers who build forms."
+      footer={
+        <p>
           Already have an account?{" "}
           <Link href="/login" className={ui.link}>
-            Log in
-          </Link>
-        </p>
-        <p className="mt-3 text-sm text-[var(--tp-text-secondary)]">
-          Joining a class with a code?{" "}
+            Sign in
+          </Link>{" "}
+          · Students join via{" "}
           <Link href="/#join-session" className={ui.link}>
-            Student join
+            the join page
           </Link>
         </p>
-
-        <form className="mt-8 space-y-5" onSubmit={onSubmit}>
+      }
+    >
+      <form className="space-y-5" onSubmit={onSubmit}>
           <label className={ui.label}>
             Your name
             <input
@@ -202,11 +200,10 @@ export default function RegisterPage() {
           </label>
           {error ? <p className={ui.alertError}>{error}</p> : null}
           {info ? <p className={ui.alertSuccess}>{info}</p> : null}
-          <button type="submit" disabled={pending} className={`w-full ${ui.btnPrimary}`}>
-            {pending ? buttonLabel("Creating account…") : buttonLabel("Create teacher account")}
-          </button>
-        </form>
-      </main>
-    </div>
+        <button type="submit" disabled={pending} className={`w-full ${ui.btnPrimary}`}>
+          {pending ? buttonLabel("Creating account…") : buttonLabel("Create account")}
+        </button>
+      </form>
+    </AuthLayout>
   );
 }

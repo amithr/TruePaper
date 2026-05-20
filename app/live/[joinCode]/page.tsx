@@ -136,9 +136,15 @@ export default function LiveClassDisplayPage() {
     : "";
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-50">
+    <div
+      className="min-h-screen text-zinc-50"
+      style={{
+        background:
+          "radial-gradient(ellipse at top, #1e293b 0%, #0f172a 60%, #020617 100%)",
+      }}
+    >
       <main className="mx-auto flex min-h-screen max-w-3xl flex-col justify-center px-6 py-16">
-        <p className="mb-6 text-center text-sm font-medium uppercase tracking-widest text-zinc-500">
+        <p className="mb-6 text-center text-xs font-semibold uppercase tracking-[0.3em] text-zinc-400">
           Live class display
         </p>
 
@@ -163,10 +169,19 @@ export default function LiveClassDisplayPage() {
         ) : null}
 
         {!loading && board && sessionOpen ? (
-          <div className="space-y-10 text-center">
+          <div className="space-y-10 text-center tp-anim-fade-up">
             <div>
               <p className="text-sm font-medium text-zinc-400">Join code</p>
-              <p className="mt-2 font-mono text-5xl font-bold tracking-[0.35em] text-white sm:text-6xl">
+              <p
+                className="mt-2 font-mono text-5xl font-bold tracking-[0.35em] sm:text-6xl"
+                style={{
+                  background:
+                    "linear-gradient(135deg, #60a5fa 0%, #a78bfa 50%, #34d399 100%)",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                  backgroundClip: "text",
+                }}
+              >
                 {board.joinCode}
               </p>
             </div>
@@ -182,8 +197,8 @@ export default function LiveClassDisplayPage() {
                 </span>
               </p>
               {!noTimeLimit ? (
-                <p className="mt-2 text-2xl font-semibold tabular-nums text-emerald-400">
-                  Time remaining {formatCountdown(msLeft)}
+                <p className="mt-3 text-3xl font-bold tabular-nums text-emerald-400 sm:text-4xl">
+                  {formatCountdown(msLeft)}
                 </p>
               ) : null}
             </div>

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { deferEffect } from "@/lib/defer-effect";
 
+import { ConfirmButton } from "@/components/ConfirmButton";
 import { LoadingBar } from "@/components/LoadingBar";
 import type { Form } from "@/lib/forms";
 import { buttonLabel, focusRing, ui } from "@/lib/ui";
@@ -77,15 +78,7 @@ export function DashboardFormLibrary({ onError }: Props) {
     return filteredForms.slice(start, start + FORM_LIBRARY_PAGE_SIZE);
   }, [filteredForms, formLibraryPage]);
 
-  const deleteForm = async (formId: string, title: string) => {
-    const label = title.trim() || "Untitled form";
-    if (
-      !window.confirm(
-        `Delete “${label}”? This cannot be undone. Questions, past live sessions tied to this form, and saved responses for those sessions will be removed.`,
-      )
-    ) {
-      return;
-    }
+  const deleteForm = async (formId: string) => {
     setDeletingFormId(formId);
     try {
       await requestJson<{ ok: true }>(`/api/forms/${formId}`, { method: "DELETE" });
@@ -131,13 +124,10 @@ export function DashboardFormLibrary({ onError }: Props) {
 
   return (
     <section className="tp-card p-6">
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className={ui.sectionTitle}>Forms</p>
           <h2 className="text-xl font-semibold tracking-tight">Form library</h2>
-          <p className="mt-1 text-sm text-zinc-600">
-            Edit questions and copy, or start a timed session without leaving the dashboard.
-          </p>
         </div>
         <button
           type="button"
@@ -154,8 +144,20 @@ export function DashboardFormLibrary({ onError }: Props) {
               onError(e instanceof Error ? e.message : "Could not create form.");
             }
           }}
-          className="tp-btn-primary"
+          className={ui.btnPrimary}
         >
+          <svg
+            aria-hidden
+            className="h-4 w-4"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M12 5v14M5 12h14" />
+          </svg>
           {buttonLabel("New form")}
         </button>
       </div>
@@ -163,27 +165,42 @@ export function DashboardFormLibrary({ onError }: Props) {
         <LoadingBar className="max-w-md" label="Loading form library" />
       ) : null}
       {!loading && forms.length > 0 ? (
-        <label className="mb-4 block text-sm font-medium text-zinc-800">
-          Search forms
-          <input
-            type="search"
-            value={formLibrarySearch}
-            onChange={(e) => setFormLibrarySearch(e.target.value)}
-            placeholder="Filter by title or description…"
-            autoComplete="off"
-            spellCheck={false}
-            className="mt-1.5 w-full max-w-md rounded-md border border-zinc-300 px-3 py-2 text-zinc-900 placeholder:text-zinc-400"
-          />
+        <label className="mb-4 block max-w-md">
+          <span className="sr-only">Search forms</span>
+          <div className="relative">
+            <svg
+              aria-hidden
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--tp-text-muted)]"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="11" cy="11" r="7" />
+              <path d="m20 20-3.5-3.5" />
+            </svg>
+            <input
+              type="search"
+              value={formLibrarySearch}
+              onChange={(e) => setFormLibrarySearch(e.target.value)}
+              placeholder="Search forms…"
+              autoComplete="off"
+              spellCheck={false}
+              className="tp-input pl-9"
+            />
+          </div>
         </label>
       ) : null}
       {!loading && forms.length === 0 ? (
         <p className="tp-empty">
-          Create your first form to build questions, then start a live session for your class.
+          No forms yet. Create one to get started.
         </p>
       ) : null}
       {!loading && forms.length > 0 && filteredForms.length === 0 ? (
         <p className="tp-empty">
-          No forms match “{formLibrarySearch.trim()}”. Try a different search.
+          No matches for “{formLibrarySearch.trim()}”.
         </p>
       ) : null}
       {!loading && filteredForms.length > 0 ? (
@@ -192,17 +209,19 @@ export function DashboardFormLibrary({ onError }: Props) {
             {formLibraryPageSlice.map((form) => (
               <li
                 key={form.id}
-                className="flex flex-wrap items-end justify-between gap-4 rounded-xl border border-zinc-100 bg-zinc-50/80 px-4 py-4"
+                className="tp-card tp-card-interactive flex flex-wrap items-end justify-between gap-4 p-4 sm:p-5 tp-anim-fade-up"
               >
-                <div>
-                  <p className="font-semibold text-zinc-900">{form.title || "Untitled form"}</p>
-                  <p className="mt-1 text-sm text-zinc-600">
+                <div className="min-w-0">
+                  <p className="font-semibold text-[var(--tp-text)]">
+                    {form.title || "Untitled form"}
+                  </p>
+                  <p className="mt-1 text-sm text-[var(--tp-text-secondary)]">
                     {questionCount(form)} question{questionCount(form) === 1 ? "" : "s"}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <label className="flex items-center gap-2 text-sm text-zinc-600">
-                    Minutes
+                  <label className="flex items-center gap-2 text-sm text-[var(--tp-text-secondary)]">
+                    <span className="sr-only">Minutes</span>
                     <input
                       type="number"
                       min={5}
@@ -215,10 +234,12 @@ export function DashboardFormLibrary({ onError }: Props) {
                         }))
                       }
                       disabled={noTimeLimitByForm[form.id] === true}
-                      className="w-20 rounded-md border border-zinc-300 px-2 py-1"
+                      aria-label="Session minutes"
+                      className="w-16 rounded-[var(--tp-radius-xs)] border border-[var(--tp-border-strong)] px-2 py-1 text-center font-mono"
                     />
+                    <span className="text-xs text-[var(--tp-text-muted)]">min</span>
                   </label>
-                  <label className="flex items-center gap-2 text-sm text-zinc-700">
+                  <label className="flex items-center gap-1.5 text-xs text-[var(--tp-text-secondary)]">
                     <input
                       type="checkbox"
                       checked={noTimeLimitByForm[form.id] === true}
@@ -229,32 +250,41 @@ export function DashboardFormLibrary({ onError }: Props) {
                         }))
                       }
                     />
-                    No time limit
+                    No limit
                   </label>
                   <button
                     type="button"
                     disabled={startingFormId === form.id}
                     onClick={() => void startSessionForForm(form.id)}
-                    className="rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                    className={`${ui.btnPrimary} disabled:opacity-50`}
                   >
+                    <svg
+                      aria-hidden
+                      className="h-3.5 w-3.5"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                    >
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
                     {startingFormId === form.id
                       ? buttonLabel("Starting…")
-                      : buttonLabel("Start session")}
+                      : buttonLabel("Start")}
                   </button>
                   <Link
                     href={`/?form=${form.id}`}
-                    className={`tp-btn-secondary ${focusRing}`}
+                    className={`${ui.btnSecondary} ${focusRing}`}
                   >
-                    {buttonLabel("Edit in builder")}
+                    {buttonLabel("Edit")}
                   </Link>
-                  <button
-                    type="button"
-                    disabled={deletingFormId === form.id || startingFormId === form.id}
-                    onClick={() => void deleteForm(form.id, form.title)}
-                    className={`${ui.btnDanger} disabled:opacity-50 ${focusRing}`}
-                  >
-                    {deletingFormId === form.id ? buttonLabel("Deleting…") : buttonLabel("Delete")}
-                  </button>
+                  <ConfirmButton
+                    tone="danger"
+                    label={buttonLabel("Delete")}
+                    confirmLabel={buttonLabel("Tap again")}
+                    busy={deletingFormId === form.id}
+                    busyLabel={buttonLabel("Deleting…")}
+                    disabled={startingFormId === form.id}
+                    onConfirm={() => deleteForm(form.id)}
+                  />
                 </div>
               </li>
             ))}

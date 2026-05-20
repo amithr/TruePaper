@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 
+import { BrandMark } from "@/components/BrandMark";
 import { DashboardFormLibrary } from "@/components/dashboard/DashboardFormLibrary";
 import { DashboardLazySection } from "@/components/dashboard/DashboardLazySection";
 import { DashboardPastSessions } from "@/components/dashboard/DashboardPastSessions";
@@ -58,44 +59,85 @@ export function TeacherDashboard({
   };
 
   const name = dashboardWelcomeName(profile, user.email);
+  const avatarSeed = (name || user.email || "T").trim().charAt(0) || "T";
 
   return (
     <div className={ui.page}>
-      <main className={`${ui.pageMain} space-y-8`}>
-        <header className="flex flex-wrap items-start justify-between gap-4 tp-card p-8">
-          <div className="min-w-0 flex-1">
-            <p className={ui.sectionTitle}>Overview</p>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight">Hello, {name}</h1>
-            <p className="mt-2 max-w-2xl text-[var(--tp-text-secondary)]">
-              Run live sessions so students join with a 6-character code—each session is one form window
-              where many students can submit answers on their own devices.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Link href="/#join-session" className={ui.btnSecondary}>
-              {buttonLabel("Student join page")}
+      <main className={`${ui.pageMain} space-y-6`}>
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <BrandMark />
+          <div className="flex items-center gap-2">
+            <Link
+              href="/#join-session"
+              className={`${ui.btnSecondary} hidden sm:inline-flex`}
+              aria-label="Student join page"
+            >
+              <svg
+                aria-hidden
+                className="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M3 12h12" />
+                <path d="m11 6 6 6-6 6" />
+              </svg>
+              {buttonLabel("Student join")}
             </Link>
-            <button type="button" onClick={() => void logout()} className={ui.btnGhost}>
-              {buttonLabel("Log out")}
+            <button
+              type="button"
+              onClick={() => void logout()}
+              className="tp-pill"
+              aria-label="Log out"
+              title="Log out"
+            >
+              <span aria-hidden className="tp-avatar">
+                {avatarSeed}
+              </span>
+              <span className="hidden text-sm sm:inline">Log out</span>
             </button>
           </div>
         </header>
 
-        <nav aria-label="Dashboard sections" className="flex flex-wrap items-center gap-2 tp-card p-2">
-          <button
-            type="button"
-            onClick={() => scrollToSection("running-sessions")}
-            className={ui.pill}
+        <section className="tp-card-accent p-6 sm:p-8 tp-anim-fade-up">
+          <p className={ui.sectionTitle}>Dashboard</p>
+          <h1 className="mt-1 text-3xl font-bold tracking-tight">
+            Hello, <span className="text-[var(--tp-brand)]">{name}</span>
+          </h1>
+          <p className="mt-2 max-w-2xl text-[var(--tp-text-secondary)]">
+            Run live sessions, build forms, and watch students answer in real time.
+          </p>
+          <nav
+            aria-label="Dashboard sections"
+            className="mt-5 flex flex-wrap items-center gap-2"
           >
-            {buttonLabel("Currently running")}
-          </button>
-          <button type="button" onClick={() => scrollToSection("past-sessions")} className={ui.pill}>
-            {buttonLabel("Past sessions")}
-          </button>
-          <button type="button" onClick={() => scrollToSection("form-library")} className={ui.pill}>
-            {buttonLabel("Form library")}
-          </button>
-        </nav>
+            <button
+              type="button"
+              onClick={() => scrollToSection("running-sessions")}
+              className={ui.pill}
+            >
+              <span aria-hidden className="text-[var(--tp-mint)]">●</span>
+              {buttonLabel("Running")}
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollToSection("past-sessions")}
+              className={ui.pill}
+            >
+              {buttonLabel("Past")}
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollToSection("form-library")}
+              className={ui.pill}
+            >
+              {buttonLabel("Forms")}
+            </button>
+          </nav>
+        </section>
 
         {loadError ? <p className="tp-alert tp-alert-error">{loadError}</p> : null}
 
@@ -111,7 +153,7 @@ export function TeacherDashboard({
             <div className="tp-card p-6">
               <p className={ui.sectionTitle}>History</p>
               <h2 className="text-xl font-semibold tracking-tight">Past sessions</h2>
-              <p className="mt-4 text-sm text-zinc-500">Loading when you scroll here…</p>
+              <p className="mt-4 text-sm text-[var(--tp-text-muted)]">Loading…</p>
             </div>
           }
         >
@@ -124,7 +166,7 @@ export function TeacherDashboard({
             <div className="tp-card p-6">
               <p className={ui.sectionTitle}>Forms</p>
               <h2 className="text-xl font-semibold tracking-tight">Form library</h2>
-              <p className="mt-4 text-sm text-zinc-500">Loading when you scroll here…</p>
+              <p className="mt-4 text-sm text-[var(--tp-text-muted)]">Loading…</p>
             </div>
           }
         >

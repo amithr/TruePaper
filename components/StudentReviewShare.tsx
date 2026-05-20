@@ -13,7 +13,10 @@ type Props = {
 };
 
 const btn =
-  "tp-btn-secondary px-2.5 py-1.5 text-xs focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--tp-accent-ring)] focus-visible:ring-offset-1";
+  "inline-flex items-center gap-1.5 rounded-[var(--tp-radius-sm)] border border-[var(--tp-border-strong)] bg-[var(--tp-surface)] px-2.5 py-1.5 text-xs font-medium text-[var(--tp-text)] shadow-sm transition-all duration-150 ease-out focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--tp-accent-ring)] focus-visible:ring-offset-1 hover:bg-[var(--tp-bg-subtle)] active:scale-[0.97] disabled:opacity-50";
+
+const btnDone =
+  "inline-flex items-center gap-1.5 rounded-[var(--tp-radius-sm)] border border-[var(--tp-success-border)] bg-[var(--tp-mint-soft)] px-2.5 py-1.5 text-xs font-semibold text-emerald-800 shadow-sm";
 
 export function StudentReviewShare({ liveSessionId, deviceId, disabled = false, className }: Props) {
   const [copied, setCopied] = useState(false);
@@ -53,13 +56,37 @@ export function StudentReviewShare({ liveSessionId, deviceId, disabled = false, 
         type="button"
         disabled={disabled || loading}
         onClick={() => void onCopyLink()}
-        className={btn}
+        className={copied ? btnDone : btn}
       >
-        {loading
-          ? buttonLabel("Creating link…")
-          : copied
-            ? buttonLabel("Link copied")
-            : buttonLabel("Copy results link")}
+        {copied ? (
+          <svg
+            aria-hidden
+            className="h-3.5 w-3.5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M5 12l5 5L20 7" />
+          </svg>
+        ) : (
+          <svg
+            aria-hidden
+            className="h-3.5 w-3.5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1" />
+            <path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" />
+          </svg>
+        )}
+        {loading ? buttonLabel("Creating…") : copied ? "Link copied" : "Copy results link"}
       </button>
       {error ? <p className="mt-1 text-xs text-red-700">{error}</p> : null}
     </div>

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
+import { AuthLayout } from "@/components/AuthLayout";
 import { buttonLabel, ui } from "@/lib/ui";
 
 export default function LoginPage() {
@@ -37,55 +38,52 @@ export default function LoginPage() {
   };
 
   return (
-    <div className={ui.page}>
-      <main className={`${ui.pageMainNarrow} tp-card p-8 sm:p-10`}>
-        <p className={ui.sectionTitle}>Teacher account</p>
-        <h1 className="mt-2 text-2xl font-bold tracking-tight text-[var(--tp-text)]">Log in</h1>
-        <p className="mt-2 text-sm text-[var(--tp-text-secondary)]">
-          Students do not need an account to answer forms.
-        </p>
-        <p className="mt-2 text-sm text-[var(--tp-text-secondary)]">
-          No account?{" "}
+    <AuthLayout
+      eyebrow="Teacher"
+      title="Welcome back"
+      subtitle="Sign in to manage your forms and live sessions."
+      footer={
+        <p>
+          New here?{" "}
           <Link href="/register" className={ui.link}>
-            Register
-          </Link>
-        </p>
-        <p className="mt-3 text-sm text-[var(--tp-text-secondary)]">
-          Joining a class with a code?{" "}
+            Create an account
+          </Link>{" "}
+          · Students join via{" "}
           <Link href="/#join-session" className={ui.link}>
-            Student join
+            the join page
           </Link>
         </p>
-
-        <form className="mt-8 space-y-5" onSubmit={onSubmit}>
-          <label className={ui.label}>
-            Email
-            <input
-              type="email"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className={ui.input}
-            />
-          </label>
-          <label className={ui.label}>
-            Password
-            <input
-              type="password"
-              autoComplete="current-password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className={ui.input}
-            />
-          </label>
-          {error ? <p className={ui.alertError}>{error}</p> : null}
-          <button type="submit" disabled={pending} className={`w-full ${ui.btnPrimary}`}>
-            {pending ? buttonLabel("Signing in…") : buttonLabel("Sign in")}
-          </button>
-        </form>
-      </main>
-    </div>
+      }
+    >
+      <form className="space-y-5" onSubmit={onSubmit}>
+        <label className={ui.label}>
+          Email
+          <input
+            type="email"
+            autoComplete="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className={ui.input}
+            placeholder="you@school.edu"
+          />
+        </label>
+        <label className={ui.label}>
+          Password
+          <input
+            type="password"
+            autoComplete="current-password"
+            required
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className={ui.input}
+          />
+        </label>
+        {error ? <p className={ui.alertError}>{error}</p> : null}
+        <button type="submit" disabled={pending} className={`w-full ${ui.btnPrimary}`}>
+          {pending ? buttonLabel("Signing in…") : buttonLabel("Sign in")}
+        </button>
+      </form>
+    </AuthLayout>
   );
 }

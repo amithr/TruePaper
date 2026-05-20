@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
+
+import { TruepaperToaster } from "@/components/TruepaperToaster";
+
 import "./globals.css";
 
 const fontSans = Inter({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: ["400", "500", "600", "700", "800"],
   variable: "--font-ui-sans",
   display: "swap",
 });
@@ -18,7 +21,8 @@ const fontMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: "Truepaper — Classroom forms & live sessions",
-  description: "Teachers create forms and run live sessions; students join with a code—no account required.",
+  description:
+    "Teachers create forms and run live sessions; students join with a code—no account required.",
 };
 
 export default function RootLayout({
@@ -31,7 +35,10 @@ export default function RootLayout({
       lang="en"
       className={`${fontSans.variable} ${fontMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col font-sans">{children}</body>
+      <body className="min-h-full flex flex-col font-sans">
+        {children}
+        <TruepaperToaster />
+      </body>
     </html>
   );
 }
