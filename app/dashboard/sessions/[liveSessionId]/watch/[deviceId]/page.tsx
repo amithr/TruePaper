@@ -143,6 +143,7 @@ export default function WatchStudentExamPage() {
   );
   const [liveAnswerDrafts, setLiveAnswerDrafts] = useState<StudentAnswers>({});
   const liveFeedbackSaveTimerRef = useRef<Record<string, number>>({});
+  const scheduleLiveFeedbackSaveRef = useRef<(questionId: string) => void>(() => {});
   const liveFeedbackSavingQuestionIdsRef = useLatestRef(liveFeedbackSavingQuestionIds);
   /** True while local text differs from last successful server save for that question. */
   const dirtyLiveFeedbackRef = useRef<Record<string, boolean>>({});
@@ -155,14 +156,23 @@ export default function WatchStudentExamPage() {
   ): LiveTeacherFeedbackByQuestionId => {
     const merged = { ...server };
     for (const [questionId, draft] of Object.entries(latestLiveFeedbackDraftsRef.current)) {
-      const pending =
-        dirtyLiveFeedbackRef.current[questionId] ||
-        liveFeedbackSaveTimerRef.current[questionId] !== undefined ||
-        liveFeedbackSavingQuestionIdsRef.current.has(questionId);
-      if (pending && draft !== undefined) {
+      if (isLiveFeedbackPending(questionId) && draft !== undefined) {
         merged[questionId] = draft;
       }
     }
+    return merged;
+  };
+
+  const isLiveFeedbackPending = (questionId: string): boolean =>
+    Boolean(
+      dirtyLiveFeedbackRef.current[questionId] ||
+        liveFeedbackSaveTimerRef.current[questionId] !== undefined ||
+        liveFeedbackSavingQuestionIdsRef.current.has(questionId),
+    );
+
+  const applyServerLiveFeedback = (server: LiveTeacherFeedbackByQuestionId) => {
+    const merged = mergeLiveFeedbackForDisplay(server);
+    syncedLiveFeedbackJsonRef.current = JSON.stringify(merged);
     return merged;
   };
 
@@ -211,7 +221,7 @@ export default function WatchStudentExamPage() {
         }
         return {
           ...data,
-          liveTeacherFeedback: mergeLiveFeedbackForDisplay(data.liveTeacherFeedback),
+          liveTeacherFeedback: applyServerLiveFeedback(data.liveTeacherFeedback),
         };
       });
     } catch (e) {
@@ -331,7 +341,7 @@ export default function WatchStudentExamPage() {
       setLiveFeedbackDraftsByQuestionId((prev) => {
         const next = { ...serverFeedback };
         for (const questionId of Object.keys(prev)) {
-          if (dirtyLiveFeedbackRef.current[questionId]) {
+          if (isLiveFeedbackPending(questionId)) {
             next[questionId] = prev[questionId] ?? "";
           }
         }
@@ -344,7 +354,7 @@ export default function WatchStudentExamPage() {
     if (!liveSessionId || !deviceIdNorm) {
       return;
     }
-    const message = latestLiveFeedbackDraftsRef.current[questionId] ?? "";
+    const messageAtSaveStart = latestLiveFeedbackDraftsRef.current[questionId] ?? "";
     setLiveFeedbackSavingQuestionIds((prev) => new Set(prev).add(questionId));
     try {
       const result = await requestJson<{
@@ -355,21 +365,31 @@ export default function WatchStudentExamPage() {
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ questionId, message }),
+          body: JSON.stringify({ questionId, message: messageAtSaveStart }),
         },
       );
-      dirtyLiveFeedbackRef.current[questionId] = false;
-      syncedLiveFeedbackJsonRef.current = JSON.stringify(result.liveTeacherFeedback);
-      setSnapshot((prev) =>
-        prev ? { ...prev, liveTeacherFeedback: result.liveTeacherFeedback } : prev,
-      );
-      setLiveFeedbackDraftsByQuestionId((prev) => ({
-        ...prev,
-        ...result.liveTeacherFeedback,
-      }));
-      void notifyStudentExamFeedback(liveSessionId, deviceIdNorm, result.liveTeacherFeedback);
+      const currentDraft = latestLiveFeedbackDraftsRef.current[questionId] ?? "";
+      const serverMsg = result.liveTeacherFeedback[questionId] ?? "";
+      const stillEditing = currentDraft !== messageAtSaveStart;
+
+      dirtyLiveFeedbackRef.current[questionId] = currentDraft !== serverMsg;
+
+      const mergedFeedback = applyServerLiveFeedback(result.liveTeacherFeedback);
+      setSnapshot((prev) => (prev ? { ...prev, liveTeacherFeedback: mergedFeedback } : prev));
+
+      if (!stillEditing && !dirtyLiveFeedbackRef.current[questionId]) {
+        setLiveFeedbackDraftsByQuestionId((prev) => ({
+          ...prev,
+          [questionId]: serverMsg,
+        }));
+      } else if (stillEditing) {
+        scheduleLiveFeedbackSaveRef.current(questionId);
+      }
+
+      void notifyStudentExamFeedback(liveSessionId, deviceIdNorm, mergedFeedback);
       setLoadError("");
     } catch (e) {
+      dirtyLiveFeedbackRef.current[questionId] = true;
       setLoadError(e instanceof Error ? e.message : "Could not save feedback to student.");
     } finally {
       setLiveFeedbackSavingQuestionIds((prev) => {
@@ -393,6 +413,10 @@ export default function WatchStudentExamPage() {
     },
     [persistLiveFeedbackRef],
   );
+
+  useEffect(() => {
+    scheduleLiveFeedbackSaveRef.current = scheduleLiveFeedbackSave;
+  }, [scheduleLiveFeedbackSave]);
 
   const flushLiveFeedbackSave = useCallback(
     (questionId: string) => {
@@ -486,7 +510,19 @@ export default function WatchStudentExamPage() {
           if (row.anonymous_session_id.toLowerCase() !== deviceIdNorm) {
             return;
           }
-          setSnapshot((prev) => (prev ? mergeSnapshotFromRow(prev, row) : prev));
+          setSnapshot((prev) => {
+            if (!prev) {
+              return prev;
+            }
+            const next = mergeSnapshotFromRow(prev, row);
+            if (next === prev) {
+              return prev;
+            }
+            return {
+              ...next,
+              liveTeacherFeedback: applyServerLiveFeedback(next.liveTeacherFeedback),
+            };
+          });
         },
       )
       .subscribe((status) => {
