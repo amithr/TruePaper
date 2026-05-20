@@ -772,9 +772,19 @@ export default function WatchStudentExamPage() {
                           <label className="block text-sm font-medium text-sky-950">
                             Teacher feedback
                             {liveFeedbackSavingQuestionIds.has(question.id) ? (
-                              <span className="ml-2 text-xs font-normal text-sky-800">Saving…</span>
+                              <span
+                                data-testid="teacher-live-feedback-status"
+                                data-state="saving"
+                                className="ml-2 text-xs font-normal text-sky-800"
+                              >
+                                Saving…
+                              </span>
                             ) : (
-                              <span className="ml-2 text-xs font-normal text-sky-800">
+                              <span
+                                data-testid="teacher-live-feedback-status"
+                                data-state="saved"
+                                className="ml-2 text-xs font-normal text-sky-800"
+                              >
                                 {feedbackHint}
                               </span>
                             )}

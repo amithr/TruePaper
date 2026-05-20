@@ -30,6 +30,17 @@ export function waitForStudentAnswersPut(page: Page, timeout = 45_000) {
   );
 }
 
+/** Wait for a successful student-side join API response. */
+export function waitForStudentJoin(page: Page, timeout = 45_000) {
+  return page.waitForResponse(
+    (res) =>
+      res.request().method() === "GET" &&
+      res.url().includes("/api/public/join") &&
+      res.ok(),
+    { timeout },
+  );
+}
+
 export async function joinStudentSession(
   page: Page,
   joinCode: string,
@@ -37,29 +48,29 @@ export async function joinStudentSession(
   options?: { freshDevice?: boolean },
 ): Promise<void> {
   const fresh = options?.freshDevice !== false;
-  const query = fresh
-    ? `new=1&code=${encodeURIComponent(joinCode)}`
-    : `code=${encodeURIComponent(joinCode)}`;
-  await page.goto(`/?${query}`);
+  // `new=1` triggers a fresh anonymous device id; we deliberately do NOT include `code=` in
+  // the URL so the page does not race auto-join with our explicit click.
+  await page.goto(fresh ? `/?new=1` : `/`);
   await page.waitForLoadState("domcontentloaded");
 
   const joinSection = page.locator("#join-session");
   await expect(joinSection).toBeVisible({ timeout: 30_000 });
-  await joinSection.getByPlaceholder("e.g. Jordan Lee").fill(displayName);
-  await expect(joinSection.getByPlaceholder("ABCD12")).toHaveValue(joinCode);
+
+  const nameInput = joinSection.getByPlaceholder("e.g. Jordan Lee");
+  const codeInput = joinSection.getByPlaceholder("ABCD12");
+  await nameInput.fill(displayName);
+  await codeInput.fill(joinCode);
+  await expect(codeInput).toHaveValue(joinCode);
 
   const joinButton = joinSection.getByTestId("student-join-submit");
+  await expect(joinButton).toBeEnabled({ timeout: 30_000 });
+
+  const joinResponse = waitForStudentJoin(page);
+  await joinButton.click();
+  await joinResponse;
+
   const examAnswer = page.getByTestId("student-exam-answer");
-
-  // Join links auto-join once the name is valid; otherwise use the Join button.
-  try {
-    await examAnswer.waitFor({ state: "visible", timeout: 12_000 });
-  } catch {
-    await expect(joinButton).toBeEnabled({ timeout: 30_000 });
-    await joinButton.click();
-    await expect(examAnswer).toBeVisible({ timeout: 30_000 });
-  }
-
+  await expect(examAnswer).toBeVisible({ timeout: 30_000 });
   await expect(examAnswer).toBeEnabled({ timeout: 30_000 });
 }
 

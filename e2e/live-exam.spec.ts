@@ -70,9 +70,22 @@ test.describe("Live exam E2E", () => {
     );
     const feedbackInput = teacherPage.getByTestId("teacher-live-feedback-input");
     await expect(feedbackInput).toBeVisible({ timeout: 30_000 });
+
+    const feedbackSaved = teacherPage.waitForResponse(
+      (res) =>
+        res.request().method() === "PATCH" &&
+        /\/api\/forms\/live-sessions\/[^/]+\/participants\/[^/]+\/live-feedback/.test(
+          res.url(),
+        ) &&
+        res.ok(),
+      { timeout: 30_000 },
+    );
     await feedbackInput.fill(teacherFeedbackMessage);
     await feedbackInput.blur();
-    await expect(teacherPage.getByText(/Autosaved/i)).toBeVisible({ timeout: 15_000 });
+    await feedbackSaved;
+    await expect(
+      teacherPage.getByTestId("teacher-live-feedback-status").first(),
+    ).toHaveAttribute("data-state", "saved", { timeout: 15_000 });
     await teacherContext.close();
 
     const studentContext = await browser.newContext();
