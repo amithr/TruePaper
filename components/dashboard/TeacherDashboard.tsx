@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 
 import { BrandMark } from "@/components/BrandMark";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { DashboardFormLibrary } from "@/components/dashboard/DashboardFormLibrary";
 import { DashboardLazySection } from "@/components/dashboard/DashboardLazySection";
 import { DashboardPastSessions } from "@/components/dashboard/DashboardPastSessions";
@@ -67,6 +68,7 @@ export function TeacherDashboard({
         <header className="flex flex-wrap items-center justify-between gap-3">
           <BrandMark />
           <div className="flex items-center gap-2">
+            <ThemeToggle />
             <Link
               href="/#join-session"
               className={`${ui.btnSecondary} hidden sm:inline-flex`}

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { parseQuestionGrades, sumEarnedPoints, sumPossiblePoints } from "@/lib/exam-grades";
 import { isMissingColumnError } from "@/lib/is-missing-db-column";
 import { finalizeLiveSessionIfClosed } from "@/lib/live-session-finalize";
 import { computeLiveParticipantUiStatus } from "@/lib/participant-status";
@@ -7,7 +8,7 @@ import { getSessionUser } from "@/lib/request-auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const FORM_RESPONSES_OVERVIEW_SELECT_WITH_NAME =
-  "anonymous_session_id, student_display_name, suspended_at, finished_at, last_activity_at, last_typing_at, updated_at";
+  "anonymous_session_id, student_display_name, suspended_at, finished_at, text_graded_at, text_grades, last_activity_at, last_typing_at, updated_at";
 const FORM_RESPONSES_OVERVIEW_SELECT_LEGACY =
   "anonymous_session_id, suspended_at, finished_at, last_activity_at, last_typing_at, updated_at";
 
@@ -16,6 +17,8 @@ type FormResponseOverviewRow = {
   student_display_name?: string | null;
   suspended_at: string | null;
   finished_at: string | null;
+  text_graded_at?: string | null;
+  text_grades?: unknown;
   last_activity_at: string | null;
   last_typing_at: string | null;
   updated_at: string;
@@ -92,24 +95,55 @@ export async function GET(_request: Request, { params }: Params) {
     rowsError = retry.error;
   }
 
+  if (rowsError && isMissingColumnError(rowsError, "text_graded_at")) {
+    const retry = await supabase
+      .from("form_responses")
+      .select(FORM_RESPONSES_OVERVIEW_SELECT_WITH_NAME.replace(", text_graded_at, text_grades", ""))
+      .eq("live_session_id", liveSessionId)
+      .is("student_id", null);
+    rows = retry.data as FormResponseOverviewRow[] | null;
+    rowsError = retry.error;
+  }
+
   if (rowsError) {
     return NextResponse.json({ error: rowsError.message }, { status: 500 });
   }
 
+  const { data: questionRows, error: qError } = await supabase
+    .from("questions")
+    .select("id, points")
+    .eq("form_id", fs.form_id as string);
+
+  if (qError) {
+    return NextResponse.json({ error: qError.message }, { status: 500 });
+  }
+
+  const questions = (questionRows ?? []).map((q) => ({
+    id: q.id as string,
+    points: Math.max(1, Math.floor(Number(q.points) || 1)),
+  }));
+  const pointsPossible = sumPossiblePoints(questions);
+
   const participants = (rows ?? []).map((r) => {
     const suspendedAt = r.suspended_at as string | null;
     const finishedAt = r.finished_at as string | null;
+    const gradedAt = (r.text_graded_at as string | null | undefined) ?? null;
     const lastActivityAt = r.last_activity_at as string | null;
     const lastTypingAt = r.last_typing_at as string | null;
+    const grades = parseQuestionGrades(r.text_grades);
+    const pointsEarned = gradedAt ? sumEarnedPoints(grades, questions) : null;
     return {
       anonymousSessionId: r.anonymous_session_id as string,
       displayName: (r.student_display_name as string | null | undefined)?.trim() ?? "",
       status: computeLiveParticipantUiStatus(
-        { suspendedAt, finishedAt, lastActivityAt, lastTypingAt },
+        { suspendedAt, finishedAt, gradedAt, lastActivityAt, lastTypingAt },
         windowOpen,
       ),
       suspendedAt,
       finishedAt,
+      gradedAt,
+      pointsEarned,
+      pointsPossible: gradedAt ? pointsPossible : null,
       lastActivityAt,
       lastTypingAt,
       updatedAt: r.updated_at as string,

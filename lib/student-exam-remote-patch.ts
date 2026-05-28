@@ -4,7 +4,6 @@ export type StudentExamRemotePatch = {
   liveTeacherFeedback?: LiveTeacherFeedbackByQuestionId;
   suspended?: boolean;
   finished?: boolean;
-  resumeCode?: string | null;
 };
 
 /** Maps a form_responses row to student UI fields. Never includes answers (local state is authoritative). */
@@ -19,10 +18,6 @@ export function studentExamRemotePatchFromRow(row: Record<string, unknown>): Stu
   }
   if ("finished_at" in row) {
     patch.finished = row.finished_at != null;
-  }
-  if ("student_resume_code" in row) {
-    const code = row.student_resume_code;
-    patch.resumeCode = typeof code === "string" && code.trim() ? code.trim().toUpperCase() : null;
   }
 
   return patch;

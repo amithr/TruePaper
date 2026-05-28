@@ -62,19 +62,23 @@ export async function GET(request: Request, { params }: Params) {
       answers,
       suspended,
       finished,
+      graded,
+      pointsEarned,
+      pointsPossible,
       displayName,
       liveTeacherFeedback,
       liveTeacherFeedbackEnabled,
-      resumeCode,
     } = parseLiveSessionStudentGet(data);
     return NextResponse.json({
       answers,
       suspended,
       finished,
+      graded,
+      pointsEarned,
+      pointsPossible,
       displayName,
       liveTeacherFeedback,
       liveTeacherFeedbackEnabled,
-      resumeCode: resumeCode || null,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Configuration error.";

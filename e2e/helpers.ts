@@ -48,8 +48,8 @@ export async function joinStudentSession(
   options?: { freshDevice?: boolean },
 ): Promise<void> {
   const fresh = options?.freshDevice !== false;
-  // `new=1` triggers a fresh anonymous device id; we deliberately do NOT include `code=` in
-  // the URL so the page does not race auto-join with our explicit click.
+  // `new=1` triggers a fresh anonymous device id. Join code is entered in the form
+  // (not via URL) so the student explicitly taps Start task after entering their name.
   await page.goto(fresh ? `/?new=1` : `/`);
   await page.waitForLoadState("domcontentloaded");
 

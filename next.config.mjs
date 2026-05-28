@@ -9,6 +9,8 @@ const nextConfig = {
   outputFileTracingRoot: projectRoot,
   // Next 16 defaults to Turbopack for `next build`; we use webpack (see package.json build script).
   turbopack: {},
+  // pdfkit reads .afm font files from its own node_modules path at runtime; don't bundle it.
+  serverExternalPackages: ["pdfkit"],
   webpack: (config) => {
     config.resolve ??= {};
     config.resolve.modules = [

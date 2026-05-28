@@ -127,10 +127,18 @@ set search_path = public
 as $$
 declare
   r text;
+  provider text;
 begin
   r := new.raw_user_meta_data->>'role';
+  provider := coalesce(new.raw_app_meta_data->>'provider', 'email');
+
   if r is null or r not in ('teacher', 'student') then
-    r := 'student';
+    if provider <> 'email' then
+      -- OAuth sign-ups (google, github, etc.) are always teacher accounts.
+      r := 'teacher';
+    else
+      r := 'student';
+    end if;
   end if;
 
   insert into public.profiles (id, role, display_name)
@@ -139,6 +147,8 @@ begin
     r,
     coalesce(
       nullif(trim(new.raw_user_meta_data->>'display_name'), ''),
+      nullif(trim(new.raw_user_meta_data->>'full_name'), ''),
+      nullif(trim(new.raw_user_meta_data->>'name'), ''),
       split_part(coalesce(new.email, ''), '@', 1)
     )
   )
@@ -682,7 +692,6 @@ declare
   susp boolean := false;
   fin boolean := false;
   disp text := '';
-  resume_code text := null;
   session_open boolean := false;
 begin
   if p_device_id is null
@@ -725,9 +734,8 @@ begin
          coalesce(fr.live_teacher_feedback, '{}'::jsonb),
          (fr.suspended_at is not null),
          (fr.finished_at is not null),
-         coalesce(nullif(trim(fr.student_display_name), ''), ''),
-         fr.student_resume_code
-  into ans, live_fb, susp, fin, disp, resume_code
+         coalesce(nullif(trim(fr.student_display_name), ''), '')
+  into ans, live_fb, susp, fin, disp
   from public.form_responses fr
   where fr.live_session_id = p_live_session_id
     and lower(fr.anonymous_session_id) = lower(p_device_id)
@@ -751,19 +759,6 @@ begin
     susp := false;
     fin := false;
     disp := '';
-    resume_code := null;
-  elsif session_open and resume_code is null then
-    begin
-      resume_code := public.generate_student_resume_code();
-      update public.form_responses
-      set student_resume_code = resume_code
-      where live_session_id = p_live_session_id
-        and lower(anonymous_session_id) = lower(p_device_id)
-        and student_id is null
-        and student_resume_code is null;
-    exception when others then
-      resume_code := null;
-    end;
   end if;
 
   return jsonb_build_object(
@@ -773,8 +768,93 @@ begin
     'displayName', disp,
     'liveTeacherFeedback', coalesce(live_fb, '{}'::jsonb),
     'liveTeacherFeedbackEnabled', feedback_enabled,
-    'resumeCode', resume_code
+    'resumeCode', null
   );
+end;
+$$;
+
+create or replace function public.teacher_ensure_student_resume_code(
+  p_live_session_id uuid,
+  p_device_id text
+)
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  fs record;
+  fin timestamptz;
+  code text;
+begin
+  if auth.uid() is null then
+    raise exception 'not authenticated';
+  end if;
+
+  if p_device_id is null
+     or lower(p_device_id) !~ '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then
+    raise exception 'invalid device id';
+  end if;
+
+  select * into fs
+  from public.form_sessions
+  where id = p_live_session_id
+    and created_by = auth.uid()
+  limit 1;
+
+  if not found then
+    raise exception 'not allowed';
+  end if;
+
+  if timezone('utc', now()) < fs.opens_at or timezone('utc', now()) > fs.closes_at then
+    raise exception 'session is not open';
+  end if;
+
+  select fr.finished_at into fin
+  from public.form_responses fr
+  where fr.live_session_id = p_live_session_id
+    and lower(fr.anonymous_session_id) = lower(p_device_id)
+    and fr.student_id is null;
+
+  if not found then
+    raise exception 'student response not found';
+  end if;
+
+  if fin is not null then
+    raise exception 'exam already submitted';
+  end if;
+
+  select fr.student_resume_code into code
+  from public.form_responses fr
+  where fr.live_session_id = p_live_session_id
+    and lower(fr.anonymous_session_id) = lower(p_device_id)
+    and fr.student_id is null;
+
+  if code is not null then
+    return code;
+  end if;
+
+  code := public.generate_student_resume_code();
+
+  update public.form_responses
+  set student_resume_code = code
+  where live_session_id = p_live_session_id
+    and lower(anonymous_session_id) = lower(p_device_id)
+    and student_id is null
+    and student_resume_code is null
+    and finished_at is null;
+
+  select fr.student_resume_code into code
+  from public.form_responses fr
+  where fr.live_session_id = p_live_session_id
+    and lower(fr.anonymous_session_id) = lower(p_device_id)
+    and fr.student_id is null;
+
+  if code is null then
+    raise exception 'could not create rejoin code';
+  end if;
+
+  return code;
 end;
 $$;
 
@@ -1547,6 +1627,93 @@ begin
 end;
 $$;
 
+create or replace function public.teacher_delete_live_session_student(
+  p_live_session_id uuid,
+  p_device_id text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  n integer;
+begin
+  if auth.uid() is null then
+    raise exception 'not authenticated';
+  end if;
+
+  if p_device_id is null
+     or lower(p_device_id) !~ '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then
+    raise exception 'invalid device id';
+  end if;
+
+  if not exists (
+    select 1 from public.form_sessions fs
+    where fs.id = p_live_session_id
+      and fs.created_by = auth.uid()
+  ) then
+    raise exception 'not allowed';
+  end if;
+
+  delete from public.form_responses
+  where live_session_id = p_live_session_id
+    and lower(anonymous_session_id) = lower(p_device_id)
+    and student_id is null;
+
+  get diagnostics n = row_count;
+  if n = 0 then
+    raise exception 'student response not found';
+  end if;
+
+  return jsonb_build_object('ok', true);
+end;
+$$;
+
+create or replace function public.teacher_delete_live_session(p_live_session_id uuid)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  n integer;
+  now_ts timestamptz := timezone('utc', now());
+begin
+  if auth.uid() is null then
+    raise exception 'not authenticated';
+  end if;
+
+  if not exists (
+    select 1 from public.form_sessions fs
+    where fs.id = p_live_session_id
+      and fs.created_by = auth.uid()
+  ) then
+    raise exception 'not allowed';
+  end if;
+
+  if exists (
+    select 1 from public.form_sessions fs
+    where fs.id = p_live_session_id
+      and fs.opens_at <= now_ts
+      and fs.closes_at >= now_ts
+  ) then
+    raise exception 'session still running';
+  end if;
+
+  delete from public.form_sessions
+  where id = p_live_session_id
+    and created_by = auth.uid();
+
+  get diagnostics n = row_count;
+  if n = 0 then
+    raise exception 'session not found';
+  end if;
+
+  return jsonb_build_object('ok', true);
+end;
+$$;
+
 create or replace function public.finalize_all_live_session_students(p_live_session_id uuid)
 returns integer
 language plpgsql
@@ -1631,14 +1798,18 @@ revoke all on function public.heartbeat_live_session_student(uuid, text, boolean
 revoke all on function public.finish_live_session_student_response(uuid, text, text) from public;
 revoke all on function public.set_live_teacher_feedback(uuid, text, uuid, text) from public;
 revoke all on function public.ensure_student_resume_code(uuid, text) from public;
+revoke all on function public.teacher_ensure_student_resume_code(uuid, text) from public;
 revoke all on function public.lookup_student_resume_code(text) from public;
 revoke all on function public.get_student_live_teacher_feedback(uuid, text) from public;
 revoke all on function public.ensure_student_review_token(uuid, text) from public;
 revoke all on function public.get_student_review_by_token(text) from public;
 revoke all on function public.teacher_clear_live_session_student_suspension(uuid, text) from public;
+revoke all on function public.teacher_delete_live_session_student(uuid, text) from public;
+revoke all on function public.teacher_delete_live_session(uuid) from public;
 
 grant execute on function public.lookup_join_code(text) to anon, authenticated, service_role;
-grant execute on function public.ensure_student_resume_code(uuid, text) to anon, authenticated, service_role;
+grant execute on function public.ensure_student_resume_code(uuid, text) to service_role;
+grant execute on function public.teacher_ensure_student_resume_code(uuid, text) to authenticated, service_role;
 grant execute on function public.lookup_student_resume_code(text) to anon, authenticated, service_role;
 grant execute on function public.get_student_live_teacher_feedback(uuid, text) to anon, authenticated, service_role;
 grant execute on function public.ensure_student_review_token(uuid, text) to authenticated, service_role;
@@ -1652,6 +1823,8 @@ grant execute on function public.heartbeat_live_session_student(uuid, text, bool
 grant execute on function public.finish_live_session_student_response(uuid, text, text) to anon, authenticated, service_role;
 grant execute on function public.set_live_teacher_feedback(uuid, text, uuid, text) to authenticated, service_role;
 grant execute on function public.teacher_clear_live_session_student_suspension(uuid, text) to authenticated, service_role;
+grant execute on function public.teacher_delete_live_session_student(uuid, text) to authenticated, service_role;
+grant execute on function public.teacher_delete_live_session(uuid) to authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
 -- Realtime (see migration 20260425153000_form_responses_realtime.sql)

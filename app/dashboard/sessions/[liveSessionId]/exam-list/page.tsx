@@ -4,12 +4,9 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
-import { ConfirmButton } from "@/components/ConfirmButton";
 import { LoadingBar } from "@/components/LoadingBar";
 import { ScoreBar } from "@/components/ScoreMeter";
-import { SessionJoinShare } from "@/components/SessionJoinShare";
 import { StudentReviewShare } from "@/components/StudentReviewShare";
-import { TeacherStudentRejoinShare } from "@/components/TeacherStudentRejoinShare";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import {
   countNeedsGrading,
@@ -18,18 +15,16 @@ import {
   type GradingRosterFilter,
 } from "@/lib/grading-roster";
 import type { LiveParticipantUiStatus } from "@/lib/participant-status";
-import { isNoTimeLimitSession } from "@/lib/session-window";
 import {
   LIVE_SESSION_OVERVIEW_EVENT,
   liveSessionOverviewChannelName,
 } from "@/lib/broadcast-live-session-overview";
 import { deferEffect } from "@/lib/defer-effect";
-import { notifyStudentExamResumed } from "@/lib/notify-student-exam-resumed";
+import { isNoTimeLimitSession } from "@/lib/session-window";
 import { useBroadcastRefresh } from "@/lib/use-broadcast-refresh";
 import { usePollingRefresh } from "@/lib/use-polling-refresh";
 import { usePostgresRealtimeRefresh } from "@/lib/use-postgres-realtime-refresh";
-import { buttonLabel, focusRing, ui } from "@/lib/ui";
-
+import { focusRing, ui } from "@/lib/ui";
 import { messageForBackgroundRefreshError } from "@/lib/background-network-error";
 import { requestJson } from "@/lib/request-json";
 
@@ -109,7 +104,7 @@ function statusLabel(status: LiveParticipantUiStatus): string {
   }
 }
 
-export default function LiveSessionDetailPage() {
+export default function SessionExamListPage() {
   const router = useRouter();
   const params = useParams();
   const liveSessionId = typeof params.liveSessionId === "string" ? params.liveSessionId : "";
@@ -121,10 +116,7 @@ export default function LiveSessionDetailPage() {
   } | null>(null);
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [loadError, setLoadError] = useState("");
-  const [sessionActionBusy, setSessionActionBusy] = useState(false);
-  const [participantBusyDeviceId, setParticipantBusyDeviceId] = useState<string | null>(null);
   const [lastOverviewSyncAt, setLastOverviewSyncAt] = useState<number | null>(null);
-  const [participantHelpOpen, setParticipantHelpOpen] = useState(false);
   const [rosterFilter, setRosterFilter] = useState<GradingRosterFilter>("all");
 
   const refreshOverview = useCallback(async () => {
@@ -140,7 +132,7 @@ export default function LiveSessionDetailPage() {
       setOverview(data);
       setLastOverviewSyncAt(Date.now());
     } catch (e) {
-      const message = messageForBackgroundRefreshError(e, "Failed to load session.");
+      const message = messageForBackgroundRefreshError(e, "Failed to load student exams.");
       if (message) {
         setLoadError(message);
       }
@@ -184,7 +176,7 @@ export default function LiveSessionDetailPage() {
 
   usePostgresRealtimeRefresh(
     session !== undefined && session !== null && Boolean(liveSessionId),
-    `session-overview:${liveSessionId}`,
+    `exam-list:${liveSessionId}`,
     [
       { table: "form_responses", filter: `live_session_id=eq.${liveSessionId}` },
       { table: "form_sessions", filter: `id=eq.${liveSessionId}` },
@@ -213,97 +205,11 @@ export default function LiveSessionDetailPage() {
     return () => window.clearInterval(id);
   }, []);
 
-  const stopSession = async () => {
-    if (!liveSessionId) {
-      return;
-    }
-    setSessionActionBusy(true);
-    setLoadError("");
-    try {
-      await requestJson<{ ok: true }>(`/api/forms/live-sessions/${liveSessionId}/stop`, {
-        method: "POST",
-      });
-      router.replace("/dashboard");
-      router.refresh();
-    } catch (e) {
-      setLoadError(e instanceof Error ? e.message : "Could not stop session.");
-    } finally {
-      setSessionActionBusy(false);
-    }
-  };
-
-  const deleteSession = async () => {
-    if (!liveSessionId) {
-      return;
-    }
-    setSessionActionBusy(true);
-    setLoadError("");
-    try {
-      await requestJson<{ ok: true }>(`/api/forms/live-sessions/${liveSessionId}`, {
-        method: "DELETE",
-      });
-      router.replace("/dashboard");
-      router.refresh();
-    } catch (e) {
-      setLoadError(e instanceof Error ? e.message : "Could not delete session.");
-    } finally {
-      setSessionActionBusy(false);
-    }
-  };
-
-  const resumeStudent = async (deviceId: string) => {
-    if (!liveSessionId) {
-      return;
-    }
-    const deviceIdNorm = deviceId.toLowerCase();
-    setParticipantBusyDeviceId(deviceIdNorm);
-    setLoadError("");
-    try {
-      await requestJson<{ ok: true }>(`/api/forms/live-sessions/${liveSessionId}/resume-student`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ deviceId: deviceIdNorm }),
-      });
-      void notifyStudentExamResumed(liveSessionId, deviceId);
-      await refreshOverview();
-    } catch (e) {
-      setLoadError(e instanceof Error ? e.message : "Could not resume student.");
-    } finally {
-      setParticipantBusyDeviceId(null);
-    }
-  };
-
-  const deleteStudentExam = async (deviceId: string) => {
-    if (!liveSessionId) {
-      return;
-    }
-    const deviceIdNorm = deviceId.toLowerCase();
-    setParticipantBusyDeviceId(deviceIdNorm);
-    setLoadError("");
-    try {
-      await requestJson<{ ok: true }>(
-        `/api/forms/live-sessions/${liveSessionId}/participants/${encodeURIComponent(deviceIdNorm)}`,
-        { method: "DELETE" },
-      );
-      await refreshOverview();
-    } catch (e) {
-      setLoadError(e instanceof Error ? e.message : "Could not remove student exam.");
-    } finally {
-      setParticipantBusyDeviceId(null);
-    }
-  };
-
-
-  if (session === undefined) {
+  if (session === undefined || (session !== null && !overview)) {
     return (
       <div className={ui.page}>
         <main className={ui.pageMain}>
-          <div className="animate-pulse space-y-3 rounded-xl border border-[var(--tp-border)] bg-[var(--tp-surface)] p-6">
-            <div className="h-6 w-48 rounded bg-[var(--tp-border)]" />
-            <div className="h-4 w-32 rounded bg-[var(--tp-bg-subtle)]" />
-            <div className="h-24 rounded-lg bg-[var(--tp-bg-subtle)]" />
-          </div>
-          <LoadingBar className="mt-4 max-w-md" />
+          <LoadingBar className="max-w-md" label="Loading student exams" />
         </main>
       </div>
     );
@@ -313,15 +219,13 @@ export default function LiveSessionDetailPage() {
     return (
       <div className={ui.page}>
         <main className={ui.pageMain}>
-          <Link href="/dashboard" className="text-sm font-medium text-[var(--tp-text-secondary)] underline">
-            ← Dashboard
+          <Link href={`/dashboard/sessions/${liveSessionId}`} className={`text-sm font-medium underline ${focusRing}`}>
+            ← Session board
           </Link>
           {loadError ? (
-            <p className="mt-6 tp-alert tp-alert-error">
-              {loadError}
-            </p>
+            <p className="mt-6 tp-alert tp-alert-error">{loadError}</p>
           ) : (
-            <LoadingBar className="mt-6 max-w-md" label="Loading session" />
+            <LoadingBar className="mt-6 max-w-md" label="Loading student exams" />
           )}
         </main>
       </div>
@@ -330,9 +234,12 @@ export default function LiveSessionDetailPage() {
 
   const s = overview.session;
   const msLeft = new Date(s.closesAt).getTime() - nowTick;
-  const sessionRunning = s.sessionOpen;
   const noTimeLimit = isNoTimeLimitSession(s.opensAt, s.closesAt);
+  const activeCount = overview.participants.filter(
+    (p) => p.status === "typing" || p.status === "started",
+  ).length;
   const needsGradingCount = countNeedsGrading(overview.participants);
+  const gradedCount = overview.participants.filter((p) => Boolean(p.gradedAt)).length;
   const displayedParticipants = [...overview.participants]
     .filter((p) => matchesFilter(p, rosterFilter))
     .sort((a, b) => {
@@ -347,119 +254,76 @@ export default function LiveSessionDetailPage() {
       <main className={`${ui.pageMain} space-y-6`}>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
-            <Link href="/dashboard" className={`text-sm font-medium text-[var(--tp-text-secondary)] underline ${focusRing}`}>
-            ← Dashboard
+            <Link
+              href={`/dashboard/sessions/${liveSessionId}`}
+              className={`text-sm font-medium text-[var(--tp-text-secondary)] underline ${focusRing}`}
+            >
+              ← Session board
             </Link>
-            <h1 className="mt-4 text-2xl font-bold tracking-tight">{s.formTitle}</h1>
-            <p className="mt-1 font-mono text-sm tracking-widest text-[var(--tp-text-secondary)]">Code {s.joinCode}</p>
+            <h1 className="mt-4 text-2xl font-bold tracking-tight">Student exams</h1>
+            <p className="mt-1 text-sm text-[var(--tp-text-secondary)]">
+              {s.formTitle} · Code {s.joinCode}
+            </p>
             <p className="mt-2 text-sm text-[var(--tp-text-secondary)]">
-              {sessionRunning
+              {s.sessionOpen
                 ? noTimeLimit
                   ? "Live session open · No time limit"
                   : `Live session open · Time left ${formatCountdown(msLeft)}`
                 : "This session window is closed."}
             </p>
-            {sessionRunning ? (
-              <p className="mt-2 text-sm">
-                <Link
-                  href={`/live/${encodeURIComponent(s.joinCode)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className={`tp-link ${focusRing}`}
-                >
-                  Open class display for projector (new tab)
-                </Link>
-              </p>
-            ) : null}
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <SessionJoinShare joinCode={s.joinCode} />
-              <Link
-                href={`/dashboard/sessions/${liveSessionId}/exam-list`}
-                className={`tp-btn-ghost text-sm ${focusRing}`}
-              >
-                See Exam List
-              </Link>
-              <a
-                href={`/api/forms/live-sessions/${liveSessionId}/exam-bundle-pdf`}
-                download
-                className={`tp-btn-ghost text-sm ${focusRing}`}
-                title="Download a single PDF with every student's exam, feedback, and score"
-              >
-                Download all exams (PDF)
-              </a>
-            </div>
             <p className="mt-2 text-xs text-[var(--tp-text-muted)]">
               Last updated{" "}
               {lastOverviewSyncAt ? new Date(lastOverviewSyncAt).toLocaleTimeString() : "—"}
+              {activeCount > 0 ? ` · ${activeCount} working now` : null}
             </p>
           </div>
-          <div className="flex flex-col items-end gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <ThemeToggle />
-            <div className="flex flex-wrap gap-2">
-              {sessionRunning ? (
-                <ConfirmButton
-                  tone="danger"
-                  label={buttonLabel("Stop session")}
-                  confirmLabel={buttonLabel("Tap again to stop")}
-                  busy={sessionActionBusy}
-                  busyLabel={buttonLabel("Stopping…")}
-                  onConfirm={stopSession}
-                />
-              ) : (
-                <ConfirmButton
-                  tone="danger"
-                  label={buttonLabel("Delete session")}
-                  confirmLabel={buttonLabel("Tap again to delete")}
-                  busy={sessionActionBusy}
-                  busyLabel={buttonLabel("Deleting…")}
-                  onConfirm={deleteSession}
-                />
-              )}
-              <button
-                type="button"
-                onClick={() => void refreshOverview()}
-                className={`tp-btn-ghost ${focusRing}`}
-                aria-label="Refresh"
+            <a
+              href={`/api/forms/live-sessions/${liveSessionId}/exam-bundle-pdf`}
+              download
+              className={`tp-btn-ghost text-sm ${focusRing}`}
+              title="Download a single PDF with every student's exam, feedback, and score"
+            >
+              Download all (PDF)
+            </a>
+            <button
+              type="button"
+              onClick={() => void refreshOverview()}
+              className={`tp-btn-ghost ${focusRing}`}
+              aria-label="Refresh"
+            >
+              <svg
+                aria-hidden
+                className="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
               >
-                <svg
-                  aria-hidden
-                  className="h-4 w-4"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
-                  <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
-                  <path d="M21 3v5h-5" />
-                  <path d="M3 21v-5h5" />
-                </svg>
-              </button>
-            </div>
+                <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+                <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+                <path d="M21 3v5h-5" />
+                <path d="M3 21v-5h5" />
+              </svg>
+            </button>
           </div>
         </div>
 
-        {loadError ? (
-          <p className="tp-alert tp-alert-error">
-            {loadError}
-          </p>
-        ) : null}
+        {loadError ? <p className="tp-alert tp-alert-error">{loadError}</p> : null}
 
         <section className="tp-card p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="text-lg font-semibold">Students in this session</h2>
-              <p className="mt-1 text-sm text-[var(--tp-text-secondary)]">
-                Status and activity for each student device in this live session. The list refreshes
-                automatically.
-              </p>
-            </div>
+            <p className="text-sm text-[var(--tp-text-secondary)]">
+              Every student device in this session. Click a row to open that exam. The list
+              refreshes automatically while the session is open.
+            </p>
             {overview.participants.length > 0 ? (
               <div
                 role="group"
-                aria-label="Filter students"
+                aria-label="Filter student exams"
                 className="tp-filter-bar"
               >
                 <button
@@ -469,6 +333,9 @@ export default function LiveSessionDetailPage() {
                   onClick={() => setRosterFilter("all")}
                 >
                   All
+                  <span className="text-[var(--tp-text-muted)]">
+                    · {overview.participants.length}
+                  </span>
                 </button>
                 <button
                   type="button"
@@ -488,36 +355,20 @@ export default function LiveSessionDetailPage() {
                   onClick={() => setRosterFilter("graded")}
                 >
                   Graded
+                  {gradedCount > 0 ? (
+                    <span className="text-[var(--tp-text-muted)]">· {gradedCount}</span>
+                  ) : null}
                 </button>
               </div>
             ) : null}
           </div>
-          <button
-            type="button"
-            onClick={() => setParticipantHelpOpen((o) => !o)}
-            className={`mt-2 text-sm tp-link ${focusRing}`}
-            aria-expanded={participantHelpOpen}
-          >
-            {participantHelpOpen
-              ? buttonLabel("Hide status details")
-              : buttonLabel("What do these statuses mean?")}
-          </button>
-          {participantHelpOpen ? (
-            <p className="mt-2 max-w-2xl text-sm text-[var(--tp-text-secondary)]">
-              <span className="font-medium text-[var(--tp-text)]">Idle</span> means no pointer activity and no
-              typing for about 45 seconds. <span className="font-medium text-[var(--tp-text)]">Typing</span> shows
-              briefly when the student is typing. Other badges reflect blocked, submitted, or graded
-              states. Graded rows show total points earned.
-            </p>
-          ) : null}
+
           {overview.participants.length === 0 ? (
-            <p className="mt-4 tp-empty">
-              No devices have joined yet.
-            </p>
+            <p className="mt-4 tp-empty">No students have joined yet.</p>
           ) : displayedParticipants.length === 0 ? (
             <p className="mt-4 tp-empty">
               {rosterFilter === "needs-grading"
-                ? "Nothing to grade. Submissions awaiting grading will appear here."
+                ? "Nothing to grade right now. Submissions awaiting grading will appear here."
                 : rosterFilter === "graded"
                   ? "No graded exams yet."
                   : "No students match this filter."}
@@ -530,15 +381,12 @@ export default function LiveSessionDetailPage() {
                     <th className="py-2 pr-4 font-medium">Student</th>
                     <th className="py-2 pr-4 font-medium">Status</th>
                     <th className="py-2 pr-4 font-medium">Last activity</th>
-                    <th className="py-2 pr-4 font-medium">Results</th>
+                    <th className="py-2 pr-4 font-medium">Score</th>
                     <th className="py-2 font-medium">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {displayedParticipants.map((p) => {
-                    const deviceIdNorm = p.anonymousSessionId.toLowerCase();
-                    const isRowBusy = participantBusyDeviceId === deviceIdNorm;
-                    return (
+                  {displayedParticipants.map((p) => (
                     <tr
                       key={p.anonymousSessionId}
                       role="link"
@@ -561,7 +409,9 @@ export default function LiveSessionDetailPage() {
                       <td className="py-3 pr-4">
                         <div className="flex flex-col">
                           <span className="font-medium text-[var(--tp-text)]">
-                            {p.displayName ? p.displayName : (
+                            {p.displayName ? (
+                              p.displayName
+                            ) : (
                               <span className="text-[var(--tp-text-muted)] italic">No name</span>
                             )}
                           </span>
@@ -571,21 +421,10 @@ export default function LiveSessionDetailPage() {
                         </div>
                       </td>
                       <td className="py-3 pr-4">
-                        <div className="flex flex-col gap-1.5">
-                          <span className={statusBadgeClass(p.status)}>
-                            <span className="tp-status-dot" />
-                            {statusLabel(p.status)}
-                          </span>
-                          {p.status === "graded" &&
-                          p.pointsEarned != null &&
-                          p.pointsPossible != null ? (
-                            <ScoreBar
-                              earned={p.pointsEarned}
-                              possible={p.pointsPossible}
-                              className="max-w-[10rem]"
-                            />
-                          ) : null}
-                        </div>
+                        <span className={statusBadgeClass(p.status)}>
+                          <span className="tp-status-dot" />
+                          {statusLabel(p.status)}
+                        </span>
                       </td>
                       <td className="py-3 pr-4 text-[var(--tp-text-secondary)]">
                         {p.lastActivityAt
@@ -595,57 +434,40 @@ export default function LiveSessionDetailPage() {
                             })
                           : "—"}
                       </td>
-                      <td className="py-3 pr-4" onClick={(event) => event.stopPropagation()}>
+                      <td className="py-3 pr-4 text-[var(--tp-text-secondary)]">
+                        {p.status === "graded" &&
+                        p.pointsEarned != null &&
+                        p.pointsPossible != null ? (
+                          <ScoreBar
+                            earned={p.pointsEarned}
+                            possible={p.pointsPossible}
+                            className="max-w-[10rem]"
+                          />
+                        ) : p.finishedAt ? (
+                          <span className="tp-grade-pill tp-grade-pill--needs">Needs grading</span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="py-3" onClick={(event) => event.stopPropagation()}>
                         <div className="flex flex-wrap items-center gap-2">
                           <StudentReviewShare
                             liveSessionId={liveSessionId}
                             deviceId={p.anonymousSessionId}
-                            disabled={!p.displayName && p.status !== "finished"}
+                            disabled={!p.displayName && p.status !== "finished" && p.status !== "graded"}
                           />
                           <a
                             href={`/api/forms/live-sessions/${liveSessionId}/participants/${encodeURIComponent(p.anonymousSessionId)}/exam-pdf`}
                             download
                             className="rounded-[var(--tp-radius-sm)] border border-[var(--tp-border-strong)] bg-[var(--tp-surface)] px-2.5 py-1 text-xs font-medium text-[var(--tp-text)] shadow-sm transition-all hover:bg-[var(--tp-bg-subtle)] active:scale-[0.97]"
-                            title="Download this student's exam, feedback, and score as a PDF"
+                            title="Download this student's exam as PDF"
                           >
                             PDF
                           </a>
                         </div>
                       </td>
-                      <td className="py-3" onClick={(event) => event.stopPropagation()}>
-                        <div className="flex flex-wrap items-center gap-2">
-                          {s.sessionOpen && p.status !== "finished" ? (
-                            <TeacherStudentRejoinShare
-                              liveSessionId={liveSessionId}
-                              deviceId={p.anonymousSessionId}
-                              studentLabel={p.displayName || undefined}
-                            />
-                          ) : null}
-                          {p.status === "blocked" ? (
-                            <button
-                              type="button"
-                              disabled={participantBusyDeviceId !== null}
-                              onClick={() => void resumeStudent(p.anonymousSessionId)}
-                              className="rounded-[var(--tp-radius-xs)] bg-[var(--tp-amber)] px-2.5 py-1 text-xs font-semibold text-white shadow-sm transition-transform active:scale-95 disabled:opacity-50"
-                            >
-                              {isRowBusy ? buttonLabel("Letting in…") : buttonLabel("Let in")}
-                            </button>
-                          ) : null}
-                          <ConfirmButton
-                            tone="danger"
-                            label={buttonLabel("Remove")}
-                            confirmLabel={buttonLabel("Tap again")}
-                            busy={isRowBusy}
-                            busyLabel={buttonLabel("Removing…")}
-                            disabled={participantBusyDeviceId !== null && !isRowBusy}
-                            className="px-2 py-1 text-xs"
-                            onConfirm={() => deleteStudentExam(p.anonymousSessionId)}
-                          />
-                        </div>
-                      </td>
                     </tr>
-                    );
-                  })}
+                  ))}
                 </tbody>
               </table>
             </div>

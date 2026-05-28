@@ -16,17 +16,23 @@ const emptyParsed = {
   answers: {} as StudentAnswers,
   suspended: false,
   finished: false,
+  graded: false,
+  pointsEarned: null as number | null,
+  pointsPossible: null as number | null,
   displayName: "",
   liveTeacherFeedback: {} as LiveTeacherFeedbackByQuestionId,
   liveTeacherFeedbackEnabled: false,
   resumeCode: "",
 };
 
-/** Parses RPC / API payload: `{ answers, suspended, finished?, displayName?, resumeCode? }` or legacy flat answers object. */
+/** Parses RPC / API payload: `{ answers, suspended, finished?, graded?, pointsEarned?, displayName?, resumeCode? }` or legacy flat answers object. */
 export function parseLiveSessionStudentGet(data: unknown): {
   answers: StudentAnswers;
   suspended: boolean;
   finished: boolean;
+  graded: boolean;
+  pointsEarned: number | null;
+  pointsPossible: number | null;
   displayName: string;
   liveTeacherFeedback: LiveTeacherFeedbackByQuestionId;
   liveTeacherFeedbackEnabled: boolean;
@@ -57,10 +63,15 @@ export function parseLiveSessionStudentGet(data: unknown): {
         ? answersFromJsonObject(answersRaw as Record<string, unknown>)
         : {};
     const dn = obj.displayName;
+    const pe = obj.pointsEarned;
+    const pp = obj.pointsPossible;
     return {
       answers,
       suspended: Boolean(obj.suspended),
       finished: Boolean(obj.finished),
+      graded: Boolean(obj.graded),
+      pointsEarned: typeof pe === "number" && Number.isFinite(pe) ? pe : null,
+      pointsPossible: typeof pp === "number" && Number.isFinite(pp) ? pp : null,
       displayName: typeof dn === "string" ? dn : "",
       liveTeacherFeedback: parseLiveTeacherFeedback(
         obj.liveTeacherFeedback ?? obj.live_teacher_feedback,
@@ -75,6 +86,9 @@ export function parseLiveSessionStudentGet(data: unknown): {
     answers: answersFromJsonObject(obj),
     suspended: false,
     finished: false,
+    graded: false,
+    pointsEarned: null,
+    pointsPossible: null,
     displayName: "",
     liveTeacherFeedback: {},
     liveTeacherFeedbackEnabled: false,

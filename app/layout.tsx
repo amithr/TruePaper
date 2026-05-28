@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 
+import { ThemeProvider } from "@/components/ThemeProvider";
 import { TruepaperToaster } from "@/components/TruepaperToaster";
 
 import "./globals.css";
@@ -34,10 +35,13 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${fontSans.variable} ${fontMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col font-sans">
-        {children}
-        <TruepaperToaster />
+        <ThemeProvider>
+          {children}
+          <TruepaperToaster />
+        </ThemeProvider>
       </body>
     </html>
   );

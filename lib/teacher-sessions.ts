@@ -18,6 +18,8 @@ export type TeacherSessionSummary = {
   inProgressCount: number;
   /** Devices that have submitted (finished_at set). */
   finishedCount: number;
+  /** Devices that have submitted but are not yet marked as graded. */
+  needsGradingCount: number;
   /** @deprecated alias for assignedCount */
   responseCount: number;
 };

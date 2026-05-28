@@ -2,23 +2,30 @@ import type { Question, QuestionType, StudentAnswers } from "@/lib/forms";
 import { parseLiveTeacherFeedback } from "@/lib/live-teacher-feedback";
 import { parseStudentAnswersJson } from "@/lib/student-answers-json";
 
+export type StudentReviewQuestion = Question & {
+  earnedPoints: number | null;
+};
+
 export type StudentReviewPayload = {
   formTitle: string;
   formDescription: string;
   displayName: string;
   finished: boolean;
+  graded: boolean;
+  pointsEarned: number | null;
+  pointsPossible: number | null;
   sessionOpen: boolean;
-  questions: Question[];
+  questions: StudentReviewQuestion[];
   answers: StudentAnswers;
   liveTeacherFeedback: Record<string, string>;
 };
 
-function parseQuestions(raw: unknown): Question[] {
+function parseQuestions(raw: unknown): StudentReviewQuestion[] {
   if (!Array.isArray(raw)) {
     return [];
   }
   return raw
-    .map((row): Question | null => {
+    .map((row): StudentReviewQuestion | null => {
       if (!row || typeof row !== "object" || Array.isArray(row)) {
         return null;
       }
@@ -37,9 +44,13 @@ function parseQuestions(raw: unknown): Question[] {
         correctAnswer: null,
         points: Math.max(1, Number(o.points) || 1),
         displayOrder: Number(o.displayOrder) || 0,
+        earnedPoints:
+          typeof o.earnedPoints === "number" && Number.isFinite(o.earnedPoints)
+            ? Math.max(0, Math.floor(o.earnedPoints))
+            : null,
       };
     })
-    .filter((q): q is Question => q !== null && q.id.length > 0)
+    .filter((q): q is StudentReviewQuestion => q !== null && q.id.length > 0)
     .sort((a, b) => a.displayOrder - b.displayOrder);
 }
 
@@ -48,11 +59,16 @@ export function parseStudentReviewPayload(raw: unknown): StudentReviewPayload | 
     return null;
   }
   const o = raw as Record<string, unknown>;
+  const pe = o.pointsEarned;
+  const pp = o.pointsPossible;
   return {
     formTitle: typeof o.formTitle === "string" ? o.formTitle : "Form",
     formDescription: typeof o.formDescription === "string" ? o.formDescription : "",
     displayName: typeof o.displayName === "string" ? o.displayName : "",
     finished: o.finished === true,
+    graded: o.graded === true,
+    pointsEarned: typeof pe === "number" && Number.isFinite(pe) ? pe : null,
+    pointsPossible: typeof pp === "number" && Number.isFinite(pp) ? pp : null,
     sessionOpen: o.sessionOpen === true,
     questions: parseQuestions(o.questions),
     answers: parseStudentAnswersJson(o.answers),

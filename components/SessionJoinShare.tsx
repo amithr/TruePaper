@@ -145,7 +145,7 @@ export function SessionJoinShare({ joinCode, showQr = true, className }: Props) 
       </div>
       {showQr && showQrPanel && qrUrl ? (
         <div className="mt-3 inline-block rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-[var(--tp-surface)] p-3 tp-anim-fade-up shadow-sm">
-          <div className="rounded-[var(--tp-radius-xs)] bg-white p-2">
+          <div className="rounded-[var(--tp-radius-xs)] bg-[var(--tp-surface)] p-2">
             <QRCode value={qrUrl} size={128} className="h-32 w-32" />
           </div>
           <p className="mt-2 max-w-[10rem] text-center text-[10px] leading-relaxed text-[var(--tp-text-muted)]">

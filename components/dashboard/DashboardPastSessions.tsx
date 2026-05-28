@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
+import { ConfirmButton } from "@/components/ConfirmButton";
 import { LoadingBar } from "@/components/LoadingBar";
 import { PAST_SESSIONS_PAGE_SIZE } from "@/lib/teacher-dashboard-server";
 import type { TeacherSessionSummary } from "@/lib/teacher-sessions";
@@ -21,6 +22,7 @@ export function DashboardPastSessions({ onError }: Props) {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(total / PAST_SESSIONS_PAGE_SIZE));
 
@@ -65,6 +67,22 @@ export function DashboardPastSessions({ onError }: Props) {
     { debounceMs: 600, minIntervalMs: 2000 },
   );
 
+  const deleteSession = async (sessionId: string) => {
+    setDeletingSessionId(sessionId);
+    onError("");
+    try {
+      await requestJson<{ ok: true }>(`/api/forms/live-sessions/${sessionId}`, {
+        method: "DELETE",
+      });
+      const nextPage = sessions.length === 1 && page > 0 ? page - 1 : page;
+      await loadPage(nextPage);
+    } catch (e) {
+      onError(e instanceof Error ? e.message : "Could not delete session.");
+    } finally {
+      setDeletingSessionId(null);
+    }
+  };
+
   return (
     <section className="tp-card p-6">
       <p className={ui.sectionTitle}>History</p>
@@ -84,7 +102,8 @@ export function DashboardPastSessions({ onError }: Props) {
                   <th className="py-2 pr-4 font-medium">Form</th>
                   <th className="py-2 pr-4 font-medium">Code</th>
                   <th className="py-2 pr-4 font-medium">Closed</th>
-                  <th className="py-2 font-medium">Students</th>
+                  <th className="py-2 pr-4 font-medium">Students</th>
+                  <th className="py-2 font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -115,18 +134,39 @@ export function DashboardPastSessions({ onError }: Props) {
                         year: "numeric",
                       })}
                     </td>
-                    <td className="py-3 text-[var(--tp-text)]">{s.responseCount}</td>
+                    <td className="py-3 pr-4 text-[var(--tp-text)]">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span>{s.responseCount}</span>
+                        {s.needsGradingCount > 0 ? (
+                          <span className="tp-grade-pill tp-grade-pill--needs">
+                            {s.needsGradingCount} to grade
+                          </span>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td className="py-3" onClick={(event) => event.stopPropagation()}>
+                      <ConfirmButton
+                        tone="danger"
+                        label={buttonLabel("Delete")}
+                        confirmLabel={buttonLabel("Tap again")}
+                        busy={deletingSessionId === s.id}
+                        busyLabel={buttonLabel("Deleting…")}
+                        disabled={deletingSessionId !== null}
+                        className="px-2 py-1 text-xs"
+                        onConfirm={() => void deleteSession(s.id)}
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
           {total > PAST_SESSIONS_PAGE_SIZE ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-100 pt-3 text-sm text-zinc-600">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--tp-border)] pt-3 text-sm text-[var(--tp-text-secondary)]">
               <p>
-                Page <span className="font-medium text-zinc-900">{page + 1}</span> of{" "}
-                <span className="font-medium text-zinc-900">{totalPages}</span>
-                <span className="text-zinc-400"> · </span>
+                Page <span className="font-medium text-[var(--tp-text)]">{page + 1}</span> of{" "}
+                <span className="font-medium text-[var(--tp-text)]">{totalPages}</span>
+                <span className="text-[var(--tp-text-muted)]"> · </span>
                 {total} session{total === 1 ? "" : "s"}
               </p>
               <div className="flex items-center gap-2">

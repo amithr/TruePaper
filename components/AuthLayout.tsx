@@ -2,6 +2,7 @@ import Link from "next/link";
 import { type ReactNode } from "react";
 
 import { BrandMark } from "@/components/BrandMark";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 type Props = {
   eyebrow?: string;
@@ -67,7 +68,10 @@ export function AuthLayout({ eyebrow, title, subtitle, children, footer }: Props
       </aside>
 
       {/* Form panel */}
-      <main className="flex items-center justify-center p-6 sm:p-10">
+      <main className="relative flex items-center justify-center p-6 sm:p-10">
+        <div className="absolute right-4 top-4 sm:right-6 sm:top-6">
+          <ThemeToggle />
+        </div>
         <div className="w-full max-w-md tp-anim-fade-up">
           <div className="lg:hidden mb-6">
             <BrandMark size="lg" href="/" />

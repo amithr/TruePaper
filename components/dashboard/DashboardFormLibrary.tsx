@@ -9,6 +9,7 @@ import { deferEffect } from "@/lib/defer-effect";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { LoadingBar } from "@/components/LoadingBar";
 import type { Form } from "@/lib/forms";
+import { stashPendingBuilderForm } from "@/lib/pending-builder-form";
 import { buttonLabel, focusRing, ui } from "@/lib/ui";
 import { requestJson } from "@/lib/request-json";
 
@@ -25,6 +26,7 @@ export function DashboardFormLibrary({ onError }: Props) {
   const [sessionDurations, setSessionDurations] = useState<Record<string, number>>({});
   const [noTimeLimitByForm, setNoTimeLimitByForm] = useState<Record<string, boolean>>({});
   const [startingFormId, setStartingFormId] = useState<string | null>(null);
+  const [creatingForm, setCreatingForm] = useState(false);
   const [deletingFormId, setDeletingFormId] = useState<string | null>(null);
   const [formLibraryPage, setFormLibraryPage] = useState(0);
   const [formLibrarySearch, setFormLibrarySearch] = useState("");
@@ -131,20 +133,27 @@ export function DashboardFormLibrary({ onError }: Props) {
         </div>
         <button
           type="button"
+          disabled={creatingForm}
           onClick={async () => {
+            setCreatingForm(true);
             try {
               const data = await requestJson<{ form: Form }>("/api/forms", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({}),
               });
-              setForms((prev) => [...prev, { ...data.form, questionCount: 0, questions: [] }]);
-              router.push(`/?form=${data.form.id}`);
+              const created = { ...data.form, questionCount: 0, questions: [] };
+              setForms((prev) => [...prev, created]);
+              stashPendingBuilderForm(created);
+              router.push(`/?form=${encodeURIComponent(data.form.id)}`);
             } catch (e) {
               onError(e instanceof Error ? e.message : "Could not create form.");
+            } finally {
+              setCreatingForm(false);
             }
           }}
-          className={ui.btnPrimary}
+          className={`${ui.btnPrimary} disabled:opacity-50`}
+          aria-busy={creatingForm}
         >
           <svg
             aria-hidden
@@ -158,7 +167,7 @@ export function DashboardFormLibrary({ onError }: Props) {
           >
             <path d="M12 5v14M5 12h14" />
           </svg>
-          {buttonLabel("New form")}
+          {creatingForm ? buttonLabel("Creating…") : buttonLabel("New form")}
         </button>
       </div>
       {loading ? (
@@ -290,11 +299,11 @@ export function DashboardFormLibrary({ onError }: Props) {
             ))}
           </ul>
           {filteredForms.length > FORM_LIBRARY_PAGE_SIZE ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-zinc-100 pt-3 text-sm text-zinc-600">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--tp-border)] pt-3 text-sm text-[var(--tp-text-secondary)]">
               <p>
-                Page <span className="font-medium text-zinc-900">{formLibraryPage + 1}</span> of{" "}
-                <span className="font-medium text-zinc-900">{formLibraryTotalPages}</span>
-                <span className="text-zinc-400"> · </span>
+                Page <span className="font-medium text-[var(--tp-text)]">{formLibraryPage + 1}</span> of{" "}
+                <span className="font-medium text-[var(--tp-text)]">{formLibraryTotalPages}</span>
+                <span className="text-[var(--tp-text-muted)]"> · </span>
                 {filteredForms.length} form{filteredForms.length === 1 ? "" : "s"}
               </p>
               <div className="flex items-center gap-2">

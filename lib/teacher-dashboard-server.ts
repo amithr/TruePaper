@@ -43,10 +43,12 @@ function rowToSummary(
   assigned: Map<string, number>,
   inProgress: Map<string, number>,
   finished: Map<string, number>,
+  needsGrading: Map<string, number>,
 ): TeacherSessionSummary {
   const a = assigned.get(s.id) ?? 0;
   const ip = inProgress.get(s.id) ?? 0;
   const fin = finished.get(s.id) ?? 0;
+  const ng = needsGrading.get(s.id) ?? 0;
   return {
     id: s.id,
     formId: s.form_id,
@@ -58,9 +60,15 @@ function rowToSummary(
     assignedCount: a,
     inProgressCount: ip,
     finishedCount: fin,
+    needsGradingCount: ng,
     responseCount: a,
   };
 }
+
+const COUNTS_SELECT_WITH_GRADED =
+  "live_session_id, suspended_at, finished_at, text_graded_at, last_activity_at, last_typing_at";
+const COUNTS_SELECT_LEGACY =
+  "live_session_id, suspended_at, finished_at, last_activity_at, last_typing_at";
 
 async function attachResponseCounts(
   supabase: SupabaseClient,
@@ -77,33 +85,51 @@ async function attachResponseCounts(
   const assigned = new Map<string, number>();
   const inProgress = new Map<string, number>();
   const finished = new Map<string, number>();
+  const needsGrading = new Map<string, number>();
 
   if (ids.length > 0) {
-    const { data: responseRows, error: countError } = await supabase
+    const primary = await supabase
       .from("form_responses")
-      .select("live_session_id, suspended_at, finished_at, last_activity_at, last_typing_at")
+      .select(COUNTS_SELECT_WITH_GRADED)
       .in("live_session_id", ids)
       .is("student_id", null);
 
-    if (countError) {
-      throw new Error(countError.message);
+    let rows = primary.data as Array<Record<string, unknown>> | null;
+    let rowsError = primary.error;
+    if (rowsError && isMissingColumnError(rowsError, "text_graded_at")) {
+      const retry = await supabase
+        .from("form_responses")
+        .select(COUNTS_SELECT_LEGACY)
+        .in("live_session_id", ids)
+        .is("student_id", null);
+      rows = retry.data as Array<Record<string, unknown>> | null;
+      rowsError = retry.error;
+    }
+    if (rowsError) {
+      throw new Error(rowsError.message);
     }
 
-    for (const row of responseRows ?? []) {
+    for (const row of rows ?? []) {
       const lid = row.live_session_id as string | null;
       if (!lid) {
         continue;
       }
       assigned.set(lid, (assigned.get(lid) ?? 0) + 1);
-      if (row.finished_at) {
+      const finishedAt = row.finished_at as string | null;
+      const gradedAt = (row.text_graded_at as string | null | undefined) ?? null;
+      if (finishedAt) {
         finished.set(lid, (finished.get(lid) ?? 0) + 1);
+        if (!gradedAt) {
+          needsGrading.set(lid, (needsGrading.get(lid) ?? 0) + 1);
+        }
       }
       const windowOpen = windowOpenBySessionId.get(lid) ?? false;
       if (
         isLiveParticipantActivelyEngaged(
           {
             suspendedAt: row.suspended_at as string | null,
-            finishedAt: row.finished_at as string | null,
+            finishedAt,
+            gradedAt,
             lastActivityAt: row.last_activity_at as string | null,
             lastTypingAt: row.last_typing_at as string | null,
           },
@@ -117,7 +143,9 @@ async function attachResponseCounts(
   }
 
   return {
-    summaries: sessions.map((s) => rowToSummary(s, assigned, inProgress, finished)),
+    summaries: sessions.map((s) =>
+      rowToSummary(s, assigned, inProgress, finished, needsGrading),
+    ),
     windowOpenBySessionId,
   };
 }

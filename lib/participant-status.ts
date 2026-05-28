@@ -1,4 +1,10 @@
-export type LiveParticipantUiStatus = "blocked" | "finished" | "typing" | "idle" | "started";
+export type LiveParticipantUiStatus =
+  | "blocked"
+  | "graded"
+  | "finished"
+  | "typing"
+  | "idle"
+  | "started";
 
 /** Recent typing shows the typing badge. */
 export const LIVE_TYPING_INDICATOR_MS = 8000;
@@ -9,6 +15,7 @@ export const LIVE_INTERACTION_IDLE_MS = 45000;
 export type ParticipantStatusInput = {
   suspendedAt: string | null;
   finishedAt: string | null;
+  gradedAt?: string | null;
   lastActivityAt: string | null;
   lastTypingAt: string | null;
 };
@@ -19,7 +26,7 @@ export function isLiveParticipantActivelyEngaged(
   sessionWindowOpen: boolean,
   nowMs: number = Date.now(),
 ): boolean {
-  if (!sessionWindowOpen || row.suspendedAt || row.finishedAt) {
+  if (!sessionWindowOpen || row.suspendedAt || row.finishedAt || row.gradedAt) {
     return false;
   }
   const status = computeLiveParticipantUiStatus(row, sessionWindowOpen, nowMs);
@@ -34,6 +41,9 @@ export function computeLiveParticipantUiStatus(
 ): LiveParticipantUiStatus {
   if (row.suspendedAt) {
     return "blocked";
+  }
+  if (row.gradedAt) {
+    return "graded";
   }
   if (row.finishedAt) {
     return "finished";

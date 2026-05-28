@@ -4,19 +4,23 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { Confetti } from "@/components/Confetti";
 import { JoinCodeInput } from "@/components/JoinCodeInput";
 import { LoadingBar } from "@/components/LoadingBar";
+import { ScoreRing } from "@/components/ScoreMeter";
 import { SessionJoinShare } from "@/components/SessionJoinShare";
-import { StudentExamReconnect } from "@/components/StudentExamReconnect";
 import { StudentExamTextarea } from "@/components/StudentExamTextarea";
 import { StudentTeacherFeedbackCard } from "@/components/StudentTeacherFeedbackCard";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import {
   createFreshAnonymousSessionId,
   getOrCreateAnonymousSessionId,
   joinUrlRequestsFreshDevice,
   persistAnonymousSessionId,
 } from "@/lib/anonymous-session";
+import { formatPointsScore, scoreTier, scoreTierMessage } from "@/lib/exam-grades";
 import { deferEffect } from "@/lib/defer-effect";
+import { mergePendingBuilderForm, peekPendingBuilderForm } from "@/lib/pending-builder-form";
 import { postExamTabLeave } from "@/lib/exam-tab-leave";
 import { useLatestRef } from "@/lib/use-latest-ref";
 import type { Form, Question, QuestionType, StudentAnswers } from "@/lib/forms";
@@ -130,8 +134,6 @@ const E2E_AUTOSAVE =
 const AUTOSAVE_DEBOUNCE_MS = E2E_AUTOSAVE ? 200 : 600;
 const AUTOSAVE_MAX_WAIT_MS = E2E_AUTOSAVE ? 800 : 2000;
 
-const BUILDER_AUTOSAVE_MS = 5000;
-
 async function notifyLiveBoardRefresh(joinCode: string): Promise<void> {
   const code = joinCode.trim().toUpperCase();
   if (!code) {
@@ -181,30 +183,69 @@ function serializeBuilderQuestion(question: Question): string {
   });
 }
 
+/** Why a logged-in teacher should remain on `/` instead of the dashboard. */
+type TeacherHomeIntent = "builder" | "join" | "none";
+
+function readTeacherHomeIntent(): TeacherHomeIntent {
+  if (typeof window === "undefined") {
+    return "none";
+  }
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("form")?.trim()) {
+    return "builder";
+  }
+  if (params.has("code") || params.has("join") || params.has("resume")) {
+    return "join";
+  }
+  const hash = window.location.hash;
+  if (hash === "#join-session" || hash.startsWith("#join-session")) {
+    return "join";
+  }
+  return "none";
+}
+
+function readFormIdFromUrl(): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  return new URLSearchParams(window.location.search).get("form")?.trim() ?? "";
+}
+
 export default function Home() {
   const router = useRouter();
+  /** False until client has read `window.location` (SSR/hydration safe). */
+  const [urlSynced, setUrlSynced] = useState(false);
+  const [homePageIntent, setHomePageIntent] = useState<TeacherHomeIntent>("none");
   const [session, setSession] = useState<SessionData | null | undefined>(undefined);
   const [mode, setMode] = useState<"teacher" | "student">("student");
   const [authForms, setAuthForms] = useState<Form[]>([]);
   const [activeFormId, setActiveFormId] = useState("");
-  const [pendingAutoJoinCode, setPendingAutoJoinCode] = useState("");
   const [pendingAutoResumeCode, setPendingAutoResumeCode] = useState("");
   const [joinCodeInput, setJoinCodeInput] = useState("");
   const [rejoinCodeInput, setRejoinCodeInput] = useState("");
   const [joinDisplayNameInput, setJoinDisplayNameInput] = useState("");
-  const [studentResumeCode, setStudentResumeCode] = useState("");
   const [activeExamDisplayName, setActiveExamDisplayName] = useState("");
   const [joinedSession, setJoinedSession] = useState<JoinedLiveSession | null>(null);
   const [teacherLiveBanner, setTeacherLiveBanner] = useState<TeacherLiveBanner | null>(null);
   const [anonymousSessionId, setAnonymousSessionId] = useState("");
   /** Local exam answers (controlled inputs). Hydrated from server once per session/device. */
   const [examAnswers, setExamAnswers] = useState<StudentAnswers>({});
+  /** Teacher builder student-preview answers (never persisted). */
+  const [previewAnswers, setPreviewAnswers] = useState<StudentAnswers>({});
   const [examSuspended, setExamSuspended] = useState(false);
   const [examFinished, setExamFinished] = useState(false);
+  const [examGraded, setExamGraded] = useState(false);
+  const [pointsEarned, setPointsEarned] = useState<number | null>(null);
+  const [pointsPossible, setPointsPossible] = useState<number | null>(null);
+  const [showStudentConfetti, setShowStudentConfetti] = useState(false);
+  const studentConfettiFiredRef = useRef(false);
   const [liveTeacherFeedback, setLiveTeacherFeedback] = useState<Record<string, string>>({});
   const [liveTeacherFeedbackEnabledLive, setLiveTeacherFeedbackEnabledLive] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
-  const [builderAutosaveBanner, setBuilderAutosaveBanner] = useState("");
+  const [builderSaveStatus, setBuilderSaveStatus] = useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle");
+  const [builderSaveError, setBuilderSaveError] = useState("");
   const typingHeartbeatTimerRef = useRef<number | undefined>(undefined);
   const lastPointerInteractionPingAtRef = useRef(0);
   const loadedExamNamePrefillRef = useRef(false);
@@ -237,8 +278,8 @@ export default function Home() {
   }, []);
   const lastPersistedBuilderFormDetailsRef = useRef("");
   const lastPersistedBuilderQuestionJsonByIdRef = useRef<Record<string, string>>({});
-  const builderAutosaveInFlightRef = useRef(false);
-  const builderAutosaveBannerClearRef = useRef<number | undefined>(undefined);
+  const builderSaveInFlightRef = useRef(false);
+  const builderSavedClearRef = useRef<number | undefined>(undefined);
   const [isLoadingForms, setIsLoadingForms] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
   /** Join / rejoin in flight — separate from teacher builder and exam save mutations. */
@@ -246,13 +287,32 @@ export default function Home() {
   const [errorMessage, setErrorMessage] = useState("");
   const [urlAuthNotice, setUrlAuthNotice] = useState("");
   const [nowTick, setNowTick] = useState(() => Date.now());
-  const teacherHomeRedirectDoneRef = useRef(false);
-  const joinIntentFromUrlRef = useRef(false);
   const tabLeaveReportedRef = useRef(false);
   const studentResponseLoadKeyRef = useRef<string | null>(null);
   const [studentAnswersHydrated, setStudentAnswersHydrated] = useState(false);
 
   const isTeacher = session?.profile?.role === "teacher";
+
+  useEffect(() => {
+    const intent = readTeacherHomeIntent();
+    const formId = readFormIdFromUrl();
+    setHomePageIntent(intent);
+    if (formId) {
+      setActiveFormId(formId);
+      const pending = peekPendingBuilderForm(formId);
+      if (pending) {
+        setAuthForms((prev) =>
+          prev.some((form) => form.id === formId) ? prev : [...prev, pending],
+        );
+      }
+    }
+    if (intent === "builder") {
+      setMode("teacher");
+    } else if (intent === "join") {
+      setMode("student");
+    }
+    setUrlSynced(true);
+  }, []);
 
   const activeForm = useMemo(
     () => authForms.find((form) => form.id === activeFormId),
@@ -432,8 +492,7 @@ export default function Home() {
         const normalized = normalizeJoinCode(raw);
         if (isValidJoinCodeFormat(normalized)) {
           setJoinCodeInput(normalized);
-          setPendingAutoJoinCode(normalized);
-          joinIntentFromUrlRef.current = true;
+          setStatusMessage("Session code loaded. Enter your name, then tap Start task.");
         }
       }
       const resumeRaw = params.get("resume");
@@ -442,7 +501,6 @@ export default function Home() {
         if (isValidResumeCodeFormat(normalizedResume)) {
           setRejoinCodeInput(normalizedResume);
           setPendingAutoResumeCode(normalizedResume);
-          joinIntentFromUrlRef.current = true;
         }
       }
       const u = new URL(window.location.href);
@@ -484,7 +542,7 @@ export default function Home() {
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      if (session === undefined) {
+      if (!urlSynced || session === undefined) {
         return;
       }
       if (!session) {
@@ -492,16 +550,24 @@ export default function Home() {
         return;
       }
       if (session.profile?.role === "teacher") {
-        setMode(joinIntentFromUrlRef.current || joinedSession ? "student" : "teacher");
+        setMode(homePageIntent === "join" || joinedSession ? "student" : "teacher");
       } else {
         setMode("student");
       }
     }, 0);
     return () => clearTimeout(timeoutId);
-  }, [session, joinedSession]);
+  }, [session, joinedSession, homePageIntent, urlSynced]);
 
   useEffect(() => {
-    if (session === undefined) {
+    if (!urlSynced || session === undefined) {
+      return;
+    }
+
+    if (
+      session?.profile?.role === "teacher" &&
+      homePageIntent === "none" &&
+      !joinedSession
+    ) {
       return;
     }
 
@@ -516,7 +582,10 @@ export default function Home() {
             if (cancelled) {
               return;
             }
-            setAuthForms(auth.forms);
+            const formId = readFormIdFromUrl();
+            setAuthForms(
+              formId ? mergePendingBuilderForm(auth.forms, formId) : auth.forms,
+            );
           } else {
             if (!cancelled) {
               setAuthForms([]);
@@ -538,23 +607,25 @@ export default function Home() {
       cancelled = true;
       clearTimeout(timeoutId);
     };
-  }, [session]);
+  }, [session, homePageIntent, joinedSession, urlSynced]);
 
   useEffect(() => {
-    if (typeof window === "undefined" || session?.profile?.role !== "teacher") {
+    if (!urlSynced || typeof window === "undefined" || session?.profile?.role !== "teacher") {
       return;
     }
-    const params = new URLSearchParams(window.location.search);
-    const formId = params.get("form");
+    const formId = readFormIdFromUrl();
     if (!formId) {
-      return;
-    }
-    if (!authForms.some((f) => f.id === formId)) {
       return;
     }
     deferEffect(() => {
       setActiveFormId(formId);
       setMode("teacher");
+      const pending = peekPendingBuilderForm(formId);
+      if (pending) {
+        setAuthForms((prev) =>
+          prev.some((form) => form.id === formId) ? prev : [...prev, pending],
+        );
+      }
       const { pathname, hash } = window.location;
       window.history.replaceState(
         {},
@@ -562,49 +633,43 @@ export default function Home() {
         `${pathname}?form=${encodeURIComponent(formId)}${hash}`,
       );
     });
-  }, [session, authForms]);
+  }, [session, urlSynced]);
 
   /**
-   * Teachers opening `/` without `?form=` (or join/code params) go to the dashboard — forms are opened
-   * here via Form library → Edit in builder (`?form=…`).
+   * Teachers opening `/` without builder/join intent go straight to the dashboard.
    */
   useEffect(() => {
-    if (session === undefined) {
-      return;
-    }
-    if (session === null) {
-      teacherHomeRedirectDoneRef.current = false;
+    if (!urlSynced || session === undefined || session === null) {
       return;
     }
     if (session.profile?.role !== "teacher") {
       return;
     }
-    if (teacherHomeRedirectDoneRef.current) {
+    if (homePageIntent !== "none" || joinedSession) {
       return;
     }
-    if (typeof window === "undefined") {
-      return;
-    }
-    const params = new URLSearchParams(window.location.search);
-    if (params.has("form") || params.has("code") || params.has("join") || joinIntentFromUrlRef.current) {
-      teacherHomeRedirectDoneRef.current = true;
-      return;
-    }
-    const h = window.location.hash;
-    if (h === "#join-session" || h.startsWith("#join-session")) {
-      teacherHomeRedirectDoneRef.current = true;
-      return;
-    }
-    teacherHomeRedirectDoneRef.current = true;
     router.replace("/dashboard");
-  }, [session, router]);
+  }, [session, router, homePageIntent, joinedSession, urlSynced]);
 
-  const syncListsAfterTeacherChange = useCallback(async () => {
-    if (session?.profile?.role === "teacher") {
-      const auth = await requestJson<{ forms: Form[] }>("/api/forms");
-      setAuthForms(auth.forms);
+  /** Non-teachers must not open the form builder via `?form=`. */
+  useEffect(() => {
+    if (!urlSynced || session === undefined || session === null) {
+      return;
     }
-  }, [session?.profile?.role]);
+    if (session.profile?.role === "teacher") {
+      return;
+    }
+    if (homePageIntent !== "builder") {
+      return;
+    }
+    setActiveFormId("");
+    setHomePageIntent("none");
+    router.replace("/");
+  }, [session, homePageIntent, router, urlSynced]);
+
+  useEffect(() => {
+    setPreviewAnswers({});
+  }, [activeFormId]);
 
   const joinedLiveSessionId = joinedSession?.liveSessionId ?? "";
   const isLiveTeacherFeedbackEnabled =
@@ -640,6 +705,9 @@ export default function Home() {
             setActiveExamDisplayName("");
             setExamAnswers({});
             setExamFinished(false);
+            setExamGraded(false);
+            setPointsEarned(null);
+            setPointsPossible(null);
             setExamSuspended(false);
             return;
           }
@@ -654,14 +722,18 @@ export default function Home() {
         setStudentAnswersHydrated(true);
         setExamSuspended(parsed.suspended);
         setExamFinished(parsed.finished);
+        setExamGraded(parsed.graded);
+        setPointsEarned(parsed.pointsEarned);
+        setPointsPossible(parsed.pointsPossible);
         setLiveTeacherFeedback((prev) => ({ ...prev, ...parsed.liveTeacherFeedback }));
         if (parsed.liveTeacherFeedbackEnabled) {
           setLiveTeacherFeedbackEnabledLive(true);
         }
-        if (parsed.resumeCode) {
-          setStudentResumeCode(parsed.resumeCode);
-        }
-        if (parsed.finished) {
+        if (parsed.graded && parsed.pointsEarned != null && parsed.pointsPossible != null) {
+          setStatusMessage(
+            `Graded — you earned ${formatPointsScore(parsed.pointsEarned, parsed.pointsPossible)}.`,
+          );
+        } else if (parsed.finished) {
           setStatusMessage("You have submitted this exam.");
         } else if (parsed.suspended) {
           setStatusMessage("This exam is paused until your teacher allows you to continue.");
@@ -677,6 +749,58 @@ export default function Home() {
 
     return () => clearTimeout(timeoutId);
   }, [joinedLiveSessionId, anonymousSessionId]);
+
+  useEffect(() => {
+    if (!examGraded || studentConfettiFiredRef.current) {
+      return;
+    }
+    if (pointsEarned == null || pointsPossible == null) {
+      return;
+    }
+    const tier = scoreTier(pointsEarned, pointsPossible);
+    if (tier !== "perfect" && tier !== "great") {
+      return;
+    }
+    studentConfettiFiredRef.current = true;
+    deferEffect(() => setShowStudentConfetti(true));
+    const id = window.setTimeout(() => {
+      deferEffect(() => setShowStudentConfetti(false));
+    }, 2200);
+    return () => window.clearTimeout(id);
+  }, [examGraded, pointsEarned, pointsPossible]);
+
+  useEffect(() => {
+    if (!joinedLiveSessionId || !anonymousSessionId || !examFinished || examGraded) {
+      return;
+    }
+    const intervalId = window.setInterval(() => {
+      void (async () => {
+        try {
+          const res = await fetch(
+            `/api/public/live-sessions/${joinedLiveSessionId}/responses?deviceId=${encodeURIComponent(anonymousSessionId)}`,
+          );
+          if (!res.ok) {
+            return;
+          }
+          const data = (await res.json()) as unknown;
+          const parsed = parseLiveSessionStudentGet(data);
+          if (parsed.graded) {
+            setExamGraded(true);
+            setPointsEarned(parsed.pointsEarned);
+            setPointsPossible(parsed.pointsPossible);
+            if (parsed.pointsEarned != null && parsed.pointsPossible != null) {
+              setStatusMessage(
+                `Graded — you earned ${formatPointsScore(parsed.pointsEarned, parsed.pointsPossible)}.`,
+              );
+            }
+          }
+        } catch {
+          /* ignore background poll errors */
+        }
+      })();
+    }, 5000);
+    return () => window.clearInterval(intervalId);
+  }, [joinedLiveSessionId, anonymousSessionId, examFinished, examGraded]);
 
   const refreshLiveTeacherFeedback = useCallback(async () => {
     if (!joinedLiveSessionId || !anonymousSessionId) {
@@ -718,9 +842,6 @@ export default function Home() {
     if (patch.finished === true) {
       setExamFinished(true);
       setStatusMessage("You have submitted this exam.");
-    }
-    if (patch.resumeCode) {
-      setStudentResumeCode(patch.resumeCode);
     }
   }, []);
 
@@ -985,6 +1106,9 @@ export default function Home() {
           setExamAnswers({});
           setStudentAnswersHydrated(false);
           setExamFinished(false);
+          setExamGraded(false);
+          setPointsEarned(null);
+          setPointsPossible(null);
           setExamSuspended(false);
           setStatusMessage(body.error ?? STUDENT_ALREADY_SUBMITTED_MESSAGE);
           return;
@@ -1146,7 +1270,10 @@ export default function Home() {
         return;
       }
       if (activeFormId && !pool.some((form) => form.id === activeFormId)) {
-        setActiveFormId("");
+        const urlFormId = readFormIdFromUrl();
+        if (urlFormId !== activeFormId) {
+          setActiveFormId("");
+        }
       }
     }, 0);
     return () => clearTimeout(timeoutId);
@@ -1163,6 +1290,9 @@ export default function Home() {
       setJoinedSession(null);
       setExamSuspended(false);
       setExamFinished(false);
+      setExamGraded(false);
+      setPointsEarned(null);
+      setPointsPossible(null);
       setActiveExamDisplayName("");
       setTeacherLiveBanner(null);
       setStatusMessage("Signed out.");
@@ -1179,10 +1309,13 @@ export default function Home() {
     );
   };
 
+  /** Refresh the dirty-tracker baseline when the active form changes (e.g. opening a different form). */
   useEffect(() => {
     if (!activeForm) {
       lastPersistedBuilderFormDetailsRef.current = "";
       lastPersistedBuilderQuestionJsonByIdRef.current = {};
+      setBuilderSaveStatus("idle");
+      setBuilderSaveError("");
       return;
     }
     lastPersistedBuilderFormDetailsRef.current = serializeBuilderFormDetails(activeForm);
@@ -1191,88 +1324,132 @@ export default function Home() {
       persistedQuestions[question.id] = serializeBuilderQuestion(question);
     }
     lastPersistedBuilderQuestionJsonByIdRef.current = persistedQuestions;
-  }, [activeForm]);
+    setBuilderSaveStatus("idle");
+    setBuilderSaveError("");
+  }, [activeFormId]); // intentionally not [activeForm] — recomputes only when opening a different form
 
+  /** Compute whether the active form has unsaved edits. */
+  const builderHasUnsavedChanges = useMemo(() => {
+    if (!activeForm) {
+      return false;
+    }
+    if (
+      serializeBuilderFormDetails(activeForm) !==
+      lastPersistedBuilderFormDetailsRef.current
+    ) {
+      return true;
+    }
+    for (const question of activeForm.questions) {
+      const json = serializeBuilderQuestion(question);
+      if (json !== lastPersistedBuilderQuestionJsonByIdRef.current[question.id]) {
+        return true;
+      }
+    }
+    return false;
+  }, [activeForm, builderSaveStatus]);
+
+  /** Reset "Saved" pill back to idle as soon as the teacher makes a new edit. */
   useEffect(() => {
-    if (!activeFormId || mode !== "teacher" || !isTeacher) {
-      return;
+    if (builderSaveStatus === "saved" && builderHasUnsavedChanges) {
+      setBuilderSaveStatus("idle");
+    }
+  }, [builderHasUnsavedChanges, builderSaveStatus]);
+
+  const saveBuilderForm = useCallback(async (): Promise<boolean> => {
+    const form = latestActiveFormRef.current;
+    if (!form || form.id !== activeFormId || builderSaveInFlightRef.current) {
+      return false;
     }
 
-    const runBuilderAutosave = async () => {
-      const form = latestActiveFormRef.current;
-      if (!form || form.id !== activeFormId || builderAutosaveInFlightRef.current) {
-        return;
+    const detailsJson = serializeBuilderFormDetails(form);
+    const formDetailsDirty = detailsJson !== lastPersistedBuilderFormDetailsRef.current;
+    const dirtyQuestions: Question[] = [];
+    for (const question of form.questions) {
+      const questionJson = serializeBuilderQuestion(question);
+      if (questionJson !== lastPersistedBuilderQuestionJsonByIdRef.current[question.id]) {
+        dirtyQuestions.push(question);
+      }
+    }
+
+    if (!formDetailsDirty && dirtyQuestions.length === 0) {
+      setBuilderSaveStatus("saved");
+      return true;
+    }
+
+    builderSaveInFlightRef.current = true;
+    setBuilderSaveStatus("saving");
+    setBuilderSaveError("");
+    try {
+      if (formDetailsDirty) {
+        await requestJson<{ ok: true }>(`/api/forms/${form.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: form.title,
+            description: form.description,
+            liveTeacherFeedbackEnabled: form.liveTeacherFeedbackEnabled,
+          }),
+        });
+        lastPersistedBuilderFormDetailsRef.current = detailsJson;
       }
 
-      const detailsJson = serializeBuilderFormDetails(form);
-      const formDetailsDirty = detailsJson !== lastPersistedBuilderFormDetailsRef.current;
-      const dirtyQuestions: Question[] = [];
-      for (const question of form.questions) {
-        const questionJson = serializeBuilderQuestion(question);
-        if (questionJson !== lastPersistedBuilderQuestionJsonByIdRef.current[question.id]) {
-          dirtyQuestions.push(question);
-        }
+      for (const question of dirtyQuestions) {
+        await requestJson<{ ok: true }>(`/api/questions/${question.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt: question.prompt,
+            type: question.type,
+            options: question.options,
+            correctAnswer: question.type === "multipleChoice" ? question.correctAnswer : null,
+            points: question.points,
+          }),
+        });
+        lastPersistedBuilderQuestionJsonByIdRef.current[question.id] =
+          serializeBuilderQuestion(question);
       }
 
-      if (!formDetailsDirty && dirtyQuestions.length === 0) {
-        return;
+      setBuilderSaveStatus("saved");
+      if (builderSavedClearRef.current !== undefined) {
+        window.clearTimeout(builderSavedClearRef.current);
       }
+      builderSavedClearRef.current = window.setTimeout(() => {
+        builderSavedClearRef.current = undefined;
+        setBuilderSaveStatus((prev) => (prev === "saved" ? "idle" : prev));
+      }, 2600);
+      return true;
+    } catch (error) {
+      setBuilderSaveStatus("error");
+      setBuilderSaveError(
+        error instanceof Error ? error.message : "Failed to save. Try again.",
+      );
+      return false;
+    } finally {
+      builderSaveInFlightRef.current = false;
+    }
+  }, [activeFormId, latestActiveFormRef]);
 
-      builderAutosaveInFlightRef.current = true;
-      setBuilderAutosaveBanner("Saving…");
-      try {
-        if (formDetailsDirty) {
-          await requestJson<{ ok: true }>(`/api/forms/${form.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              title: form.title,
-              description: form.description,
-              liveTeacherFeedbackEnabled: form.liveTeacherFeedbackEnabled,
-            }),
-          });
-          lastPersistedBuilderFormDetailsRef.current = detailsJson;
-          await syncListsAfterTeacherChange();
-        }
-
-        for (const question of dirtyQuestions) {
-          await requestJson<{ ok: true }>(`/api/questions/${question.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              prompt: question.prompt,
-              type: question.type,
-              options: question.options,
-              correctAnswer: question.type === "multipleChoice" ? question.correctAnswer : null,
-              points: question.points,
-            }),
-          });
-          lastPersistedBuilderQuestionJsonByIdRef.current[question.id] =
-            serializeBuilderQuestion(question);
-        }
-
-        if (builderAutosaveBannerClearRef.current !== undefined) {
-          window.clearTimeout(builderAutosaveBannerClearRef.current);
-        }
-        setBuilderAutosaveBanner("All changes saved");
-        builderAutosaveBannerClearRef.current = window.setTimeout(() => {
-          builderAutosaveBannerClearRef.current = undefined;
-          setBuilderAutosaveBanner((prev) => (prev === "All changes saved" ? "" : prev));
-        }, 2600);
-      } catch (error) {
-        setBuilderAutosaveBanner(
-          error instanceof Error ? error.message : "Autosave failed. Changes will retry shortly.",
-        );
-      } finally {
-        builderAutosaveInFlightRef.current = false;
+  /** Cleanup the "Saved" timeout if the form unmounts. */
+  useEffect(() => {
+    return () => {
+      if (builderSavedClearRef.current !== undefined) {
+        window.clearTimeout(builderSavedClearRef.current);
       }
     };
+  }, []);
 
-    const id = window.setInterval(() => {
-      void runBuilderAutosave();
-    }, BUILDER_AUTOSAVE_MS);
-    return () => window.clearInterval(id);
-  }, [activeFormId, mode, isTeacher, latestActiveFormRef, syncListsAfterTeacherChange]);
+  /** Warn the teacher if they try to leave/close the tab with unsaved builder changes. */
+  useEffect(() => {
+    if (!builderHasUnsavedChanges || mode !== "teacher" || !isTeacher) {
+      return;
+    }
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [builderHasUnsavedChanges, mode, isTeacher]);
 
   const addQuestion = async (type: QuestionType) => {
     if (!activeForm) {
@@ -1282,6 +1459,14 @@ export default function Home() {
     setIsMutating(true);
     setStatusMessage("");
     try {
+      // Flush any pending edits to existing questions/details before adding a new one
+      // so that the next save isn't asked to PATCH a question that hasn't been created yet.
+      if (builderHasUnsavedChanges) {
+        const ok = await saveBuilderForm();
+        if (!ok) {
+          return;
+        }
+      }
       const data = await requestJson<{ question: Question }>(
         `/api/forms/${activeForm.id}/questions`,
         {
@@ -1296,7 +1481,6 @@ export default function Home() {
       }));
       lastPersistedBuilderQuestionJsonByIdRef.current[data.question.id] =
         serializeBuilderQuestion(data.question);
-      await syncListsAfterTeacherChange();
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Failed to add question.");
     } finally {
@@ -1320,7 +1504,6 @@ export default function Home() {
       delete nextAnswers[questionId];
       latestStudentAnswersRef.current = nextAnswers;
       setExamAnswers(nextAnswers);
-      await syncListsAfterTeacherChange();
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Failed to remove question.");
     } finally {
@@ -1345,7 +1528,6 @@ export default function Home() {
       setAnonymousSessionId(data.deviceId);
       setJoinCodeInput(data.joinCode);
       setRejoinCodeInput(code);
-      setStudentResumeCode(data.resumeCode || code);
       const displayName = normalizeLiveSessionDisplayName(data.displayName);
       if (isValidLiveSessionDisplayName(displayName)) {
         setActiveExamDisplayName(displayName);
@@ -1373,6 +1555,9 @@ export default function Home() {
       setStudentAnswersHydrated(false);
       setExamSuspended(false);
       setExamFinished(false);
+      setExamGraded(false);
+      setPointsEarned(null);
+      setPointsPossible(null);
       setStatusMessage("");
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : "Could not rejoin that exam.");
@@ -1390,7 +1575,7 @@ export default function Home() {
 
     const displayName = normalizeLiveSessionDisplayName(joinDisplayNameInput);
     if (!isValidLiveSessionDisplayName(displayName)) {
-      setStatusMessage("Enter your name (1–120 characters) before joining the exam.");
+      setStatusMessage("Enter your name (1–120 characters) before starting the exam.");
       return;
     }
 
@@ -1433,6 +1618,9 @@ export default function Home() {
       setStudentAnswersHydrated(false);
       setExamSuspended(false);
       setExamFinished(false);
+      setExamGraded(false);
+      setPointsEarned(null);
+      setPointsPossible(null);
       setAutosaveStatus("");
       setStatusMessage("You are in the live session.");
     } catch (error) {
@@ -1442,26 +1630,7 @@ export default function Home() {
     }
   };
 
-  const joinWithCodeRef = useLatestRef(joinWithCode);
   const rejoinWithResumeCodeRef = useLatestRef(rejoinWithResumeCode);
-
-  useEffect(() => {
-    if (!pendingAutoJoinCode || joinedSession || isJoiningSession || pendingAutoResumeCode) {
-      return;
-    }
-    const normalizedDisplayName = normalizeLiveSessionDisplayName(joinDisplayNameInput);
-    if (!isValidLiveSessionDisplayName(normalizedDisplayName)) {
-      deferEffect(() => {
-        setStatusMessage("Join code loaded from link. Enter your name, then tap Join.");
-      });
-      return;
-    }
-    const code = pendingAutoJoinCode;
-    deferEffect(() => {
-      void joinWithCodeRef.current(code);
-      setPendingAutoJoinCode("");
-    });
-  }, [pendingAutoJoinCode, joinDisplayNameInput, joinedSession, isJoiningSession, pendingAutoResumeCode, joinWithCodeRef]);
 
   useEffect(() => {
     if (!pendingAutoResumeCode || joinedSession || isJoiningSession) {
@@ -1490,10 +1659,12 @@ export default function Home() {
     setStudentAnswersHydrated(false);
     setExamSuspended(false);
     setExamFinished(false);
+    setExamGraded(false);
+    setPointsEarned(null);
+    setPointsPossible(null);
     setActiveExamDisplayName("");
     setLiveTeacherFeedback({});
     setLiveTeacherFeedbackEnabledLive(false);
-    setStudentResumeCode("");
     setRejoinCodeInput("");
     setStatusMessage("Left the session.");
   };
@@ -1599,9 +1770,21 @@ export default function Home() {
 
   const hasVerifiedExamName = isValidLiveSessionDisplayName(activeExamDisplayName);
 
-  /** Live exam form — only after joining a session (no builder preview in student view). */
+  const isBuilderStudentPreview =
+    isTeacher &&
+    mode === "student" &&
+    Boolean(activeForm) &&
+    !joinedSession;
+
+  /** Live exam form, or the open form when a teacher previews the student experience. */
   const studentExamForm =
-    joinedSession && hasVerifiedExamName ? joinedSession.form : null;
+    joinedSession && hasVerifiedExamName
+      ? joinedSession.form
+      : isBuilderStudentPreview && activeForm
+        ? activeForm
+        : null;
+
+  const effectiveExamAnswers = isBuilderStudentPreview ? previewAnswers : examAnswers;
   const studentExamQuestions = useMemo(() => {
     if (!studentExamForm) {
       return [];
@@ -1617,15 +1800,103 @@ export default function Home() {
 
   const examAnswersLoading = Boolean(joinedSession) && !studentAnswersHydrated;
 
-  if (session === undefined) {
+  /** Whether a student has supplied a non-empty answer to a question. */
+  const isQuestionAnswered = useCallback(
+    (question: Question): boolean => {
+      const value = effectiveExamAnswers[question.id];
+      if (typeof value !== "string") {
+        return false;
+      }
+      return value.trim().length > 0;
+    },
+    [effectiveExamAnswers],
+  );
+
+  const examAnsweredCount = useMemo(
+    () => studentExamQuestions.reduce((acc, q) => acc + (isQuestionAnswered(q) ? 1 : 0), 0),
+    [studentExamQuestions, isQuestionAnswered],
+  );
+  const examTotalQuestions = studentExamQuestions.length;
+  const examProgressPct =
+    examTotalQuestions > 0
+      ? Math.min(100, Math.round((examAnsweredCount / examTotalQuestions) * 100))
+      : 0;
+  const examAllAnswered =
+    examTotalQuestions > 0 && examAnsweredCount === examTotalQuestions;
+
+  const examProgressFillVariant = examAllAnswered
+    ? "ready"
+    : examProgressPct >= 80
+      ? "almost"
+      : examProgressPct >= 50
+        ? "mid"
+        : "";
+
+  const examProgressCheer = (() => {
+    if (examTotalQuestions === 0) return "";
+    if (examAllAnswered) return "Ready to submit!";
+    if (examProgressPct >= 80) return "Almost done!";
+    if (examProgressPct >= 50) return "Halfway there!";
+    if (examProgressPct >= 25) return "Off to a great start!";
+    if (examAnsweredCount > 0) return "Keep going!";
+    return "Let's go!";
+  })();
+
+  /** One-shot celebration when the student finishes their last question. */
+  const [showAllAnsweredCelebrate, setShowAllAnsweredCelebrate] = useState(false);
+  const lastAllAnsweredKeyRef = useRef<string>("");
+
+  useEffect(() => {
+    if (
+      !joinedSession ||
+      examFinished ||
+      examSuspended ||
+      !examTotalQuestions ||
+      examAnswersLoading
+    ) {
+      return;
+    }
+    const key = `${joinedSession.liveSessionId}:${anonymousSessionId}`;
+    if (examAllAnswered) {
+      if (lastAllAnsweredKeyRef.current === key) {
+        return;
+      }
+      lastAllAnsweredKeyRef.current = key;
+      deferEffect(() => setShowAllAnsweredCelebrate(true));
+      const t = window.setTimeout(
+        () => deferEffect(() => setShowAllAnsweredCelebrate(false)),
+        1800,
+      );
+      return () => window.clearTimeout(t);
+    }
+    if (lastAllAnsweredKeyRef.current === key) {
+      lastAllAnsweredKeyRef.current = "";
+    }
+  }, [
+    examAllAnswered,
+    joinedSession,
+    examFinished,
+    examSuspended,
+    examTotalQuestions,
+    examAnswersLoading,
+    anonymousSessionId,
+  ]);
+
+  const teacherPendingDashboardRedirect =
+    urlSynced &&
+    session?.profile?.role === "teacher" &&
+    homePageIntent === "none" &&
+    !joinedSession;
+
+  if (session === undefined || !urlSynced || teacherPendingDashboardRedirect) {
     return (
       <div className="min-h-screen bg-[var(--tp-bg)] py-8 text-[var(--tp-text)] sm:py-10">
         <main className="mx-auto w-full max-w-5xl tp-card p-8">
           <div className="animate-pulse space-y-4" aria-hidden="true">
-            <div className="h-9 w-72 max-w-full rounded-md bg-zinc-200" />
-            <div className="h-4 max-w-2xl rounded bg-zinc-100" />
-            <div className="h-4 max-w-xl rounded bg-zinc-100" />
-            <div className="mt-8 h-48 rounded-xl bg-zinc-100" />
+            <div className="h-9 w-72 max-w-full rounded-md bg-[var(--tp-border)]" />
+            <div className="h-4 max-w-2xl rounded bg-[var(--tp-bg-subtle)]" />
+            <div className="h-4 max-w-xl rounded bg-[var(--tp-bg-subtle)]" />
+            <div className="mt-8 h-48 rounded-xl bg-[var(--tp-bg-subtle)]" />
           </div>
           <LoadingBar className="mt-6 max-w-md" />
         </main>
@@ -1634,6 +1905,11 @@ export default function Home() {
   }
 
   const showTeacherTools = mode === "teacher" && isTeacher;
+  /** Join UI for logged-in users only; guests render it once in the landing block below. */
+  const showJoinSection =
+    Boolean(session) &&
+    !isBuilderStudentPreview &&
+    ((!isTeacher) || (isTeacher && mode === "student"));
   const teacherBannerMsLeft = teacherLiveBanner
     ? new Date(teacherLiveBanner.closesAt).getTime() - nowTick
     : 0;
@@ -1651,9 +1927,34 @@ export default function Home() {
           <p className={ui.sectionTitle}>Join</p>
           <h2 className="mt-1 text-2xl font-bold tracking-tight">Join a live session</h2>
         </div>
-        <span aria-hidden className="hidden sm:inline-flex tp-brand-mark tp-brand-mark--lg">
-          T
-        </span>
+        <div className="flex shrink-0 items-start gap-2">
+          {session && !isTeacher ? (
+            <button
+              type="button"
+              onClick={() => void logout()}
+              disabled={isMutating}
+              className={`${ui.btnGhost} ${focusRing} disabled:opacity-50`}
+              aria-label="Log out"
+              title="Log out"
+            >
+              <svg
+                aria-hidden
+                className="h-4 w-4"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M16 17l5-5-5-5M21 12H9M13 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7" />
+              </svg>
+            </button>
+          ) : null}
+          <span aria-hidden className="hidden sm:inline-flex tp-brand-mark tp-brand-mark--lg">
+            T
+          </span>
+        </div>
       </div>
 
       <div className="mt-6 space-y-5">
@@ -1677,6 +1978,11 @@ export default function Home() {
               maxLength={120}
               value={joinDisplayNameInput}
               onChange={(e) => setJoinDisplayNameInput(e.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                }
+              }}
               className="tp-input"
               placeholder="e.g. Jordan Lee"
             />
@@ -1714,7 +2020,7 @@ export default function Home() {
               aria-busy={isJoiningSession}
               className={`${ui.btnPrimary} disabled:opacity-50`}
             >
-              {isJoiningSession ? buttonLabel("Joining…") : "Join exam"}
+              {isJoiningSession ? buttonLabel("Starting…") : buttonLabel("Start task")}
             </button>
           ) : (
             <button
@@ -1771,6 +2077,11 @@ export default function Home() {
 
   return (
     <div className={ui.page}>
+      <div className="pointer-events-none fixed right-4 top-4 z-50 sm:right-6 sm:top-6">
+        <div className="pointer-events-auto">
+          <ThemeToggle />
+        </div>
+      </div>
       <main className={`${ui.pageMain} tp-card p-6 sm:p-8`}>
         {urlAuthNotice ? (
           <div
@@ -1811,36 +2122,38 @@ export default function Home() {
               </div>
             </div>
           </div>
-        ) : (
+        ) : isTeacher ? (
           <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
             <div className="min-w-0 flex-1">
-              {isTeacher ? (
-                <Link
-                  href="/dashboard"
-                  className={`inline-flex items-center gap-1.5 text-sm font-medium text-[var(--tp-text-secondary)] hover:text-[var(--tp-text)] ${focusRing}`}
+              <Link
+                href="/dashboard"
+                className={`inline-flex items-center gap-1.5 text-sm font-medium text-[var(--tp-text-secondary)] hover:text-[var(--tp-text)] ${focusRing}`}
+              >
+                <svg
+                  aria-hidden
+                  className="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
                 >
-                  <svg
-                    aria-hidden
-                    className="h-4 w-4"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M19 12H5M12 5l-7 7 7 7" />
-                  </svg>
-                  Dashboard
-                </Link>
-              ) : null}
-              <h1 className="mt-2 text-2xl font-bold tracking-tight">Form builder</h1>
+                  <path d="M19 12H5M12 5l-7 7 7 7" />
+                </svg>
+                Dashboard
+              </Link>
+              <h1 className="mt-2 text-2xl font-bold tracking-tight">
+                {isBuilderStudentPreview ? "Student preview" : "Form builder"}
+              </h1>
               <p className="mt-1 text-sm text-[var(--tp-text-secondary)]">
-                Build forms and start live sessions. Students join with a code.
+                {isBuilderStudentPreview
+                  ? "See how students will experience this exam."
+                  : "Build forms and start live sessions. Students join with a code."}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              {session && isTeacher ? (
+              {session ? (
                 <div
                   role="tablist"
                   className="inline-flex items-center rounded-full border border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] p-1"
@@ -1896,7 +2209,7 @@ export default function Home() {
               </button>
             </div>
           </div>
-        )}
+        ) : null}
 
         {teacherLiveBanner && showTeacherTools ? (
           <div className="mb-6 rounded-[var(--tp-radius)] border border-[var(--tp-success-border)] bg-[var(--tp-mint-soft)] px-4 py-3 text-sm text-emerald-900 tp-anim-fade-up">
@@ -1909,7 +2222,7 @@ export default function Home() {
               Live: {teacherLiveBanner.formTitle}
             </p>
             <p className="mt-1">
-              <span className="rounded bg-white/80 px-2 py-0.5 font-mono text-base tracking-widest">
+              <span className="rounded bg-[var(--tp-surface)]/80 px-2 py-0.5 font-mono text-base tracking-widest">
                 {teacherLiveBanner.joinCode}
               </span>{" "}
               · {teacherBannerNoTimeLimit ? "No time limit" : `Time left ${formatCountdown(teacherBannerMsLeft)}`}
@@ -1937,36 +2250,95 @@ export default function Home() {
           </div>
         ) : null}
 
-        {(session && !showTeacherTools) || (isTeacher && mode === "student")
-          ? joinSessionSection
-          : null}
+        {showJoinSection ? joinSessionSection : null}
 
         {isLoadingForms && showTeacherTools ? (
           <LoadingBar className="max-w-xs" label="Loading forms" />
         ) : errorMessage && showTeacherTools ? (
           <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-red-700">{errorMessage}</p>
         ) : showTeacherTools && !activeForm ? (
-          <div className="py-10 text-center text-sm text-zinc-600">
-            <p className="font-medium text-zinc-800">No form open</p>
+          <div className="py-10 text-center text-sm text-[var(--tp-text-secondary)]">
+            <p className="font-medium text-[var(--tp-text)]">No form open</p>
             <p className="mt-2 max-w-md mx-auto">
               In the{" "}
               <Link href="/dashboard" className={`tp-link ${focusRing}`}>
                 form library
               </Link>
-              , click <span className="font-medium text-zinc-800">Edit in builder</span> on a form to open it
+              , click <span className="font-medium text-[var(--tp-text)]">Edit in builder</span> on a form to open it
               here.
             </p>
           </div>
         ) : showTeacherTools && activeForm ? (
           <section className="space-y-8">
-            {builderAutosaveBanner ? (
-              <p className="tp-alert border border-[var(--tp-border)] bg-[var(--tp-bg)] text-[var(--tp-text-secondary)]">
-                {builderAutosaveBanner}
-              </p>
-            ) : (
-              <p className={`${ui.badgeSuccess} w-fit`}>Autosave on</p>
-            )}
-            <p className={ui.sectionTitle}>Form builder</p>
+            <div className="sticky top-2 z-10 flex flex-wrap items-center justify-between gap-3 rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-[var(--tp-surface)]/95 px-4 py-2.5 text-sm shadow-sm backdrop-blur-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className={ui.sectionTitle}>Form builder</p>
+                {builderSaveStatus === "saving" ? (
+                  <span
+                    className="tp-save-indicator"
+                    data-state="saving"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    <span aria-hidden className="tp-save-dot" />
+                    <span>Saving…</span>
+                  </span>
+                ) : builderSaveStatus === "saved" && !builderHasUnsavedChanges ? (
+                  <span
+                    className="tp-save-indicator"
+                    data-state="saved"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    <span aria-hidden className="tp-save-dot" />
+                    <span>Saved</span>
+                  </span>
+                ) : builderSaveStatus === "error" ? (
+                  <span
+                    className="tp-save-indicator"
+                    data-state="error"
+                    role="alert"
+                  >
+                    <span aria-hidden className="tp-save-dot" />
+                    <span>{builderSaveError || "Save failed"}</span>
+                  </span>
+                ) : builderHasUnsavedChanges ? (
+                  <span className="tp-save-indicator" data-state="saving">
+                    <span aria-hidden className="tp-save-dot" />
+                    <span>Unsaved changes</span>
+                  </span>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                onClick={() => void saveBuilderForm()}
+                disabled={
+                  builderSaveStatus === "saving" ||
+                  isMutating ||
+                  (!builderHasUnsavedChanges && builderSaveStatus !== "error")
+                }
+                className={`${ui.btnPrimary} disabled:opacity-50`}
+                aria-busy={builderSaveStatus === "saving"}
+              >
+                <svg
+                  aria-hidden
+                  className="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                  <polyline points="17 21 17 13 7 13 7 21" />
+                  <polyline points="7 3 7 8 15 8" />
+                </svg>
+                {builderSaveStatus === "saving"
+                  ? buttonLabel("Saving…")
+                  : buttonLabel("Save form")}
+              </button>
+            </div>
             <div className="space-y-3">
               <label className="block text-sm font-medium">
                 Form title
@@ -1992,7 +2364,7 @@ export default function Home() {
                 />
               </label>
 
-              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-3 text-sm">
+              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] px-3 py-3 text-sm">
                 <input
                   type="checkbox"
                   checked={activeForm.liveTeacherFeedbackEnabled}
@@ -2005,8 +2377,8 @@ export default function Home() {
                   className="mt-0.5"
                 />
                 <span>
-                  <span className="font-medium text-zinc-900">Live teacher feedback</span>
-                  <span className="mt-0.5 block text-zinc-600">
+                  <span className="font-medium text-[var(--tp-text)]">Live teacher feedback</span>
+                  <span className="mt-0.5 block text-[var(--tp-text-secondary)]">
                     While students answer text questions, you can type comments on their live view that
                     appear under their text box in real time.
                   </span>
@@ -2014,7 +2386,7 @@ export default function Home() {
               </label>
             </div>
 
-            <div className="flex flex-wrap gap-2 border-t border-zinc-200 pt-6">
+            <div className="flex flex-wrap gap-2 border-t border-[var(--tp-border)] pt-6">
               <button
                 type="button"
                 onClick={() => void addQuestion("multipleChoice")}
@@ -2221,34 +2593,75 @@ export default function Home() {
             onFocusCapture={schedulePointerInteractionHeartbeat}
             {...examProtectionHandlers(Boolean(joinedSession && !examFinished))}
           >
+            {isBuilderStudentPreview ? (
+              <div className="rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] px-4 py-3 text-sm">
+                <p className="font-medium text-[var(--tp-text)]">Preview mode</p>
+                <p className="mt-1 text-[var(--tp-text-secondary)]">
+                  Try the exam as a student. Answers here are not saved.
+                </p>
+              </div>
+            ) : null}
             {joinedSession && examFinished ? (
               <div
-                className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-[var(--tp-radius)] border border-[var(--tp-success-border)] bg-white/95 p-6 text-center shadow-lg backdrop-blur-sm tp-anim-fade-in"
+                className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 overflow-hidden rounded-[var(--tp-radius)] border border-[var(--tp-success-border)] bg-[var(--tp-surface)]/95 p-6 text-center shadow-lg backdrop-blur-sm tp-anim-fade-in"
                 role="status"
+                aria-live="polite"
               >
-                <span aria-hidden className="tp-anim-celebrate">
-                  <svg
-                    className="h-12 w-12 text-[var(--tp-mint)]"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <circle cx="12" cy="12" r="10" />
-                    <path d="m9 12 2 2 4-4" />
-                  </svg>
-                </span>
-                <p className="text-lg font-semibold text-[var(--tp-text)]">Submitted</p>
-                <p className="max-w-md text-sm text-[var(--tp-text-secondary)]">
-                  Your answers are saved. You can keep this tab open.
-                </p>
+                {showStudentConfetti ? <Confetti /> : null}
+                {examGraded && pointsEarned != null && pointsPossible != null ? (
+                  <>
+                    <div className="tp-anim-pop">
+                      <ScoreRing
+                        earned={pointsEarned}
+                        possible={pointsPossible}
+                        size={140}
+                        stroke={12}
+                        animate
+                      />
+                    </div>
+                    <p className="text-lg font-semibold text-[var(--tp-text)]">
+                      {scoreTierMessage(scoreTier(pointsEarned, pointsPossible))}
+                    </p>
+                    <p className="max-w-md text-sm text-[var(--tp-text-secondary)]">
+                      You earned{" "}
+                      <span className="font-semibold text-[var(--tp-text)]">
+                        {formatPointsScore(pointsEarned, pointsPossible)}
+                      </span>
+                      .
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <span aria-hidden className="tp-anim-celebrate">
+                      <svg
+                        className="h-12 w-12 text-[var(--tp-mint)]"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.4"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <circle cx="12" cy="12" r="10" />
+                        <path d="m9 12 2 2 4-4" />
+                      </svg>
+                    </span>
+                    <p className="text-lg font-semibold text-[var(--tp-text)]">Submitted</p>
+                    <p className="inline-flex items-center gap-2 text-sm text-[var(--tp-text-secondary)]">
+                      <span aria-hidden className="tp-halo-dot" />
+                      Your teacher is grading your exam.
+                    </p>
+                    <p className="max-w-md text-xs text-[var(--tp-text-muted)]">
+                      Your answers are saved. You can keep this tab open — your score will appear
+                      here when grading is done.
+                    </p>
+                  </>
+                )}
               </div>
             ) : null}
             {joinedSession && examSuspended ? (
               <div
-                className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-[var(--tp-radius)] border border-[var(--tp-warning-border)] bg-white/95 p-6 text-center shadow-lg backdrop-blur-sm tp-anim-fade-in"
+                className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-[var(--tp-radius)] border border-[var(--tp-warning-border)] bg-[var(--tp-surface)]/95 p-6 text-center shadow-lg backdrop-blur-sm tp-anim-fade-in"
                 role="alert"
               >
                 <span aria-hidden>
@@ -2271,11 +2684,51 @@ export default function Home() {
                 </p>
               </div>
             ) : null}
+            {isBuilderStudentPreview && examTotalQuestions > 0 ? (
+              <div
+                className="sticky top-2 z-10 flex flex-wrap items-center justify-between gap-3 rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-[var(--tp-surface)]/95 px-4 py-2.5 text-sm shadow-sm backdrop-blur-sm"
+              >
+                <span className="font-medium text-[var(--tp-text)]">No time limit</span>
+                <div
+                  className="tp-exam-progress"
+                  role="progressbar"
+                  aria-label="Exam progress"
+                  aria-valuemin={0}
+                  aria-valuemax={examTotalQuestions}
+                  aria-valuenow={examAnsweredCount}
+                >
+                  <div className="tp-exam-progress__bar" aria-hidden>
+                    <div
+                      className={`tp-exam-progress__fill${
+                        examProgressFillVariant
+                          ? ` tp-exam-progress__fill--${examProgressFillVariant}`
+                          : ""
+                      }`}
+                      style={{ width: `${examProgressPct}%` }}
+                    />
+                  </div>
+                  <div className="tp-exam-progress__label">
+                    <span className="tp-exam-progress__count">
+                      {examAnsweredCount} / {examTotalQuestions}
+                    </span>
+                    <span className="text-[var(--tp-text-muted)]">answered</span>
+                    <span
+                      className={`tp-exam-progress__cheer${
+                        examAllAnswered ? " tp-exam-progress__cheer--ready" : ""
+                      }`}
+                      aria-live="polite"
+                    >
+                      · {examProgressCheer}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : null}
             {joinedSession ? (
               <div
                 className={`sticky top-2 z-10 flex flex-wrap items-center justify-between gap-3 rounded-[var(--tp-radius-sm)] border px-4 py-2.5 text-sm shadow-sm ${
                   sessionOpen
-                    ? "border-[var(--tp-border)] bg-white/95 backdrop-blur-sm text-[var(--tp-text)]"
+                    ? "border-[var(--tp-border)] bg-[var(--tp-surface)]/95 backdrop-blur-sm text-[var(--tp-text)]"
                     : "border-[var(--tp-warning-border)] bg-[var(--tp-warning-soft)] text-[var(--tp-warning-text)]"
                 }`}
               >
@@ -2312,6 +2765,41 @@ export default function Home() {
                     </span>
                   )}
                 </span>
+                {examTotalQuestions > 0 && !examFinished && sessionOpen ? (
+                  <div
+                    className="tp-exam-progress"
+                    role="progressbar"
+                    aria-label="Exam progress"
+                    aria-valuemin={0}
+                    aria-valuemax={examTotalQuestions}
+                    aria-valuenow={examAnsweredCount}
+                  >
+                    <div className="tp-exam-progress__bar" aria-hidden>
+                      <div
+                        className={`tp-exam-progress__fill${
+                          examProgressFillVariant
+                            ? ` tp-exam-progress__fill--${examProgressFillVariant}`
+                            : ""
+                        }`}
+                        style={{ width: `${examProgressPct}%` }}
+                      />
+                    </div>
+                    <div className="tp-exam-progress__label">
+                      <span className="tp-exam-progress__count">
+                        {examAnsweredCount} / {examTotalQuestions}
+                      </span>
+                      <span className="text-[var(--tp-text-muted)]">answered</span>
+                      <span
+                        className={`tp-exam-progress__cheer${
+                          examAllAnswered ? " tp-exam-progress__cheer--ready" : ""
+                        }`}
+                        aria-live="polite"
+                      >
+                        · {examProgressCheer}
+                      </span>
+                    </div>
+                  </div>
+                ) : null}
                 {activeExamDisplayName ? (
                   <span className="text-xs text-[var(--tp-text-secondary)]">
                     {activeExamDisplayName}
@@ -2320,28 +2808,57 @@ export default function Home() {
               </div>
             ) : null}
 
-            {joinedSession && studentResumeCode ? (
-              <StudentExamReconnect resumeCode={studentResumeCode} />
-            ) : null}
-
             <header>
               <h2 className="text-2xl font-bold">{studentExamForm.title || "Untitled Form"}</h2>
               {studentExamForm.description ? (
-                <p className="mt-1 text-zinc-600">{studentExamForm.description}</p>
+                <p className="mt-1 text-[var(--tp-text-secondary)]">{studentExamForm.description}</p>
               ) : null}
             </header>
 
             {studentExamQuestions.length === 0 ? (
-              <p className="rounded-lg border border-dashed border-zinc-300 p-4 text-zinc-600">
+              <p className="rounded-lg border border-dashed border-[var(--tp-border-strong)] p-4 text-[var(--tp-text-secondary)]">
                 This form has no questions yet.
               </p>
             ) : (
               <form ref={examFormRef} className={ui.questionList}>
-                {studentExamQuestions.map((question, index) => (
-                  <article key={question.id} className={ui.questionCardNested}>
-                    <h3 className="mb-3 text-base font-semibold text-[var(--tp-text)]">
-                      {index + 1}. {question.prompt || "Untitled question"}
-                    </h3>
+                {studentExamQuestions.map((question, index) => {
+                  const answered = isQuestionAnswered(question);
+                  const examActive = Boolean(
+                    isBuilderStudentPreview ||
+                      (joinedSession && sessionOpen && !examSuspended && !examFinished),
+                  );
+                  return (
+                  <article
+                    key={question.id}
+                    className={`${ui.questionCardNested}${
+                      answered && examActive ? " tp-question-card--answered" : ""
+                    }`}
+                  >
+                    <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
+                      <h3 className="text-base font-semibold text-[var(--tp-text)]">
+                        {index + 1}. {question.prompt || "Untitled question"}
+                      </h3>
+                      {answered && examActive ? (
+                        <span
+                          key={`answered-${question.id}-badge`}
+                          className="tp-answered-badge"
+                          aria-label="Answered"
+                        >
+                          <svg
+                            aria-hidden
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="3"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          >
+                            <path d="M5 12l5 5L20 7" />
+                          </svg>
+                          Answered
+                        </span>
+                      ) : null}
+                    </div>
 
                     {question.type === "multipleChoice" ? (
                       <div className="space-y-2">
@@ -2354,14 +2871,23 @@ export default function Home() {
                               type="radio"
                               name={question.id}
                               value={option}
-                              checked={examAnswers[question.id] === option}
+                              checked={effectiveExamAnswers[question.id] === option}
                               disabled={
-                                examAnswersLoading ||
-                                (Boolean(joinedSession) && !sessionOpen) ||
-                                Boolean(examSuspended) ||
-                                Boolean(examFinished)
+                                isBuilderStudentPreview
+                                  ? false
+                                  : examAnswersLoading ||
+                                    (Boolean(joinedSession) && !sessionOpen) ||
+                                    Boolean(examSuspended) ||
+                                    Boolean(examFinished)
                               }
                               onChange={(event) => {
+                                if (isBuilderStudentPreview) {
+                                  setPreviewAnswers((prev) => ({
+                                    ...prev,
+                                    [question.id]: event.target.value,
+                                  }));
+                                  return;
+                                }
                                 scheduleTypingHeartbeat();
                                 patchChoiceAnswer(question.id, event.target.value);
                               }}
@@ -2375,21 +2901,31 @@ export default function Home() {
                         <StudentExamTextarea
                           id={question.id}
                           rows={4}
-                          value={examAnswers[question.id] ?? ""}
+                          value={effectiveExamAnswers[question.id] ?? ""}
                           disabled={
-                            examAnswersLoading ||
-                            (Boolean(joinedSession) && !sessionOpen) ||
-                            Boolean(examSuspended) ||
-                            Boolean(examFinished)
+                            isBuilderStudentPreview
+                              ? false
+                              : examAnswersLoading ||
+                                (Boolean(joinedSession) && !sessionOpen) ||
+                                Boolean(examSuspended) ||
+                                Boolean(examFinished)
                           }
                           protect={Boolean(
-                            joinedSession &&
+                            !isBuilderStudentPreview &&
+                              joinedSession &&
                               studentAnswersHydrated &&
                               sessionOpen &&
                               !examSuspended &&
                               !examFinished,
                           )}
                           onValueChange={(next) => {
+                            if (isBuilderStudentPreview) {
+                              setPreviewAnswers((prev) => ({
+                                ...prev,
+                                [question.id]: next,
+                              }));
+                              return;
+                            }
                             scheduleTypingHeartbeat();
                             patchTextAnswer(question.id, next);
                           }}
@@ -2404,10 +2940,12 @@ export default function Home() {
                       </div>
                     )}
                   </article>
-                ))}
+                  );
+                })}
               </form>
             )}
 
+            {!isBuilderStudentPreview ? (
             <div className="flex flex-col-reverse items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p
                 ref={autosaveStatusElRef}
@@ -2434,33 +2972,60 @@ export default function Home() {
                   {buttonLabel("Save now")}
                 </button>
                 {joinedSession && sessionOpen && !examSuspended && !examFinished ? (
-                  <button
-                    type="button"
-                    onClick={() => void submitExam()}
-                    disabled={isMutating || !anonymousSessionId}
-                    className={`${ui.btnPrimary} disabled:opacity-50`}
-                  >
-                    <svg
-                      aria-hidden
-                      className="h-4 w-4"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
+                  <div className="relative">
+                    {showAllAnsweredCelebrate ? (
+                      <Confetti pieces={22} durationMs={1500} />
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => void submitExam()}
+                      disabled={isMutating || !anonymousSessionId}
+                      className={`${
+                        examAllAnswered
+                          ? `tp-submit-ready ${focusRing}`
+                          : `${ui.btnPrimary} disabled:opacity-50`
+                      }`}
+                      aria-label={
+                        examAllAnswered ? "You're ready — submit your exam" : "Submit exam"
+                      }
                     >
-                      <path d="M5 12l5 5L20 7" />
-                    </svg>
-                    Submit exam
-                  </button>
+                      <svg
+                        aria-hidden
+                        className="h-4 w-4"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M5 12l5 5L20 7" />
+                      </svg>
+                      {examAllAnswered ? "Submit your exam" : "Submit exam"}
+                      {examAllAnswered ? (
+                        <svg
+                          aria-hidden
+                          className="h-4 w-4 tp-submit-ready__arrow"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M5 12h14M13 5l7 7-7 7" />
+                        </svg>
+                      ) : null}
+                    </button>
+                  </div>
                 ) : null}
               </div>
             </div>
+            ) : null}
           </section>
         ) : !showTeacherTools ? (
           <p className="text-[var(--tp-text-secondary)]">
-            {isTeacher && mode === "student"
+            {isTeacher && mode === "student" && !activeForm
               ? "Enter your name and join with a session code to try the exam as a student."
               : "Enter a code above to begin."}
           </p>
@@ -2471,7 +3036,7 @@ export default function Home() {
             role="status"
             aria-live="polite"
             aria-atomic="true"
-            className="mt-6 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700"
+            className="mt-6 rounded-md border border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] px-3 py-2 text-sm text-[var(--tp-text-secondary)]"
           >
             {statusMessage}
           </div>

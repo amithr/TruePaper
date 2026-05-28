@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { isValidAnonymousSessionId } from "@/lib/anonymous-session";
+import { parseQuestionGrades, sumEarnedPoints, sumPossiblePoints } from "@/lib/exam-grades";
 import { buildForms } from "@/lib/forms-api";
 import type { Form } from "@/lib/forms";
 import { isMissingColumnError } from "@/lib/is-missing-db-column";
@@ -14,7 +15,7 @@ type Params = {
 };
 
 const RESPONSE_SELECT_WITH_NAME =
-  "answers, student_display_name, suspended_at, finished_at, last_activity_at, updated_at, live_teacher_feedback, student_resume_code";
+  "answers, student_display_name, suspended_at, finished_at, text_graded_at, text_grades, last_activity_at, updated_at, live_teacher_feedback, student_resume_code";
 const RESPONSE_SELECT_LEGACY =
   "answers, suspended_at, finished_at, last_activity_at, updated_at";
 const FORM_SELECT = "id, title, description, created_by, live_teacher_feedback_enabled";
@@ -144,6 +145,23 @@ export async function GET(_request: Request, { params }: Params) {
     rowError = retry.error;
   }
 
+  if (rowError && isMissingColumnError(rowError, "text_graded_at")) {
+    const retry = await supabase
+      .from("form_responses")
+      .select(
+        RESPONSE_SELECT_WITH_NAME.replace(", text_graded_at, text_grades", "").replace(
+          ", student_resume_code",
+          "",
+        ),
+      )
+      .eq("live_session_id", liveSessionId)
+      .eq("anonymous_session_id", deviceId)
+      .is("student_id", null)
+      .maybeSingle();
+    row = retry.data as Record<string, unknown> | null;
+    rowError = retry.error;
+  }
+
   if (rowError) {
     return NextResponse.json({ error: rowError.message }, { status: 500 });
   }
@@ -154,21 +172,17 @@ export async function GET(_request: Request, { params }: Params) {
     typeof row?.student_display_name === "string" ? row.student_display_name.trim() : "";
   const suspended = Boolean(row?.suspended_at);
   const finished = Boolean(row?.finished_at);
+  const gradedAt = typeof row?.text_graded_at === "string" ? row.text_graded_at : null;
+  const graded = Boolean(gradedAt);
+  const questionGrades = parseQuestionGrades(row?.text_grades);
   const lastActivityAt = typeof row?.last_activity_at === "string" ? row.last_activity_at : null;
   const updatedAt = typeof row?.updated_at === "string" ? row.updated_at : null;
 
-  let studentResumeCode =
-    typeof row?.student_resume_code === "string" ? row.student_resume_code.trim().toUpperCase() : "";
+  const pointsPossible = sumPossiblePoints(form.questions);
+  const pointsEarned = graded ? sumEarnedPoints(questionGrades, form.questions) : null;
 
-  if (row && !studentResumeCode) {
-    const { data: ensured, error: ensureError } = await supabase.rpc("ensure_student_resume_code", {
-      p_live_session_id: liveSessionId,
-      p_device_id: deviceId,
-    });
-    if (!ensureError && typeof ensured === "string") {
-      studentResumeCode = ensured.trim().toUpperCase();
-    }
-  }
+  const studentResumeCode =
+    typeof row?.student_resume_code === "string" ? row.student_resume_code.trim().toUpperCase() : "";
 
   return NextResponse.json({
     session: {
@@ -183,11 +197,16 @@ export async function GET(_request: Request, { params }: Params) {
       displayName,
       suspended,
       finished,
+      graded,
+      gradedAt,
       lastActivityAt,
       hasJoined: row != null,
     },
     form: form as Form,
     answers,
+    questionGrades,
+    pointsEarned,
+    pointsPossible,
     liveTeacherFeedback: parseLiveTeacherFeedback(row?.live_teacher_feedback),
     studentResumeCode: studentResumeCode || null,
     updatedAt,

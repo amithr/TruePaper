@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState, type FormEvent } from "react";
 
 import { AuthLayout } from "@/components/AuthLayout";
+import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import {
   isValidLiveSessionDisplayName,
   normalizeLiveSessionDisplayName,
@@ -116,7 +117,22 @@ export default function RegisterPage() {
         </p>
       }
     >
-      <form className="space-y-5" onSubmit={onSubmit}>
+      <div className="space-y-5">
+        <GoogleSignInButton
+          nextPath="/dashboard"
+          label="Sign up with Google"
+          disabled={pending}
+          onError={(message) => setError(message)}
+        />
+        <div
+          className="flex items-center gap-3 text-xs font-medium uppercase tracking-wider text-[var(--tp-text-muted)]"
+          aria-hidden
+        >
+          <span className="h-px flex-1 bg-[var(--tp-border)]" />
+          <span>or</span>
+          <span className="h-px flex-1 bg-[var(--tp-border)]" />
+        </div>
+        <form className="space-y-5" onSubmit={onSubmit}>
           <label className={ui.label}>
             Your name
             <input
@@ -200,10 +216,11 @@ export default function RegisterPage() {
           </label>
           {error ? <p className={ui.alertError}>{error}</p> : null}
           {info ? <p className={ui.alertSuccess}>{info}</p> : null}
-        <button type="submit" disabled={pending} className={`w-full ${ui.btnPrimary}`}>
-          {pending ? buttonLabel("Creating account…") : buttonLabel("Create account")}
-        </button>
-      </form>
+          <button type="submit" disabled={pending} className={`w-full ${ui.btnPrimary}`}>
+            {pending ? buttonLabel("Creating account…") : buttonLabel("Create account")}
+          </button>
+        </form>
+      </div>
     </AuthLayout>
   );
 }

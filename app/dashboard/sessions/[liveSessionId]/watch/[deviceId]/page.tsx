@@ -4,9 +4,21 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { ConfirmButton } from "@/components/ConfirmButton";
+import { Confetti } from "@/components/Confetti";
 import { LoadingBar } from "@/components/LoadingBar";
+import { ScoreRing } from "@/components/ScoreMeter";
 import { StudentReviewShare } from "@/components/StudentReviewShare";
-import type { Form, StudentAnswers } from "@/lib/forms";
+import { TeacherStudentRejoinShare } from "@/components/TeacherStudentRejoinShare";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import {
+  formatPointsScore,
+  gradingStateFor,
+  isFullyGraded,
+  sumEarnedPoints,
+  sumPossiblePoints,
+} from "@/lib/exam-grades";
+import type { Form, Question, StudentAnswers } from "@/lib/forms";
 import { isNoTimeLimitSession } from "@/lib/session-window";
 import { parseStudentAnswersJson, stableStringifyStudentAnswers } from "@/lib/student-answers-json";
 import {
@@ -28,8 +40,7 @@ import {
   parseLiveTeacherFeedback,
   type LiveTeacherFeedbackByQuestionId,
 } from "@/lib/live-teacher-feedback";
-import { formatResumeCodeForDisplay } from "@/lib/resume-code";
-import { buttonLabel, ui } from "@/lib/ui";
+import { buttonLabel, focusRing, ui } from "@/lib/ui";
 import { messageForBackgroundRefreshError } from "@/lib/background-network-error";
 import { deferEffect } from "@/lib/defer-effect";
 import { requestJson } from "@/lib/request-json";
@@ -48,11 +59,16 @@ type SnapshotJson = {
     displayName: string;
     suspended: boolean;
     finished: boolean;
+    graded: boolean;
+    gradedAt: string | null;
     lastActivityAt: string | null;
     hasJoined: boolean;
   };
   form: Form;
   answers: StudentAnswers;
+  questionGrades: Record<string, number>;
+  pointsEarned: number | null;
+  pointsPossible: number | null;
   liveTeacherFeedback: LiveTeacherFeedbackByQuestionId;
   studentResumeCode: string | null;
   updatedAt: string | null;
@@ -134,7 +150,31 @@ export default function WatchStudentExamPage() {
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [realtimeMode, setRealtimeMode] = useState<RealtimeMode>("connecting");
   const [pointsDraftsByQuestionId, setPointsDraftsByQuestionId] = useState<Record<string, number>>({});
+  const [gradeDraftsByQuestionId, setGradeDraftsByQuestionId] = useState<Record<string, number>>({});
+  /** Server-confirmed earned points by question id. `undefined` means not graded yet. */
+  const [serverGradesByQuestionId, setServerGradesByQuestionId] = useState<
+    Record<string, number | undefined>
+  >({});
   const [savingPointsQuestionId, setSavingPointsQuestionId] = useState<string | null>(null);
+  /** Saving / saved state for per-question grade autosave (UI only). */
+  const [gradeSaveStateByQuestionId, setGradeSaveStateByQuestionId] = useState<
+    Record<string, "saving" | "saved" | "error">
+  >({});
+  /** Questions where the teacher has explicitly overridden the auto-graded MC value. */
+  const [mcOverriddenQuestionIds, setMcOverriddenQuestionIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const gradeSaveTimerRef = useRef<Record<string, number>>({});
+  const gradeSaveClearTimerRef = useRef<Record<string, number>>({});
+  /** True while local earned points differ from last server sync for that question. */
+  const dirtyGradeRef = useRef<Record<string, boolean>>({});
+  const syncedQuestionGradesJsonRef = useRef<string>("");
+  const latestGradeDraftsRef = useLatestRef(gradeDraftsByQuestionId);
+  const gradeSaveStateRef = useLatestRef(gradeSaveStateByQuestionId);
+  const persistGradeRef = useRef<(question: Question) => Promise<void>>(() => Promise.resolve());
+  const [markingGraded, setMarkingGraded] = useState(false);
+  const [gradeAriaMessage, setGradeAriaMessage] = useState("");
+  const [showCelebrate, setShowCelebrate] = useState(false);
   const [liveFeedbackDraftsByQuestionId, setLiveFeedbackDraftsByQuestionId] = useState<
     Record<string, string>
   >({});
@@ -142,6 +182,7 @@ export default function WatchStudentExamPage() {
     () => new Set(),
   );
   const [liveAnswerDrafts, setLiveAnswerDrafts] = useState<StudentAnswers>({});
+  const [removingExam, setRemovingExam] = useState(false);
   const liveFeedbackSaveTimerRef = useRef<Record<string, number>>({});
   const scheduleLiveFeedbackSaveRef = useRef<(questionId: string) => void>(() => {});
   const liveFeedbackSavingQuestionIdsRef = useLatestRef(liveFeedbackSavingQuestionIds);
@@ -169,6 +210,30 @@ export default function WatchStudentExamPage() {
         liveFeedbackSaveTimerRef.current[questionId] !== undefined ||
         liveFeedbackSavingQuestionIdsRef.current.has(questionId),
     );
+
+  const isGradePending = (questionId: string): boolean =>
+    Boolean(
+      dirtyGradeRef.current[questionId] ||
+        gradeSaveTimerRef.current[questionId] !== undefined ||
+        gradeSaveStateRef.current[questionId] === "saving",
+    );
+
+  const mergeQuestionGradesForDisplay = (
+    server: Record<string, number | undefined>,
+  ): Record<string, number> => {
+    const merged: Record<string, number> = {};
+    for (const [questionId, value] of Object.entries(server)) {
+      if (typeof value === "number") {
+        merged[questionId] = value;
+      }
+    }
+    for (const [questionId, draft] of Object.entries(latestGradeDraftsRef.current)) {
+      if (isGradePending(questionId)) {
+        merged[questionId] = draft;
+      }
+    }
+    return merged;
+  };
 
   const applyServerLiveFeedback = (server: LiveTeacherFeedbackByQuestionId) => {
     const merged = mergeLiveFeedbackForDisplay(server);
@@ -210,17 +275,21 @@ export default function WatchStudentExamPage() {
           stableStringifyStudentAnswers(prev.answers) === stableStringifyStudentAnswers(data.answers);
         const feedbackUnchanged =
           JSON.stringify(prev.liveTeacherFeedback) === JSON.stringify(data.liveTeacherFeedback);
+        const mergedGrades = mergeQuestionGradesForDisplay(data.questionGrades);
+        const gradesUnchanged =
+          JSON.stringify(prev.questionGrades) === JSON.stringify(mergedGrades);
         const metaUnchanged =
           prev.updatedAt === data.updatedAt &&
           prev.student.suspended === data.student.suspended &&
           prev.student.finished === data.student.finished &&
           prev.student.displayName === data.student.displayName &&
           prev.student.lastActivityAt === data.student.lastActivityAt;
-        if (answersUnchanged && feedbackUnchanged && metaUnchanged) {
+        if (answersUnchanged && feedbackUnchanged && gradesUnchanged && metaUnchanged) {
           return prev;
         }
         return {
           ...data,
+          questionGrades: mergedGrades,
           liveTeacherFeedback: applyServerLiveFeedback(data.liveTeacherFeedback),
         };
       });
@@ -325,7 +394,41 @@ export default function WatchStudentExamPage() {
     deferEffect(() => {
       setPointsDraftsByQuestionId(nextPoints);
     });
-  }, [snapshot]);
+  }, [snapshot?.form.questions]);
+
+  useEffect(() => {
+    if (!snapshot) {
+      return;
+    }
+    const serverJson = JSON.stringify(snapshot.questionGrades);
+    if (serverJson === syncedQuestionGradesJsonRef.current) {
+      return;
+    }
+    syncedQuestionGradesJsonRef.current = serverJson;
+    const serverGrades = snapshot.questionGrades;
+    deferEffect(() => {
+      const nextServerGrades: Record<string, number | undefined> = {};
+      for (const question of snapshot.form.questions) {
+        const serverVal = serverGrades[question.id];
+        nextServerGrades[question.id] = typeof serverVal === "number" ? serverVal : undefined;
+      }
+      setServerGradesByQuestionId(nextServerGrades);
+      setGradeDraftsByQuestionId((prev) => {
+        const next: Record<string, number> = {};
+        for (const question of snapshot.form.questions) {
+          const serverVal = serverGrades[question.id];
+          if (isGradePending(question.id)) {
+            next[question.id] =
+              prev[question.id] ?? latestGradeDraftsRef.current[question.id] ?? serverVal ?? 0;
+          } else {
+            next[question.id] = typeof serverVal === "number" ? serverVal : 0;
+            dirtyGradeRef.current[question.id] = false;
+          }
+        }
+        return next;
+      });
+    });
+  }, [snapshot?.questionGrades, snapshot?.form.questions]);
 
   useEffect(() => {
     if (!snapshot) {
@@ -481,6 +584,132 @@ export default function WatchStudentExamPage() {
     }
   };
 
+  const persistQuestionGrade = useCallback(
+    async (question: Question) => {
+      const maxPts = Math.max(1, Math.min(1000, Number(question.points) || 1));
+      const earned = Math.max(
+        0,
+        Math.min(maxPts, latestGradeDraftsRef.current[question.id] ?? 0),
+      );
+      setGradeSaveStateByQuestionId((prev) => ({ ...prev, [question.id]: "saving" }));
+      try {
+        await requestJson<{ ok: true }>(
+          `/api/forms/live-sessions/${liveSessionId}/participants/${encodeURIComponent(deviceIdNorm)}/grades`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ questionId: question.id, points: earned }),
+          },
+        );
+        dirtyGradeRef.current[question.id] = false;
+        setServerGradesByQuestionId((prev) => ({ ...prev, [question.id]: earned }));
+        setSnapshot((prev) => {
+          if (!prev) {
+            return prev;
+          }
+          const questionGrades = { ...prev.questionGrades, [question.id]: earned };
+          syncedQuestionGradesJsonRef.current = JSON.stringify(questionGrades);
+          return { ...prev, questionGrades };
+        });
+        setGradeDraftsByQuestionId((prev) => ({ ...prev, [question.id]: earned }));
+        setGradeSaveStateByQuestionId((prev) => ({ ...prev, [question.id]: "saved" }));
+        setGradeAriaMessage(
+          `Saved: ${earned} of ${maxPts} point${maxPts === 1 ? "" : "s"} for question.`,
+        );
+        // Hide the "saved" indicator after a couple seconds.
+        const existing = gradeSaveClearTimerRef.current[question.id];
+        if (existing !== undefined) {
+          window.clearTimeout(existing);
+        }
+        gradeSaveClearTimerRef.current[question.id] = window.setTimeout(() => {
+          delete gradeSaveClearTimerRef.current[question.id];
+          setGradeSaveStateByQuestionId((prev) => {
+            if (prev[question.id] !== "saved") {
+              return prev;
+            }
+            const next = { ...prev };
+            delete next[question.id];
+            return next;
+          });
+        }, 2200);
+      } catch (e) {
+        dirtyGradeRef.current[question.id] = true;
+        setGradeSaveStateByQuestionId((prev) => ({ ...prev, [question.id]: "error" }));
+        setLoadError(e instanceof Error ? e.message : "Could not save earned points.");
+      }
+    },
+    [liveSessionId, deviceIdNorm],
+  );
+
+  useEffect(() => {
+    persistGradeRef.current = persistQuestionGrade;
+  }, [persistQuestionGrade]);
+
+  const scheduleGradeSave = useCallback((question: Question) => {
+    const existing = gradeSaveTimerRef.current[question.id];
+    if (existing !== undefined) {
+      window.clearTimeout(existing);
+    }
+    setGradeSaveStateByQuestionId((prev) => ({ ...prev, [question.id]: "saving" }));
+    gradeSaveTimerRef.current[question.id] = window.setTimeout(() => {
+      delete gradeSaveTimerRef.current[question.id];
+      void persistGradeRef.current(question);
+    }, 500);
+  }, []);
+
+  const flushAllGradeSaves = useCallback(() => {
+    const ids = Object.keys(gradeSaveTimerRef.current);
+    for (const qid of ids) {
+      const timer = gradeSaveTimerRef.current[qid];
+      if (timer !== undefined) {
+        window.clearTimeout(timer);
+        delete gradeSaveTimerRef.current[qid];
+        const question = snapshot?.form.questions.find((q) => q.id === qid);
+        if (question) {
+          void persistGradeRef.current(question);
+        }
+      }
+    }
+  }, [snapshot]);
+
+  useEffect(() => {
+    const onHide = () => flushAllGradeSaves();
+    window.addEventListener("pagehide", onHide);
+    // Snapshot ref maps at effect setup so cleanup acts on the same instances
+    // even if the refs are reassigned later.
+    const saveTimers = gradeSaveTimerRef.current;
+    const clearTimers = gradeSaveClearTimerRef.current;
+    return () => {
+      window.removeEventListener("pagehide", onHide);
+      for (const timer of Object.values(saveTimers)) {
+        window.clearTimeout(timer);
+      }
+      for (const timer of Object.values(clearTimers)) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [flushAllGradeSaves]);
+
+  const markExamGraded = async () => {
+    setMarkingGraded(true);
+    setLoadError("");
+    flushAllGradeSaves();
+    try {
+      await requestJson<{ ok: true }>(
+        `/api/forms/live-sessions/${liveSessionId}/participants/${encodeURIComponent(deviceIdNorm)}/mark-graded`,
+        { method: "POST" },
+      );
+      await refreshRef.current();
+      setStatusMessage("Exam marked as graded.");
+      setShowCelebrate(true);
+      window.setTimeout(() => setShowCelebrate(false), 1400);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "Could not mark exam graded.");
+    } finally {
+      setMarkingGraded(false);
+    }
+  };
+
   useEffect(() => {
     if (session === undefined || session === null || !liveSessionId || !deviceIdNorm) {
       return;
@@ -585,6 +814,27 @@ export default function WatchStudentExamPage() {
   const titleName = st.displayName || maskDeviceId(st.anonymousSessionId);
   const noTimeLimit = isNoTimeLimitSession(s.opensAt, s.closesAt);
 
+  // Derived grading progress + running total.
+  const allQuestions = snapshot.form.questions;
+  const possibleTotal = sumPossiblePoints(allQuestions);
+  // For the running total we want the latest local edits (so the score-strip
+  // reacts immediately as the teacher types), but for "fully graded" we rely
+  // on server-confirmed state to avoid premature enabling of the CTA.
+  const effectiveGrades: Record<string, number> = {};
+  for (const q of allQuestions) {
+    const server = serverGradesByQuestionId[q.id];
+    const draft = gradeDraftsByQuestionId[q.id];
+    effectiveGrades[q.id] = typeof server === "number" ? (draft ?? server) : (draft ?? 0);
+  }
+  const runningEarned = sumEarnedPoints(effectiveGrades, allQuestions);
+  const gradedCount = allQuestions.filter(
+    (q) => typeof serverGradesByQuestionId[q.id] === "number",
+  ).length;
+  const allGraded = isFullyGraded(serverGradesByQuestionId, allQuestions);
+  const anyGradeSaving = Object.values(gradeSaveStateByQuestionId).some((v) => v === "saving");
+  const canMarkGraded =
+    st.finished && !st.graded && allQuestions.length > 0 && allGraded && !anyGradeSaving;
+
   const streamLine =
     realtimeMode === "live"
       ? "Answers update live when the student saves or changes their response."
@@ -592,12 +842,31 @@ export default function WatchStudentExamPage() {
         ? "Live updates disconnected. Use Refresh or reload the page."
         : "Connecting to live updates…";
 
-  const focusRing =
-    "focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 focus-visible:ring-offset-2";
+  const removeStudentExam = async () => {
+    if (!liveSessionId || !deviceIdNorm) {
+      return;
+    }
+    setRemovingExam(true);
+    setLoadError("");
+    try {
+      await requestJson<{ ok: true }>(
+        `/api/forms/live-sessions/${liveSessionId}/participants/${encodeURIComponent(deviceIdNorm)}`,
+        { method: "DELETE" },
+      );
+      router.replace(`/dashboard/sessions/${liveSessionId}`);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "Could not remove student exam.");
+      setRemovingExam(false);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-[var(--tp-bg)] py-8 text-[var(--tp-text)] sm:py-10">
+    <div className="relative min-h-screen bg-[var(--tp-bg)] py-8 text-[var(--tp-text)] sm:py-10">
+      {showCelebrate ? <Confetti /> : null}
       <main className="mx-auto w-full max-w-3xl space-y-6 px-4 sm:px-6">
+        <div className="flex justify-end">
+          <ThemeToggle />
+        </div>
         <div>
           <Link
             href={`/dashboard/sessions/${liveSessionId}`}
@@ -609,22 +878,47 @@ export default function WatchStudentExamPage() {
             {st.finished ? "Review submission" : "Live session"} · {titleName}
           </h1>
           <p className="mt-1 font-mono text-xs text-zinc-600">Device {maskDeviceId(st.anonymousSessionId)}</p>
+          <Link
+            href={`/dashboard/sessions/${liveSessionId}/exam-list`}
+            className={`mt-2 inline-block text-sm tp-link ${focusRing}`}
+          >
+            See Exam List
+          </Link>
           {st.hasJoined ? (
-            <div className="mt-3">
+            <div className="mt-3 flex flex-wrap items-center gap-2">
               <StudentReviewShare
                 liveSessionId={liveSessionId}
                 deviceId={deviceIdNorm}
               />
+              <a
+                href={`/api/forms/live-sessions/${liveSessionId}/participants/${encodeURIComponent(deviceIdNorm)}/exam-pdf`}
+                download
+                className="rounded-[var(--tp-radius-sm)] border border-[var(--tp-border-strong)] bg-[var(--tp-surface)] px-2.5 py-1.5 text-xs font-medium text-[var(--tp-text)] shadow-sm transition-all hover:bg-[var(--tp-bg-subtle)] active:scale-[0.97]"
+                title="Download this student's exam, feedback, and score as a PDF"
+              >
+                {buttonLabel("Download PDF")}
+              </a>
+              <ConfirmButton
+                tone="danger"
+                label={buttonLabel("Remove exam")}
+                confirmLabel={buttonLabel("Tap again to remove")}
+                busy={removingExam}
+                busyLabel={buttonLabel("Removing…")}
+                disabled={removingExam}
+                className="px-2.5 py-1.5 text-xs"
+                onConfirm={() => void removeStudentExam()}
+              />
             </div>
           ) : null}
-          {snapshot.studentResumeCode ? (
-            <p className="mt-2 text-sm text-zinc-700">
-              Student rejoin code:{" "}
-              <span className="font-mono font-semibold tracking-wider text-zinc-900">
-                {formatResumeCodeForDisplay(snapshot.studentResumeCode)}
-              </span>
-              <span className="ml-2 text-xs text-zinc-500">(if they lost this browser)</span>
-            </p>
+          {st.hasJoined && s.sessionOpen && !st.finished ? (
+            <div className="mt-3">
+              <TeacherStudentRejoinShare
+                liveSessionId={liveSessionId}
+                deviceId={deviceIdNorm}
+                initialCode={snapshot.studentResumeCode}
+                studentLabel={st.displayName || undefined}
+              />
+            </div>
           ) : null}
           <p className="mt-2 text-sm text-zinc-600">
             {s.sessionOpen
@@ -633,30 +927,129 @@ export default function WatchStudentExamPage() {
           </p>
         </div>
 
-        <div
-          className={`rounded-[var(--tp-radius)] border px-4 py-3 text-sm ${
-            st.suspended
-              ? "border-[var(--tp-warning-border)] bg-[var(--tp-warning-soft)] text-[var(--tp-warning-text)]"
-              : st.finished
-                ? "border-[var(--tp-success-border)] bg-[var(--tp-mint-soft)] text-emerald-900"
+        {st.finished ? (
+          <div className="tp-grade-strip tp-anim-fade-up">
+            <ScoreRing
+              earned={st.graded ? (snapshot.pointsEarned ?? runningEarned) : runningEarned}
+              possible={st.graded ? (snapshot.pointsPossible ?? possibleTotal) : possibleTotal}
+              size={84}
+              stroke={9}
+              animate
+            />
+            <div className="tp-grade-strip__progress">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <p className="text-sm font-semibold text-[var(--tp-text)]">
+                  {st.graded ? (
+                    <span className="inline-flex items-center gap-2">
+                      <span className="tp-status tp-status-graded">
+                        <span className="tp-status-dot" />
+                        Graded
+                      </span>
+                      <span className="text-[var(--tp-text-secondary)] font-medium">
+                        {formatPointsScore(
+                          snapshot.pointsEarned ?? runningEarned,
+                          snapshot.pointsPossible ?? possibleTotal,
+                        )}
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-2">
+                      <span className="tp-status tp-status-finished">
+                        <span className="tp-status-dot" />
+                        Submitted
+                      </span>
+                      <span className="text-[var(--tp-text-secondary)] font-medium">
+                        {gradedCount} / {allQuestions.length} graded
+                      </span>
+                    </span>
+                  )}
+                </p>
+                <p className="font-mono text-xs tabular-nums text-[var(--tp-text-secondary)]">
+                  {runningEarned} / {possibleTotal} pts
+                </p>
+              </div>
+              <div className="mt-2 tp-grade-strip__bar" aria-hidden>
+                <div
+                  className={`tp-grade-strip__bar-fill ${
+                    allGraded ? "tp-grade-strip__bar-fill--ready" : ""
+                  }`}
+                  style={{
+                    width: `${
+                      allQuestions.length === 0
+                        ? 0
+                        : Math.round((gradedCount / allQuestions.length) * 100)
+                    }%`,
+                  }}
+                />
+              </div>
+              {st.lastActivityAt ? (
+                <p className="mt-1.5 text-[11px] text-[var(--tp-text-muted)]">
+                  Last activity {new Date(st.lastActivityAt).toLocaleString()}
+                </p>
+              ) : null}
+            </div>
+            {!st.graded ? (
+              <button
+                type="button"
+                disabled={!canMarkGraded || markingGraded}
+                onClick={() => void markExamGraded()}
+                title={
+                  canMarkGraded
+                    ? "Mark this exam as fully graded"
+                    : "Enter points for every question to enable"
+                }
+                className={`tp-mark-graded-cta ${focusRing}`}
+              >
+                {markingGraded ? (
+                  buttonLabel("Marking…")
+                ) : (
+                  <>
+                    <svg
+                      aria-hidden
+                      className="h-4 w-4"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M5 12l5 5L20 7" />
+                    </svg>
+                    Mark as graded
+                  </>
+                )}
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          <div
+            className={`rounded-[var(--tp-radius)] border px-4 py-3 text-sm ${
+              st.suspended
+                ? "border-[var(--tp-warning-border)] bg-[var(--tp-warning-soft)] text-[var(--tp-warning-text)]"
                 : "border-[var(--tp-border)] bg-[var(--tp-surface)] text-[var(--tp-text)]"
-          }`}
-        >
-          {!st.hasJoined ? (
-            <p className="font-medium">Student hasn’t opened the exam yet.</p>
-          ) : st.suspended ? (
-            <p className="font-medium">Paused — student left the tab.</p>
-          ) : st.finished ? (
-            <p className="font-medium">Submitted — answers are read-only.</p>
-          ) : (
-            <p className="font-medium">Live — answers and feedback sync as you both type.</p>
-          )}
-          {st.lastActivityAt ? (
-            <p className="mt-1 text-xs opacity-80">
-              Last activity {new Date(st.lastActivityAt).toLocaleString()}
-            </p>
-          ) : null}
-        </div>
+            }`}
+          >
+            {!st.hasJoined ? (
+              <p className="font-medium">Student hasn’t opened the exam yet.</p>
+            ) : st.suspended ? (
+              <p className="font-medium">Paused — student left the tab.</p>
+            ) : (
+              <p className="font-medium">Live — answers and feedback sync as you both type.</p>
+            )}
+            {st.lastActivityAt ? (
+              <p className="mt-1 text-xs opacity-80">
+                Last activity {new Date(st.lastActivityAt).toLocaleString()}
+              </p>
+            ) : null}
+          </div>
+        )}
+        <p className="sr-only" aria-live="polite" role="status">
+          {gradeAriaMessage}
+        </p>
+        {loadError ? (
+          <p className={ui.alertError}>{loadError}</p>
+        ) : null}
         {statusMessage ? (
           <p className="tp-alert tp-alert-success border px-4 py-3 text-sm text-emerald-900">
             {statusMessage}
@@ -677,11 +1070,48 @@ export default function WatchStudentExamPage() {
             </p>
           ) : (
             <div className={`mt-6 ${ui.questionList}`}>
-              {snapshot.form.questions.map((question, index) => (
-                <article key={question.id} className={ui.questionCardNested}>
-                  <h3 className="text-sm font-semibold text-zinc-900">
-                    {index + 1}. {question.prompt || "Untitled question"}
-                  </h3>
+              {snapshot.form.questions.map((question, index) => {
+                const serverGrade = serverGradesByQuestionId[question.id];
+                const draftGrade = gradeDraftsByQuestionId[question.id] ?? 0;
+                const gradingState = gradingStateFor(question, serverGrade);
+                const isAutoMc = gradingState === "auto";
+                const showMcOverride = isAutoMc && mcOverriddenQuestionIds.has(question.id);
+                const saveState = gradeSaveStateByQuestionId[question.id];
+                const gradeInputDisabled =
+                  st.graded || (isAutoMc && !showMcOverride);
+                const handleGradeChange = (next: number) => {
+                  const maxPts = question.points;
+                  const clamped = Math.max(0, Math.min(maxPts, Math.round(next)));
+                  dirtyGradeRef.current[question.id] = true;
+                  setGradeDraftsByQuestionId((current) => ({
+                    ...current,
+                    [question.id]: clamped,
+                  }));
+                  scheduleGradeSave(question);
+                };
+                return (
+                <article
+                  key={question.id}
+                  className={`${ui.questionCardNested} tp-question-grade tp-question-grade--${gradingState}`}
+                >
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <h3 className="text-sm font-semibold text-zinc-900">
+                      {index + 1}. {question.prompt || "Untitled question"}
+                    </h3>
+                    {st.finished ? (
+                      gradingState === "needs-grading" ? (
+                        <span className="tp-grade-pill tp-grade-pill--needs">Needs grading</span>
+                      ) : gradingState === "auto" ? (
+                        <span className="tp-grade-pill tp-grade-pill--auto">
+                          Auto · {serverGrade} / {question.points}
+                        </span>
+                      ) : (
+                        <span className="tp-grade-pill tp-grade-pill--graded">
+                          Graded · {serverGrade} / {question.points}
+                        </span>
+                      )
+                    ) : null}
+                  </div>
 
                   <div className={`${ui.questionScoring} mt-3 mb-4 flex flex-wrap items-end gap-3`}>
                     <div>
@@ -713,13 +1143,145 @@ export default function WatchStudentExamPage() {
                       type="button"
                       onClick={() => void saveQuestionPoints(question)}
                       disabled={savingPointsQuestionId === question.id}
-                      className={`${ui.btnPrimary} px-2.5 py-1.5 text-xs disabled:opacity-50`}
+                      className={`${ui.btnSecondary} px-2.5 py-1.5 text-xs disabled:opacity-50`}
                     >
                       {savingPointsQuestionId === question.id
                         ? buttonLabel("Saving…")
                         : buttonLabel("Save points")}
                     </button>
                   </div>
+
+                  {st.finished ? (
+                    <div className="mt-3 mb-4 rounded-[var(--tp-radius-sm)] border border-violet-200 bg-violet-50/50 px-3 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className={ui.sectionTitle}>Earned</p>
+                        {!st.graded && saveState ? (
+                          <span
+                            className="tp-save-indicator"
+                            data-state={saveState === "error" ? "error" : saveState}
+                          >
+                            <span aria-hidden className="tp-save-dot" />
+                            <span>
+                              {saveState === "saving"
+                                ? "Saving"
+                                : saveState === "saved"
+                                  ? "Saved"
+                                  : "Save failed"}
+                            </span>
+                          </span>
+                        ) : null}
+                      </div>
+
+                      {isAutoMc && !showMcOverride ? (
+                        <div className="mt-2 flex flex-wrap items-center gap-3">
+                          <span className="text-sm font-semibold text-emerald-900">
+                            {serverGrade} / {question.points} pts
+                          </span>
+                          <span className="text-xs text-[var(--tp-text-secondary)]">
+                            Auto-scored from the answer key.
+                          </span>
+                          {!st.graded ? (
+                            <button
+                              type="button"
+                              className={`tp-link text-xs ${focusRing}`}
+                              onClick={() =>
+                                setMcOverriddenQuestionIds((prev) => {
+                                  const next = new Set(prev);
+                                  next.add(question.id);
+                                  return next;
+                                })
+                              }
+                            >
+                              Override
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <>
+                          <div className="mt-2 flex flex-wrap items-end gap-3">
+                            <label className={`${ui.label} block`}>
+                              Points for this answer
+                              <div className="mt-1 flex items-center gap-2">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={question.points}
+                                  value={draftGrade}
+                                  disabled={gradeInputDisabled}
+                                  onChange={(event) =>
+                                    handleGradeChange(Number(event.target.value) || 0)
+                                  }
+                                  className={ui.pointsInput}
+                                  aria-label={`Points earned on question ${index + 1}`}
+                                />
+                                <span className="text-sm font-medium text-[var(--tp-text-muted)]">
+                                  / {question.points}
+                                </span>
+                              </div>
+                            </label>
+                            {!st.graded ? (
+                              <div
+                                className="flex flex-wrap items-center gap-1.5"
+                                role="group"
+                                aria-label="Quick score"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => handleGradeChange(question.points)}
+                                  className={`tp-quick-chip tp-quick-chip--full ${
+                                    draftGrade === question.points ? "tp-quick-chip--active" : ""
+                                  } ${focusRing}`}
+                                >
+                                  Full
+                                </button>
+                                {question.points >= 2 ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleGradeChange(question.points / 2)}
+                                    className={`tp-quick-chip tp-quick-chip--half ${
+                                      draftGrade > 0 &&
+                                      draftGrade < question.points
+                                        ? "tp-quick-chip--active"
+                                        : ""
+                                    } ${focusRing}`}
+                                  >
+                                    Half
+                                  </button>
+                                ) : null}
+                                <button
+                                  type="button"
+                                  onClick={() => handleGradeChange(0)}
+                                  className={`tp-quick-chip tp-quick-chip--zero ${
+                                    draftGrade === 0 ? "tp-quick-chip--active" : ""
+                                  } ${focusRing}`}
+                                >
+                                  Zero
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
+                          {isAutoMc && showMcOverride && !st.graded ? (
+                            <p className="mt-2 text-xs text-[var(--tp-text-secondary)]">
+                              Overriding the auto-graded value.{" "}
+                              <button
+                                type="button"
+                                className={`tp-link ${focusRing}`}
+                                onClick={() => {
+                                  setMcOverriddenQuestionIds((prev) => {
+                                    const next = new Set(prev);
+                                    next.delete(question.id);
+                                    return next;
+                                  });
+                                }}
+                              >
+                                Restore auto
+                              </button>
+                            </p>
+                          ) : null}
+                        </>
+                      )}
+                    </div>
+                  ) : null}
 
                   {question.type === "multipleChoice" ? (
                     <div className="space-y-2">
@@ -805,7 +1367,8 @@ export default function WatchStudentExamPage() {
                     </div>
                   )}
                 </article>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>

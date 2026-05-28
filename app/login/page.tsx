@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 import { AuthLayout } from "@/components/AuthLayout";
+import { GoogleSignInButton } from "@/components/GoogleSignInButton";
 import { buttonLabel, ui } from "@/lib/ui";
 
 export default function LoginPage() {
@@ -13,6 +14,23 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+
+  /** Read OAuth callback errors out of the URL once on mount and strip them. */
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const params = new URLSearchParams(window.location.search);
+    const authError = params.get("auth_error");
+    if (!authError) {
+      return;
+    }
+    setError(authError);
+    params.delete("auth_error");
+    const query = params.toString();
+    const nextUrl = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`;
+    window.history.replaceState({}, "", nextUrl);
+  }, []);
 
   const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
@@ -55,35 +73,51 @@ export default function LoginPage() {
         </p>
       }
     >
-      <form className="space-y-5" onSubmit={onSubmit}>
-        <label className={ui.label}>
-          Email
-          <input
-            type="email"
-            autoComplete="email"
-            required
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className={ui.input}
-            placeholder="you@school.edu"
-          />
-        </label>
-        <label className={ui.label}>
-          Password
-          <input
-            type="password"
-            autoComplete="current-password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className={ui.input}
-          />
-        </label>
-        {error ? <p className={ui.alertError}>{error}</p> : null}
-        <button type="submit" disabled={pending} className={`w-full ${ui.btnPrimary}`}>
-          {pending ? buttonLabel("Signing in…") : buttonLabel("Sign in")}
-        </button>
-      </form>
+      <div className="space-y-5">
+        <GoogleSignInButton
+          nextPath="/dashboard"
+          label="Sign in with Google"
+          disabled={pending}
+          onError={(message) => setError(message)}
+        />
+        <div
+          className="flex items-center gap-3 text-xs font-medium uppercase tracking-wider text-[var(--tp-text-muted)]"
+          aria-hidden
+        >
+          <span className="h-px flex-1 bg-[var(--tp-border)]" />
+          <span>or</span>
+          <span className="h-px flex-1 bg-[var(--tp-border)]" />
+        </div>
+        <form className="space-y-5" onSubmit={onSubmit}>
+          <label className={ui.label}>
+            Email
+            <input
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className={ui.input}
+              placeholder="you@school.edu"
+            />
+          </label>
+          <label className={ui.label}>
+            Password
+            <input
+              type="password"
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className={ui.input}
+            />
+          </label>
+          {error ? <p className={ui.alertError}>{error}</p> : null}
+          <button type="submit" disabled={pending} className={`w-full ${ui.btnPrimary}`}>
+            {pending ? buttonLabel("Signing in…") : buttonLabel("Sign in")}
+          </button>
+        </form>
+      </div>
     </AuthLayout>
   );
 }

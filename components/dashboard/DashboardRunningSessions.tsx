@@ -220,9 +220,26 @@ export function DashboardRunningSessions({
                         <span className="tp-status-dot" />
                         {s.assignedCount} joined
                       </span>
+                      {s.needsGradingCount > 0 ? (
+                        <span
+                          className="tp-status tp-status-blocked"
+                          title={`${s.needsGradingCount} submission${
+                            s.needsGradingCount === 1 ? "" : "s"
+                          } need${s.needsGradingCount === 1 ? "s" : ""} grading`}
+                        >
+                          <span className="tp-status-dot" />
+                          {s.needsGradingCount} to grade
+                        </span>
+                      ) : null}
                     </div>
-                    <div className="mt-3">
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
                       <SessionJoinShare joinCode={s.joinCode} />
+                      <Link
+                        href={`/dashboard/sessions/${s.id}/exam-list`}
+                        className={`tp-btn-ghost text-xs ${focusRing}`}
+                      >
+                        See Exam List
+                      </Link>
                     </div>
                   </div>
                   <div className="flex flex-col items-end gap-2 text-right text-sm">
