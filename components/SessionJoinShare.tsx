@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import QRCode from "react-qr-code";
 
 import { copyToClipboard } from "@/lib/copy-to-clipboard";
+import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { buildStudentJoinUrl } from "@/lib/student-join-url";
 
 type Props = {
@@ -74,6 +75,7 @@ function QrIcon() {
 }
 
 export function SessionJoinShare({ joinCode, showQr = true, className }: Props) {
+  const t = useTranslations();
   const [copied, setCopied] = useState<"link" | "code" | null>(null);
   const [showQrPanel, setShowQrPanel] = useState(false);
   const [origin] = useState(() =>
@@ -121,7 +123,7 @@ export function SessionJoinShare({ joinCode, showQr = true, className }: Props) 
           className={copied === "link" ? btnSuccess : btnBase}
         >
           {copied === "link" ? <CheckIcon /> : <CopyIcon />}
-          {copied === "link" ? "Link copied" : "Copy link"}
+          {copied === "link" ? t("share.join.linkCopied") : t("share.join.copyLink")}
         </button>
         <button
           type="button"
@@ -129,7 +131,7 @@ export function SessionJoinShare({ joinCode, showQr = true, className }: Props) 
           className={copied === "code" ? btnSuccess : btnBase}
         >
           {copied === "code" ? <CheckIcon /> : <CopyIcon />}
-          {copied === "code" ? "Code copied" : "Copy code"}
+          {copied === "code" ? t("share.join.codeCopied") : t("share.join.copyCode")}
         </button>
         {showQr ? (
           <button
@@ -139,7 +141,7 @@ export function SessionJoinShare({ joinCode, showQr = true, className }: Props) 
             aria-expanded={showQrPanel}
           >
             <QrIcon />
-            {showQrPanel ? "Hide QR" : "Show QR"}
+            {showQrPanel ? t("share.join.hideQr") : t("share.join.showQr")}
           </button>
         ) : null}
       </div>
@@ -149,7 +151,7 @@ export function SessionJoinShare({ joinCode, showQr = true, className }: Props) 
             <QRCode value={qrUrl} size={128} className="h-32 w-32" />
           </div>
           <p className="mt-2 max-w-[10rem] text-center text-[10px] leading-relaxed text-[var(--tp-text-muted)]">
-            Scan to join on a phone
+            {t("share.join.qrHint")}
           </p>
         </div>
       ) : null}

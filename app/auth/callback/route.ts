@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 
+import {
+  DEFAULT_LOCALE,
+  isLocale,
+  pickLocaleFromAcceptLanguage,
+  type Locale,
+} from "@/lib/i18n/config";
 import { createSupabaseServerClientForResponse } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +40,32 @@ function safeRelativeNext(raw: string | null): string {
   return raw;
 }
 
+/** Locale preference is taken from the cookie set by the proxy, or the
+ *  Accept-Language header, then the default. */
+function readPreferredLocale(request: Request): Locale {
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  const match = /(?:^|;\s*)tp_locale=([^;]+)/.exec(cookieHeader);
+  if (match) {
+    const value = decodeURIComponent(match[1] ?? "");
+    if (isLocale(value)) {
+      return value;
+    }
+  }
+  const fromHeader = pickLocaleFromAcceptLanguage(request.headers.get("accept-language"));
+  return isLocale(fromHeader) ? fromHeader : DEFAULT_LOCALE;
+}
+
+function prefixWithLocaleIfRelative(path: string, locale: Locale): string {
+  if (!path.startsWith("/") || path.startsWith("//")) {
+    return `/${locale}/dashboard`;
+  }
+  const segments = path.split("/");
+  if (segments[1] && isLocale(segments[1])) {
+    return path;
+  }
+  return path === "/" ? `/${locale}` : `/${locale}${path}`;
+}
+
 function friendlyAuthErrorMessage(raw: string | null | undefined): string {
   if (!raw) {
     return "We couldn't complete sign-in. Please try again.";
@@ -54,16 +86,37 @@ function friendlyAuthErrorMessage(raw: string | null | undefined): string {
   return raw;
 }
 
-function loginErrorRedirect(originBase: string, message: string): NextResponse {
-  const target = new URL("/login", originBase);
+function loginErrorRedirect(originBase: string, message: string, locale: Locale): NextResponse {
+  const target = new URL(`/${locale}/login`, originBase);
   target.searchParams.set("auth_error", message);
   return NextResponse.redirect(target);
+}
+
+/**
+ * Safety net: OAuth sign-ups should always land as teachers (students join
+ * anonymously by code). The `handle_new_user` trigger normally does this when
+ * the OAuth-aware migration is applied, but if the project still has the older
+ * trigger, OAuth users get `role = 'student'` and `/dashboard` bounces them to
+ * `/`. This RPC is the only path that may flip `profiles.role` for an
+ * authenticated user — the table's RLS policy pins role to its existing value.
+ * The RPC itself refuses to act for email/password users, so an attacker
+ * cannot call it from a regular signed-in session to elevate themselves.
+ */
+async function ensureOAuthTeacherProfile(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClientForResponse>>,
+): Promise<void> {
+  try {
+    await supabase.rpc("ensure_oauth_teacher_role");
+  } catch {
+    // Best-effort: never block sign-in on this safety net.
+  }
 }
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
   const nextPath = safeRelativeNext(url.searchParams.get("next"));
+  const locale = readPreferredLocale(request);
 
   const forwardedHost = request.headers.get("x-forwarded-host");
   const isLocal = process.env.NODE_ENV === "development";
@@ -74,21 +127,22 @@ export async function GET(request: Request) {
   const providerError =
     url.searchParams.get("error_description") ?? url.searchParams.get("error");
   if (providerError) {
-    return loginErrorRedirect(base, friendlyAuthErrorMessage(providerError));
+    return loginErrorRedirect(base, friendlyAuthErrorMessage(providerError), locale);
   }
 
   if (!code) {
-    return NextResponse.redirect(base);
+    return NextResponse.redirect(new URL(`/${locale}`, base));
   }
 
-  const destination = `${base}${nextPath}`;
+  const destination = `${base}${prefixWithLocaleIfRelative(nextPath, locale)}`;
   const response = NextResponse.redirect(destination);
   const supabase = await createSupabaseServerClientForResponse(response);
   const { error } = await supabase.auth.exchangeCodeForSession(code);
 
   if (!error) {
+    await ensureOAuthTeacherProfile(supabase);
     return response;
   }
 
-  return loginErrorRedirect(base, friendlyAuthErrorMessage(error.message));
+  return loginErrorRedirect(base, friendlyAuthErrorMessage(error.message), locale);
 }

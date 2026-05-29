@@ -1,4 +1,7 @@
-import Link from "next/link";
+"use client";
+
+import { useTranslations } from "@/lib/i18n/I18nProvider";
+import { LocaleLink } from "@/lib/i18n/client";
 
 type Props = {
   size?: "default" | "lg";
@@ -13,6 +16,7 @@ export function BrandMark({
   showText = true,
   className,
 }: Props) {
+  const t = useTranslations();
   const inner = (
     <span className={`inline-flex items-center gap-2 ${className ?? ""}`}>
       <span
@@ -23,7 +27,7 @@ export function BrandMark({
       </span>
       {showText ? (
         <span className="text-base font-bold tracking-tight text-[var(--tp-text)] sm:text-lg">
-          Truepaper
+          {t("common.appName")}
         </span>
       ) : null}
     </span>
@@ -34,11 +38,11 @@ export function BrandMark({
   }
 
   return (
-    <Link
+    <LocaleLink
       href={href}
       className="focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--tp-accent-ring)] focus-visible:ring-offset-2 rounded-md"
     >
       {inner}
-    </Link>
+    </LocaleLink>
   );
 }

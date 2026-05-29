@@ -20,8 +20,12 @@ export async function POST(request: Request, { params }: Params) {
   const supabase = await createSupabaseServerClient();
   const session = await getSessionUser(supabase);
 
-  if (!session) {
+  if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+
+  if (session.profile?.role !== "teacher") {
+    return NextResponse.json({ error: "Only teachers can add questions." }, { status: 403 });
   }
 
   const { formId } = await params;
@@ -31,6 +35,24 @@ export async function POST(request: Request, { params }: Params) {
 
   if (type !== "multipleChoice" && type !== "text") {
     return NextResponse.json({ error: "Invalid question type." }, { status: 400 });
+  }
+
+  const { data: formOwner, error: formOwnerError } = await supabase
+    .from("forms")
+    .select("id")
+    .eq("id", formId)
+    .eq("created_by", session.user.id)
+    .maybeSingle();
+
+  if (formOwnerError) {
+    return NextResponse.json({ error: formOwnerError.message }, { status: 500 });
+  }
+
+  if (!formOwner) {
+    return NextResponse.json(
+      { error: "Form not found or you do not have access." },
+      { status: 404 },
+    );
   }
 
   const { data: maxOrderData, error: maxOrderError } = await supabase

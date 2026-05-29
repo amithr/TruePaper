@@ -3,7 +3,7 @@
 import { useCallback, useState } from "react";
 
 import { copyToClipboard } from "@/lib/copy-to-clipboard";
-import { buttonLabel } from "@/lib/ui";
+import { useTranslations } from "@/lib/i18n/I18nProvider";
 
 type Props = {
   liveSessionId: string;
@@ -19,6 +19,7 @@ const btnDone =
   "inline-flex items-center gap-1.5 rounded-[var(--tp-radius-sm)] border border-[var(--tp-success-border)] bg-[var(--tp-mint-soft)] px-2.5 py-1.5 text-xs font-semibold text-emerald-800 shadow-sm";
 
 export function StudentReviewShare({ liveSessionId, deviceId, disabled = false, className }: Props) {
+  const t = useTranslations();
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -36,7 +37,7 @@ export function StudentReviewShare({ liveSessionId, deviceId, disabled = false, 
       );
       const data = (await res.json()) as { reviewUrl?: string; error?: string };
       if (!res.ok || !data.reviewUrl) {
-        throw new Error(data.error ?? "Could not create review link.");
+        throw new Error(data.error ?? t("share.review.errors.create"));
       }
       const ok = await copyToClipboard(data.reviewUrl);
       if (ok) {
@@ -44,11 +45,11 @@ export function StudentReviewShare({ liveSessionId, deviceId, disabled = false, 
         window.setTimeout(() => setCopied(false), 2500);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not copy link.");
+      setError(e instanceof Error ? e.message : t("share.review.errors.copy"));
     } finally {
       setLoading(false);
     }
-  }, [liveSessionId, deviceId, disabled, loading]);
+  }, [liveSessionId, deviceId, disabled, loading, t]);
 
   return (
     <div className={className}>
@@ -86,7 +87,7 @@ export function StudentReviewShare({ liveSessionId, deviceId, disabled = false, 
             <path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1" />
           </svg>
         )}
-        {loading ? buttonLabel("Creating…") : copied ? "Link copied" : "Copy results link"}
+        {loading ? t("share.review.creating") : copied ? t("share.review.copied") : t("share.review.copy")}
       </button>
       {error ? <p className="mt-1 text-xs text-red-700">{error}</p> : null}
     </div>

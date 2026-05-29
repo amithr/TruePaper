@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useLocaleRouter as useRouter } from "@/lib/i18n/client";
 import { useCallback, useEffect, useState } from "react";
 
 import { ConfirmButton } from "@/components/ConfirmButton";
@@ -8,7 +8,8 @@ import { LoadingBar } from "@/components/LoadingBar";
 import { PAST_SESSIONS_PAGE_SIZE } from "@/lib/teacher-dashboard-server";
 import type { TeacherSessionSummary } from "@/lib/teacher-sessions";
 import { deferEffect } from "@/lib/defer-effect";
-import { buttonLabel, ui } from "@/lib/ui";
+import { useTranslations } from "@/lib/i18n/I18nProvider";
+import { ui } from "@/lib/ui";
 import { requestJson } from "@/lib/request-json";
 import { usePostgresRealtimeRefresh } from "@/lib/use-postgres-realtime-refresh";
 
@@ -18,6 +19,7 @@ type Props = {
 
 export function DashboardPastSessions({ onError }: Props) {
   const router = useRouter();
+  const t = useTranslations();
   const [sessions, setSessions] = useState<TeacherSessionSummary[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -41,12 +43,12 @@ export function DashboardPastSessions({ onError }: Props) {
         setTotal(data.total);
         setPage(data.page);
       } catch (e) {
-        onError(e instanceof Error ? e.message : "Failed to load past sessions.");
+        onError(e instanceof Error ? e.message : t("pastSessions.errors.load"));
       } finally {
         setLoading(false);
       }
     },
-    [onError],
+    [onError, t],
   );
 
   useEffect(() => {
@@ -77,7 +79,7 @@ export function DashboardPastSessions({ onError }: Props) {
       const nextPage = sessions.length === 1 && page > 0 ? page - 1 : page;
       await loadPage(nextPage);
     } catch (e) {
-      onError(e instanceof Error ? e.message : "Could not delete session.");
+      onError(e instanceof Error ? e.message : t("pastSessions.errors.delete"));
     } finally {
       setDeletingSessionId(null);
     }
@@ -85,13 +87,13 @@ export function DashboardPastSessions({ onError }: Props) {
 
   return (
     <section className="tp-card p-6">
-      <p className={ui.sectionTitle}>History</p>
-      <h2 className="text-xl font-semibold tracking-tight">Past sessions</h2>
+      <p className={ui.sectionTitle}>{t("dashboard.historyEyebrow")}</p>
+      <h2 className="text-xl font-semibold tracking-tight">{t("dashboard.pastSessionsTitle")}</h2>
       {loading && sessions.length === 0 ? (
-        <LoadingBar className="mt-4 max-w-md" label="Loading past sessions" />
+        <LoadingBar className="mt-4 max-w-md" label={t("loading.pastSessions")} />
       ) : null}
       {!loading && total === 0 ? (
-        <p className="mt-4 tp-empty">No sessions yet.</p>
+        <p className="mt-4 tp-empty">{t("pastSessions.empty")}</p>
       ) : null}
       {!loading && sessions.length > 0 ? (
         <div className="mt-4 space-y-3">
@@ -99,11 +101,11 @@ export function DashboardPastSessions({ onError }: Props) {
             <table className="w-full min-w-[32rem] text-left text-sm">
               <thead>
                 <tr className="border-b border-[var(--tp-border)] text-[var(--tp-text-muted)]">
-                  <th className="py-2 pr-4 font-medium">Form</th>
-                  <th className="py-2 pr-4 font-medium">Code</th>
-                  <th className="py-2 pr-4 font-medium">Closed</th>
-                  <th className="py-2 pr-4 font-medium">Students</th>
-                  <th className="py-2 font-medium">Actions</th>
+                  <th className="py-2 pr-4 font-medium">{t("pastSessions.colForm")}</th>
+                  <th className="py-2 pr-4 font-medium">{t("pastSessions.colCode")}</th>
+                  <th className="py-2 pr-4 font-medium">{t("pastSessions.colClosed")}</th>
+                  <th className="py-2 pr-4 font-medium">{t("pastSessions.colStudents")}</th>
+                  <th className="py-2 font-medium">{t("pastSessions.colActions")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -139,7 +141,7 @@ export function DashboardPastSessions({ onError }: Props) {
                         <span>{s.responseCount}</span>
                         {s.needsGradingCount > 0 ? (
                           <span className="tp-grade-pill tp-grade-pill--needs">
-                            {s.needsGradingCount} to grade
+                            {t("pastSessions.toGrade", { n: s.needsGradingCount })}
                           </span>
                         ) : null}
                       </div>
@@ -147,10 +149,10 @@ export function DashboardPastSessions({ onError }: Props) {
                     <td className="py-3" onClick={(event) => event.stopPropagation()}>
                       <ConfirmButton
                         tone="danger"
-                        label={buttonLabel("Delete")}
-                        confirmLabel={buttonLabel("Tap again")}
+                        label={t("common.delete")}
+                        confirmLabel={t("common.tapAgain")}
                         busy={deletingSessionId === s.id}
-                        busyLabel={buttonLabel("Deleting…")}
+                        busyLabel={t("common.deleting")}
                         disabled={deletingSessionId !== null}
                         className="px-2 py-1 text-xs"
                         onConfirm={() => void deleteSession(s.id)}
@@ -164,10 +166,11 @@ export function DashboardPastSessions({ onError }: Props) {
           {total > PAST_SESSIONS_PAGE_SIZE ? (
             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--tp-border)] pt-3 text-sm text-[var(--tp-text-secondary)]">
               <p>
-                Page <span className="font-medium text-[var(--tp-text)]">{page + 1}</span> of{" "}
-                <span className="font-medium text-[var(--tp-text)]">{totalPages}</span>
-                <span className="text-[var(--tp-text-muted)]"> · </span>
-                {total} session{total === 1 ? "" : "s"}
+                {t("pastSessions.page", {
+                  current: page + 1,
+                  total: totalPages,
+                  totalSessions: total,
+                })}
               </p>
               <div className="flex items-center gap-2">
                 <button
@@ -176,7 +179,7 @@ export function DashboardPastSessions({ onError }: Props) {
                   onClick={() => void loadPage(page - 1)}
                   className={`${ui.btnSecondary} px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-40`}
                 >
-                  {buttonLabel("Previous")}
+                  {t("common.previous")}
                 </button>
                 <button
                   type="button"
@@ -184,7 +187,7 @@ export function DashboardPastSessions({ onError }: Props) {
                   onClick={() => void loadPage(page + 1)}
                   className={`${ui.btnSecondary} px-3 py-1.5 text-sm disabled:cursor-not-allowed disabled:opacity-40`}
                 >
-                  {buttonLabel("Next")}
+                  {t("common.next")}
                 </button>
               </div>
             </div>

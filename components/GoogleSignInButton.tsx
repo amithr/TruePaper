@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 
+import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
-import { buttonLabel, focusRing } from "@/lib/ui";
+import { focusRing } from "@/lib/ui";
 
 type Props = {
   /** Where to send the user after the OAuth callback exchanges the code. */
@@ -18,10 +19,12 @@ type Props = {
 
 export function GoogleSignInButton({
   nextPath = "/dashboard",
-  label = "Continue with Google",
+  label,
   disabled,
   onError,
 }: Props) {
+  const t = useTranslations();
+  const resolvedLabel = label ?? t("auth.login.googleLabel");
   const [pending, setPending] = useState(false);
 
   const startGoogleSignIn = async () => {
@@ -47,7 +50,7 @@ export function GoogleSignInButton({
       // Supabase redirects the browser to Google; nothing else to do here.
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : "Could not start Google sign-in.";
+        err instanceof Error ? err.message : t("auth.google.couldNotStart");
       onError?.(message);
       setPending(false);
     }
@@ -61,10 +64,10 @@ export function GoogleSignInButton({
       }}
       disabled={pending || disabled}
       className={`inline-flex w-full items-center justify-center gap-2.5 rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-[var(--tp-surface)] px-4 py-2.5 text-sm font-semibold text-[var(--tp-text)] shadow-sm transition-colors hover:bg-[var(--tp-bg-subtle)] disabled:cursor-not-allowed disabled:opacity-60 ${focusRing}`}
-      aria-label={label}
+      aria-label={resolvedLabel}
     >
       <GoogleGlyph />
-      {pending ? buttonLabel("Connecting…") : buttonLabel(label)}
+      {pending ? t("auth.google.connecting") : resolvedLabel}
     </button>
   );
 }

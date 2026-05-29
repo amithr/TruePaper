@@ -1,18 +1,19 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useCallback, useState } from "react";
 
 import { BrandMark } from "@/components/BrandMark";
+import { LanguageToggle } from "@/components/LanguageToggle";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { DashboardFormLibrary } from "@/components/dashboard/DashboardFormLibrary";
 import { DashboardLazySection } from "@/components/dashboard/DashboardLazySection";
 import { DashboardPastSessions } from "@/components/dashboard/DashboardPastSessions";
 import { DashboardRunningSessions } from "@/components/dashboard/DashboardRunningSessions";
+import { useTranslations } from "@/lib/i18n/I18nProvider";
+import { LocaleLink, useLocaleRouter } from "@/lib/i18n/client";
 import { dashboardWelcomeName } from "@/lib/dashboard-welcome";
 import type { SuspendedStudentRow, TeacherSessionSummary } from "@/lib/teacher-sessions";
-import { buttonLabel, ui } from "@/lib/ui";
+import { ui } from "@/lib/ui";
 import { requestJson } from "@/lib/request-json";
 
 export type DashboardTeacherUser = {
@@ -39,7 +40,8 @@ export function TeacherDashboard({
   initialRunning,
   initialSuspensions,
 }: Props) {
-  const router = useRouter();
+  const router = useLocaleRouter();
+  const t = useTranslations();
   const [loadError, setLoadError] = useState("");
 
   const onError = useCallback((message: string) => {
@@ -68,11 +70,12 @@ export function TeacherDashboard({
         <header className="flex flex-wrap items-center justify-between gap-3">
           <BrandMark />
           <div className="flex items-center gap-2">
+            <LanguageToggle />
             <ThemeToggle />
-            <Link
+            <LocaleLink
               href="/#join-session"
               className={`${ui.btnSecondary} hidden sm:inline-flex`}
-              aria-label="Student join page"
+              aria-label={t("dashboard.studentJoinPageAria")}
             >
               <svg
                 aria-hidden
@@ -87,33 +90,34 @@ export function TeacherDashboard({
                 <path d="M3 12h12" />
                 <path d="m11 6 6 6-6 6" />
               </svg>
-              {buttonLabel("Student join")}
-            </Link>
+              {t("nav.studentJoin")}
+            </LocaleLink>
             <button
               type="button"
               onClick={() => void logout()}
               className="tp-pill"
-              aria-label="Log out"
-              title="Log out"
+              aria-label={t("dashboard.logOutAria")}
+              title={t("common.logOut")}
             >
               <span aria-hidden className="tp-avatar">
                 {avatarSeed}
               </span>
-              <span className="hidden text-sm sm:inline">Log out</span>
+              <span className="hidden text-sm sm:inline">{t("common.logOut")}</span>
             </button>
           </div>
         </header>
 
         <section className="tp-card-accent p-6 sm:p-8 tp-anim-fade-up">
-          <p className={ui.sectionTitle}>Dashboard</p>
+          <p className={ui.sectionTitle}>{t("dashboard.eyebrow")}</p>
           <h1 className="mt-1 text-3xl font-bold tracking-tight">
-            Hello, <span className="text-[var(--tp-brand)]">{name}</span>
+            {t("dashboard.helloPrefix")}
+            <span className="text-[var(--tp-brand)]">{name}</span>
           </h1>
           <p className="mt-2 max-w-2xl text-[var(--tp-text-secondary)]">
-            Run live sessions, build forms, and watch students answer in real time.
+            {t("dashboard.welcomeSubtitle")}
           </p>
           <nav
-            aria-label="Dashboard sections"
+            aria-label={t("dashboard.sectionsAria")}
             className="mt-5 flex flex-wrap items-center gap-2"
           >
             <button
@@ -122,21 +126,21 @@ export function TeacherDashboard({
               className={ui.pill}
             >
               <span aria-hidden className="text-[var(--tp-mint)]">●</span>
-              {buttonLabel("Running")}
+              {t("dashboard.running")}
             </button>
             <button
               type="button"
               onClick={() => scrollToSection("past-sessions")}
               className={ui.pill}
             >
-              {buttonLabel("Past")}
+              {t("dashboard.past")}
             </button>
             <button
               type="button"
               onClick={() => scrollToSection("form-library")}
               className={ui.pill}
             >
-              {buttonLabel("Forms")}
+              {t("dashboard.forms")}
             </button>
           </nav>
         </section>
@@ -153,9 +157,13 @@ export function TeacherDashboard({
           id="past-sessions"
           placeholder={
             <div className="tp-card p-6">
-              <p className={ui.sectionTitle}>History</p>
-              <h2 className="text-xl font-semibold tracking-tight">Past sessions</h2>
-              <p className="mt-4 text-sm text-[var(--tp-text-muted)]">Loading…</p>
+              <p className={ui.sectionTitle}>{t("dashboard.historyEyebrow")}</p>
+              <h2 className="text-xl font-semibold tracking-tight">
+                {t("dashboard.pastSessionsTitle")}
+              </h2>
+              <p className="mt-4 text-sm text-[var(--tp-text-muted)]">
+                {t("dashboard.loadingPastSessions")}
+              </p>
             </div>
           }
         >
@@ -166,9 +174,13 @@ export function TeacherDashboard({
           id="form-library"
           placeholder={
             <div className="tp-card p-6">
-              <p className={ui.sectionTitle}>Forms</p>
-              <h2 className="text-xl font-semibold tracking-tight">Form library</h2>
-              <p className="mt-4 text-sm text-[var(--tp-text-muted)]">Loading…</p>
+              <p className={ui.sectionTitle}>{t("dashboard.formsEyebrow")}</p>
+              <h2 className="text-xl font-semibold tracking-tight">
+                {t("dashboard.formLibraryTitle")}
+              </h2>
+              <p className="mt-4 text-sm text-[var(--tp-text-muted)]">
+                {t("dashboard.loadingFormLibrary")}
+              </p>
             </div>
           }
         >

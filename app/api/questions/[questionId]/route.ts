@@ -20,8 +20,12 @@ export async function PATCH(request: Request, { params }: Params) {
   const supabase = await createSupabaseServerClient();
   const session = await getSessionUser(supabase);
 
-  if (!session) {
+  if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+
+  if (session.profile?.role !== "teacher") {
+    return NextResponse.json({ error: "Only teachers can edit questions." }, { status: 403 });
   }
 
   const { questionId } = await params;
@@ -53,7 +57,7 @@ export async function PATCH(request: Request, { params }: Params) {
     );
   }
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("questions")
     .update({
       prompt,
@@ -62,10 +66,18 @@ export async function PATCH(request: Request, { params }: Params) {
       correct_answer: type === "multipleChoice" ? correctAnswer : null,
       points,
     })
-    .eq("id", questionId);
+    .eq("id", questionId)
+    .select("id");
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  if (!data?.length) {
+    return NextResponse.json(
+      { error: "Question not found or you do not have access." },
+      { status: 404 },
+    );
   }
 
   return NextResponse.json({ ok: true });
@@ -75,16 +87,31 @@ export async function DELETE(_: Request, { params }: Params) {
   const supabase = await createSupabaseServerClient();
   const session = await getSessionUser(supabase);
 
-  if (!session) {
+  if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+
+  if (session.profile?.role !== "teacher") {
+    return NextResponse.json({ error: "Only teachers can delete questions." }, { status: 403 });
   }
 
   const { questionId } = await params;
 
-  const { error } = await supabase.from("questions").delete().eq("id", questionId);
+  const { data, error } = await supabase
+    .from("questions")
+    .delete()
+    .eq("id", questionId)
+    .select("id");
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  if (!data?.length) {
+    return NextResponse.json(
+      { error: "Question not found or you do not have access." },
+      { status: 404 },
+    );
   }
 
   return NextResponse.json({ ok: true });

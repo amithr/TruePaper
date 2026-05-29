@@ -1,8 +1,12 @@
-import Link from "next/link";
+"use client";
+
 import { type ReactNode } from "react";
 
 import { BrandMark } from "@/components/BrandMark";
+import { LanguageToggle } from "@/components/LanguageToggle";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { useTranslations } from "@/lib/i18n/I18nProvider";
+import { LocaleLink } from "@/lib/i18n/client";
 
 type Props = {
   eyebrow?: string;
@@ -13,6 +17,7 @@ type Props = {
 };
 
 export function AuthLayout({ eyebrow, title, subtitle, children, footer }: Props) {
+  const t = useTranslations();
   return (
     <div className="grid min-h-screen grid-cols-1 bg-[var(--tp-bg)] lg:grid-cols-2">
       {/* Brand panel */}
@@ -36,40 +41,37 @@ export function AuthLayout({ eyebrow, title, subtitle, children, footer }: Props
         <BrandMark size="lg" href="/" />
         <div className="space-y-6 text-white">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/80">
-            Live classroom forms
+            {t("brand.sidePanelEyebrow")}
           </p>
-          <h2 className="text-3xl font-bold leading-tight">
-            Build a form. Share a code.
-            <br />
-            Watch the class write.
-          </h2>
+          <h2 className="text-3xl font-bold leading-tight">{t("brand.sidePanelTitle")}</h2>
           <ul className="space-y-2 text-sm text-white/90">
             <li className="flex items-start gap-2">
               <span aria-hidden className="mt-1 inline-block h-1.5 w-1.5 rounded-full bg-white" />
-              No accounts for students — just a 6-character code.
+              {t("brand.sidePanelBullet1")}
             </li>
             <li className="flex items-start gap-2">
               <span aria-hidden className="mt-1 inline-block h-1.5 w-1.5 rounded-full bg-white" />
-              Autosave keeps every answer safe.
+              {t("brand.sidePanelBullet2")}
             </li>
             <li className="flex items-start gap-2">
               <span aria-hidden className="mt-1 inline-block h-1.5 w-1.5 rounded-full bg-white" />
-              Live feedback the moment you type it.
+              {t("brand.sidePanelBullet3")}
             </li>
           </ul>
         </div>
         <p className="text-xs text-white/70">
-          For teachers · Students can join from{" "}
-          <Link href="/#join-session" className="underline">
-            the join page
-          </Link>
+          {t("brand.forTeachers")} ·{" "}
+          <LocaleLink href="/#join-session" className="underline">
+            {t("brand.studentsJoinFromPage")}
+          </LocaleLink>
           .
         </p>
       </aside>
 
       {/* Form panel */}
       <main className="relative flex items-center justify-center p-6 sm:p-10">
-        <div className="absolute right-4 top-4 sm:right-6 sm:top-6">
+        <div className="absolute right-4 top-4 sm:right-6 sm:top-6 flex items-center gap-2">
+          <LanguageToggle />
           <ThemeToggle />
         </div>
         <div className="w-full max-w-md tp-anim-fade-up">

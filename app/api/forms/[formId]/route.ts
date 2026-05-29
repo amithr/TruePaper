@@ -17,8 +17,12 @@ export async function PATCH(request: Request, { params }: Params) {
   const supabase = await createSupabaseServerClient();
   const session = await getSessionUser(supabase);
 
-  if (!session) {
+  if (!session?.user) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+
+  if (session.profile?.role !== "teacher") {
+    return NextResponse.json({ error: "Only teachers can edit forms." }, { status: 403 });
   }
 
   const { formId } = await params;
@@ -38,10 +42,22 @@ export async function PATCH(request: Request, { params }: Params) {
     patch.live_teacher_feedback_enabled = body.liveTeacherFeedbackEnabled;
   }
 
-  const { error } = await supabase.from("forms").update(patch).eq("id", formId);
+  const { data, error } = await supabase
+    .from("forms")
+    .update(patch)
+    .eq("id", formId)
+    .eq("created_by", session.user.id)
+    .select("id");
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  if (!data?.length) {
+    return NextResponse.json(
+      { error: "Form not found or you do not have access." },
+      { status: 404 },
+    );
   }
 
   return NextResponse.json({ ok: true });

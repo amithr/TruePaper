@@ -1,20 +1,24 @@
 import { NextResponse } from "next/server";
 
+import { countAnsweredQuestions } from "@/lib/count-answered-questions";
 import { parseQuestionGrades, sumEarnedPoints, sumPossiblePoints } from "@/lib/exam-grades";
 import { isMissingColumnError } from "@/lib/is-missing-db-column";
+import { liveTypingPreview, textAnswerWordCount } from "@/lib/live-typing-preview";
+import { parseStudentAnswersJson } from "@/lib/student-answers-json";
 import { finalizeLiveSessionIfClosed } from "@/lib/live-session-finalize";
 import { computeLiveParticipantUiStatus } from "@/lib/participant-status";
 import { getSessionUser } from "@/lib/request-auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 const FORM_RESPONSES_OVERVIEW_SELECT_WITH_NAME =
-  "anonymous_session_id, student_display_name, suspended_at, finished_at, text_graded_at, text_grades, last_activity_at, last_typing_at, updated_at";
+  "anonymous_session_id, student_display_name, answers, suspended_at, finished_at, text_graded_at, text_grades, last_activity_at, last_typing_at, updated_at";
 const FORM_RESPONSES_OVERVIEW_SELECT_LEGACY =
-  "anonymous_session_id, suspended_at, finished_at, last_activity_at, last_typing_at, updated_at";
+  "anonymous_session_id, answers, suspended_at, finished_at, last_activity_at, last_typing_at, updated_at";
 
 type FormResponseOverviewRow = {
   anonymous_session_id: string | null;
   student_display_name?: string | null;
+  answers?: unknown;
   suspended_at: string | null;
   finished_at: string | null;
   text_graded_at?: string | null;
@@ -111,7 +115,7 @@ export async function GET(_request: Request, { params }: Params) {
 
   const { data: questionRows, error: qError } = await supabase
     .from("questions")
-    .select("id, points")
+    .select("id, points, question_type")
     .eq("form_id", fs.form_id as string);
 
   if (qError) {
@@ -121,7 +125,11 @@ export async function GET(_request: Request, { params }: Params) {
   const questions = (questionRows ?? []).map((q) => ({
     id: q.id as string,
     points: Math.max(1, Math.floor(Number(q.points) || 1)),
+    type: q.question_type as string,
   }));
+  const questionIds = questions.map((q) => q.id);
+  const textQuestionIds = questions.filter((q) => q.type === "text").map((q) => q.id);
+  const questionTotal = questionIds.length;
   const pointsPossible = sumPossiblePoints(questions);
 
   const participants = (rows ?? []).map((r) => {
@@ -132,6 +140,10 @@ export async function GET(_request: Request, { params }: Params) {
     const lastTypingAt = r.last_typing_at as string | null;
     const grades = parseQuestionGrades(r.text_grades);
     const pointsEarned = gradedAt ? sumEarnedPoints(grades, questions) : null;
+    const answers = parseStudentAnswersJson(r.answers);
+    const answeredCount = countAnsweredQuestions(answers, questionIds);
+    const textPreview = liveTypingPreview(answers, textQuestionIds);
+    const textWordCount = textAnswerWordCount(answers, textQuestionIds);
     return {
       anonymousSessionId: r.anonymous_session_id as string,
       displayName: (r.student_display_name as string | null | undefined)?.trim() ?? "",
@@ -144,6 +156,9 @@ export async function GET(_request: Request, { params }: Params) {
       gradedAt,
       pointsEarned,
       pointsPossible: gradedAt ? pointsPossible : null,
+      answeredCount,
+      textPreview,
+      textWordCount,
       lastActivityAt,
       lastTypingAt,
       updatedAt: r.updated_at as string,
@@ -159,6 +174,8 @@ export async function GET(_request: Request, { params }: Params) {
       formId: fs.form_id,
       formTitle: formTitle?.trim() || "Form",
       sessionOpen: windowOpen,
+      questionTotal,
+      textQuestionIds,
     },
     participants,
   });

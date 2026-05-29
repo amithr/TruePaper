@@ -1,8 +1,8 @@
 "use client";
 
-import Link from "next/link";
-
-import { buttonLabel, ui } from "@/lib/ui";
+import { useTranslations } from "@/lib/i18n/I18nProvider";
+import { LocaleLink } from "@/lib/i18n/client";
+import { ui } from "@/lib/ui";
 
 export type TeacherNavActive = "dashboard" | "join" | "none";
 
@@ -11,14 +11,15 @@ type Props = {
 };
 
 export function TeacherAppNav({ active }: Props) {
+  const t = useTranslations();
   return (
-    <nav aria-label="Teacher navigation" className="flex flex-wrap gap-2">
-      <Link href="/dashboard" className={active === "dashboard" ? ui.pillActive : ui.pill}>
-        {buttonLabel("Form library")}
-      </Link>
-      <Link href="/#join-session" className={active === "join" ? ui.pillActive : ui.pill}>
-        {buttonLabel("Student join")}
-      </Link>
+    <nav aria-label={t("nav.teacherNavLabel")} className="flex flex-wrap gap-2">
+      <LocaleLink href="/dashboard" className={active === "dashboard" ? ui.pillActive : ui.pill}>
+        {t("nav.formLibrary")}
+      </LocaleLink>
+      <LocaleLink href="/#join-session" className={active === "join" ? ui.pillActive : ui.pill}>
+        {t("nav.studentJoin")}
+      </LocaleLink>
     </nav>
   );
 }

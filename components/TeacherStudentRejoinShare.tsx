@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { copyToClipboard } from "@/lib/copy-to-clipboard";
+import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { formatResumeCodeForDisplay } from "@/lib/resume-code";
-import { buttonLabel, focusRing } from "@/lib/ui";
+import { focusRing } from "@/lib/ui";
 
 type Props = {
   liveSessionId: string;
@@ -29,6 +30,7 @@ export function TeacherStudentRejoinShare({
   disabled = false,
   className,
 }: Props) {
+  const t = useTranslations();
   const normalizedInitial = initialCode?.trim().toUpperCase() ?? "";
   const [generatedCode, setGeneratedCode] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -99,17 +101,17 @@ export function TeacherStudentRejoinShare({
         error?: string;
       };
       if (!res.ok || !data.resumeCode) {
-        throw new Error(data.error ?? "Could not create rejoin code.");
+        throw new Error(data.error ?? t("share.rejoin.errors.create"));
       }
       setGeneratedCode(data.resumeCode.trim().toUpperCase());
       return true;
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not create rejoin code.");
+      setError(e instanceof Error ? e.message : t("share.rejoin.errors.create"));
       return false;
     } finally {
       setLoading(false);
     }
-  }, [liveSessionId, deviceId, disabled, loading]);
+  }, [liveSessionId, deviceId, disabled, loading, t]);
 
   const openModal = useCallback(async () => {
     if (disabled) {
@@ -150,18 +152,18 @@ export function TeacherStudentRejoinShare({
   }
 
   const modalTitle = studentLabel?.trim()
-    ? `Rejoin code for ${studentLabel.trim()}`
-    : "Student rejoin code";
+    ? t("share.rejoin.modalTitleNamed", { name: studentLabel.trim() })
+    : t("share.rejoin.modalTitle");
 
   return (
     <>
       <div className={className}>
         <button type="button" disabled={loading} onClick={() => void openModal()} className={btn}>
           {loading
-            ? buttonLabel("Generating…")
+            ? t("common.generating")
             : hasCode
-              ? buttonLabel("Rejoin code")
-              : buttonLabel("Generate rejoin code")}
+              ? t("share.rejoin.code")
+              : t("share.rejoin.generate")}
         </button>
       </div>
 
@@ -185,7 +187,7 @@ export function TeacherStudentRejoinShare({
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-sky-800">
-                  Rejoin code
+                  {t("share.rejoin.modalEyebrow")}
                 </p>
                 <h2
                   id="rejoin-code-dialog-title"
@@ -198,7 +200,7 @@ export function TeacherStudentRejoinShare({
                 type="button"
                 onClick={closeModal}
                 className={`rounded-[var(--tp-radius-xs)] p-1.5 text-[var(--tp-text-muted)] hover:bg-[var(--tp-bg-subtle)] hover:text-[var(--tp-text)] ${focusRing}`}
-                aria-label="Close"
+                aria-label={t("share.rejoin.closeAria")}
               >
                 <svg
                   aria-hidden
@@ -217,7 +219,9 @@ export function TeacherStudentRejoinShare({
             </div>
 
             {loading && !hasCode ? (
-              <p className="mt-6 text-sm text-[var(--tp-text-secondary)]">Generating rejoin code…</p>
+              <p className="mt-6 text-sm text-[var(--tp-text-secondary)]">
+                {t("share.rejoin.generatingMessage")}
+              </p>
             ) : error ? (
               <div className="mt-6 space-y-3">
                 <p className="tp-alert tp-alert-error text-sm">{error}</p>
@@ -227,23 +231,20 @@ export function TeacherStudentRejoinShare({
                   onClick={() => void generateCode()}
                   className={btn}
                 >
-                  {loading ? buttonLabel("Generating…") : buttonLabel("Try again")}
+                  {loading ? t("common.generating") : t("common.tryAgain")}
                 </button>
               </div>
             ) : hasCode ? (
               <div className="mt-6 rounded-[var(--tp-radius-sm)] border border-sky-200 bg-sky-50/70 px-4 py-4 text-sm text-sky-950">
                 <p className="font-mono text-2xl font-bold tracking-[0.2em]">{displayCode}</p>
-                <p className="mt-3 text-sm text-sky-900">
-                  Give this to the student if they lost their browser. They enter it on the join page
-                  under &ldquo;Lost your exam?&rdquo;
-                </p>
+                <p className="mt-3 text-sm text-sky-900">{t("share.rejoin.instructions")}</p>
                 <div className="mt-4 flex flex-wrap items-center gap-2">
                   <button
                     type="button"
                     onClick={() => void onCopyCode()}
                     className={copied === "code" ? btnDone : btn}
                   >
-                    {copied === "code" ? "Code copied" : "Copy code"}
+                    {copied === "code" ? t("share.rejoin.codeCopied") : t("share.rejoin.copyCode")}
                   </button>
                   <button
                     type="button"
@@ -251,7 +252,7 @@ export function TeacherStudentRejoinShare({
                     disabled={!rejoinUrl}
                     className={copied === "link" ? btnDone : btn}
                   >
-                    {copied === "link" ? "Link copied" : "Copy link"}
+                    {copied === "link" ? t("share.rejoin.linkCopied") : t("share.rejoin.copyLink")}
                   </button>
                 </div>
               </div>
@@ -259,7 +260,7 @@ export function TeacherStudentRejoinShare({
 
             <div className="mt-6 flex justify-end">
               <button type="button" onClick={closeModal} className={`tp-btn-ghost text-sm ${focusRing}`}>
-                {buttonLabel("Done")}
+                {t("common.done")}
               </button>
             </div>
           </div>

@@ -1,20 +1,19 @@
 "use client";
 
-import Link from "next/link";
+import { LocaleLink as Link } from "@/lib/i18n/client";
 import { useCallback, useEffect, useState } from "react";
 
 import { deferEffect } from "@/lib/defer-effect";
 
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { SessionJoinShare } from "@/components/SessionJoinShare";
-import { LIVE_SESSION_OVERVIEW_EVENT, liveSessionOverviewChannelName } from "@/lib/broadcast-live-session-overview";
+import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { notifyStudentExamResumed } from "@/lib/notify-student-exam-resumed";
 import { isNoTimeLimitSession } from "@/lib/session-window";
 import type { SuspendedStudentRow, TeacherSessionSummary } from "@/lib/teacher-sessions";
-import { useBroadcastRefresh } from "@/lib/use-broadcast-refresh";
 import { usePollingRefresh } from "@/lib/use-polling-refresh";
 import { usePostgresRealtimeRefresh } from "@/lib/use-postgres-realtime-refresh";
-import { buttonLabel, focusRing, ui } from "@/lib/ui";
+import { focusRing, ui } from "@/lib/ui";
 import { messageForBackgroundRefreshError } from "@/lib/background-network-error";
 import { requestJson } from "@/lib/request-json";
 
@@ -43,6 +42,7 @@ export function DashboardRunningSessions({
   initialSuspensions,
   onError,
 }: Props) {
+  const t = useTranslations();
   const [sessions, setSessions] = useState(initialSessions);
   const [suspensionsBySession, setSuspensionsBySession] = useState(initialSuspensions);
   const [nowTick, setNowTick] = useState(() => Date.now());
@@ -62,13 +62,13 @@ export function DashboardRunningSessions({
     } catch (e) {
       const message = messageForBackgroundRefreshError(
         e,
-        "Failed to refresh live sessions.",
+        t("runningSessions.errors.refresh"),
       );
       if (message) {
         onError(message);
       }
     }
-  }, [onError]);
+  }, [onError, t]);
 
   useEffect(() => {
     deferEffect(() => {
@@ -82,8 +82,6 @@ export function DashboardRunningSessions({
     return () => window.clearInterval(id);
   }, []);
 
-  const overviewChannels = sessions.map((s) => liveSessionOverviewChannelName(s.id));
-
   usePostgresRealtimeRefresh(
     true,
     "teacher-dashboard-active",
@@ -92,17 +90,10 @@ export function DashboardRunningSessions({
     { debounceMs: 600, minIntervalMs: 2000 },
   );
 
-  useBroadcastRefresh(
-    overviewChannels.length > 0,
-    overviewChannels,
-    LIVE_SESSION_OVERVIEW_EVENT,
-    refreshActive,
-    600,
-  );
-
   usePollingRefresh({
     enabled: sessions.length > 0,
     intervalMs: 8000,
+    immediate: false,
     onRefresh: () => void refreshActive(),
   });
 
@@ -116,7 +107,7 @@ export function DashboardRunningSessions({
       void notifyStudentExamResumed(liveSessionId, deviceId);
       await refreshActive();
     } catch (e) {
-      onError(e instanceof Error ? e.message : "Could not resume student.");
+      onError(e instanceof Error ? e.message : t("runningSessions.errors.resume"));
     }
   };
 
@@ -128,7 +119,7 @@ export function DashboardRunningSessions({
       });
       await refreshActive();
     } catch (e) {
-      onError(e instanceof Error ? e.message : "Could not stop session.");
+      onError(e instanceof Error ? e.message : t("runningSessions.errors.stop"));
     } finally {
       setStoppingSessionId(null);
     }
@@ -138,7 +129,7 @@ export function DashboardRunningSessions({
     <section id="running-sessions" className="scroll-mt-6 tp-card p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0 flex-1">
-          <p className={ui.sectionTitle}>Live</p>
+          <p className={ui.sectionTitle}>{t("runningSessions.eyebrow")}</p>
           <h2 className="text-xl font-semibold tracking-tight flex items-center gap-2">
             <span
               aria-hidden
@@ -149,7 +140,7 @@ export function DashboardRunningSessions({
                   : undefined
               }
             />
-            Running sessions
+            {t("runningSessions.title")}
             {sessions.length > 0 ? (
               <span className="text-sm font-normal text-[var(--tp-text-muted)]">
                 · {sessions.length}
@@ -161,7 +152,11 @@ export function DashboardRunningSessions({
           type="button"
           onClick={() => void refreshActive()}
           className={`tp-btn-ghost text-sm ${focusRing}`}
-          title={lastSyncedAt ? `Updated ${new Date(lastSyncedAt).toLocaleTimeString()}` : "Refresh"}
+          title={
+            lastSyncedAt
+              ? t("common.updatedAt", { time: new Date(lastSyncedAt).toLocaleTimeString() })
+              : t("common.refresh")
+          }
         >
           <svg
             aria-hidden
@@ -178,13 +173,11 @@ export function DashboardRunningSessions({
             <path d="M21 3v5h-5" />
             <path d="M3 21v-5h5" />
           </svg>
-          Refresh
+          {t("common.refresh")}
         </button>
       </div>
       {sessions.length === 0 ? (
-        <p className="tp-empty">
-          No sessions are open. Start one from your form library below.
-        </p>
+        <p className="tp-empty">{t("runningSessions.empty")}</p>
       ) : (
         <ul className="space-y-3">
           {sessions.map((s) => {
@@ -210,42 +203,34 @@ export function DashboardRunningSessions({
                     <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs">
                       <span className="tp-status tp-status-typing">
                         <span className="tp-status-dot" />
-                        {s.inProgressCount} working
+                        {t("runningSessions.working", { n: s.inProgressCount })}
                       </span>
                       <span className="tp-status tp-status-finished">
                         <span className="tp-status-dot" />
-                        {s.finishedCount} done
+                        {t("runningSessions.done", { n: s.finishedCount })}
                       </span>
                       <span className="tp-status tp-status-idle">
                         <span className="tp-status-dot" />
-                        {s.assignedCount} joined
+                        {t("runningSessions.joined", { n: s.assignedCount })}
                       </span>
                       {s.needsGradingCount > 0 ? (
                         <span
                           className="tp-status tp-status-blocked"
-                          title={`${s.needsGradingCount} submission${
-                            s.needsGradingCount === 1 ? "" : "s"
-                          } need${s.needsGradingCount === 1 ? "s" : ""} grading`}
+                          title={t("runningSessions.toGradeTitle", { count: s.needsGradingCount })}
                         >
                           <span className="tp-status-dot" />
-                          {s.needsGradingCount} to grade
+                          {t("runningSessions.toGrade", { n: s.needsGradingCount })}
                         </span>
                       ) : null}
                     </div>
                     <div className="mt-3 flex flex-wrap items-center gap-2">
                       <SessionJoinShare joinCode={s.joinCode} />
-                      <Link
-                        href={`/dashboard/sessions/${s.id}/exam-list`}
-                        className={`tp-btn-ghost text-xs ${focusRing}`}
-                      >
-                        See Exam List
-                      </Link>
                     </div>
                   </div>
                   <div className="flex flex-col items-end gap-2 text-right text-sm">
                     <div className="text-[var(--tp-text-secondary)]">
                       {noTimeLimit ? (
-                        <span>No time limit</span>
+                        <span>{t("common.noTimeLimit")}</span>
                       ) : (
                         <span className="inline-flex items-center gap-1.5">
                           <svg
@@ -269,8 +254,8 @@ export function DashboardRunningSessions({
                     </div>
                     <ConfirmButton
                       tone="danger"
-                      label={buttonLabel("Stop session")}
-                      confirmLabel={buttonLabel("Tap again to stop")}
+                      label={t("session.actions.stop")}
+                      confirmLabel={t("common.tapAgainStop")}
                       busy={stoppingSessionId === s.id}
                       busyLabel={
                         <>
@@ -278,7 +263,7 @@ export function DashboardRunningSessions({
                             className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-red-200 border-t-red-800"
                             aria-hidden
                           />
-                          {buttonLabel("Stopping…")}
+                          {t("common.stopping")}
                         </>
                       }
                       onConfirm={() => stopRunningSession(s.id)}
@@ -290,9 +275,9 @@ export function DashboardRunningSessions({
                     <p className="inline-flex items-center gap-1.5 font-semibold">
                       <span aria-hidden className="tp-status tp-status-blocked">
                         <span className="tp-status-dot" />
-                        Paused
+                        {t("session.status.paused")}
                       </span>
-                      {suspended.length} need{suspended.length === 1 ? "s" : ""} approval
+                      {t("runningSessions.pausedNeedApproval", { n: suspended.length })}
                     </p>
                     <ul className="mt-2 space-y-2">
                       {suspended.map((row) => (
@@ -302,7 +287,7 @@ export function DashboardRunningSessions({
                         >
                           <span className="text-xs">
                             <span className="font-medium">
-                              {row.displayName ? row.displayName : "Student"}
+                              {row.displayName ? row.displayName : t("common.student")}
                             </span>
                             <span className="mx-1.5 text-[var(--tp-warning-text)] opacity-60">·</span>
                             <span className="font-mono">{maskDeviceId(row.anonymousSessionId)}</span>
@@ -312,7 +297,7 @@ export function DashboardRunningSessions({
                             onClick={() => void resumeStudent(s.id, row.anonymousSessionId)}
                             className="rounded-[var(--tp-radius-xs)] bg-[var(--tp-amber)] px-2.5 py-1 text-xs font-semibold text-white shadow-sm transition-transform active:scale-95"
                           >
-                            {buttonLabel("Let in")}
+                            {t("session.actions.letIn")}
                           </button>
                         </li>
                       ))}

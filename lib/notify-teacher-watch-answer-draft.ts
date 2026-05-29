@@ -1,8 +1,9 @@
 import type { StudentAnswers } from "@/lib/forms";
 import { broadcastTeacherWatchAnswerDraft } from "@/lib/broadcast-exam-drafts";
+import { broadcastLiveSessionAnswerDraft } from "@/lib/broadcast-live-session-overview";
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
 
-/** Best-effort push so the teacher watch page shows typing before autosave. */
+/** Best-effort push so teacher watch + exam list show typing before autosave. */
 export async function notifyTeacherWatchAnswerDraft(
   liveSessionId: string,
   deviceId: string,
@@ -13,7 +14,10 @@ export async function notifyTeacherWatchAnswerDraft(
   }
   try {
     const supabase = createBrowserSupabaseClient();
-    await broadcastTeacherWatchAnswerDraft(supabase, liveSessionId, deviceId, answers);
+    await Promise.allSettled([
+      broadcastTeacherWatchAnswerDraft(supabase, liveSessionId, deviceId, answers),
+      broadcastLiveSessionAnswerDraft(supabase, liveSessionId, deviceId, answers),
+    ]);
   } catch {
     /* postgres / watch_refresh may still deliver after save */
   }

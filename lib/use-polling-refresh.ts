@@ -9,6 +9,12 @@ type Options = {
   intervalMs: number;
   /** When false, polling pauses (e.g. hidden tab). Defaults to true. */
   pollWhenHidden?: boolean;
+  /**
+   * Fire one refresh immediately when polling becomes enabled. Defaults to
+   * true. Set false when the caller already performs its own initial load
+   * (avoids a duplicate request right after first paint).
+   */
+  immediate?: boolean;
   onRefresh: () => void;
 };
 
@@ -17,6 +23,7 @@ export function usePollingRefresh({
   enabled,
   intervalMs,
   pollWhenHidden = false,
+  immediate = true,
   onRefresh,
 }: Options): void {
   const onRefreshRef = useLatestRef(onRefresh);
@@ -33,8 +40,10 @@ export function usePollingRefresh({
       onRefreshRef.current();
     };
 
-    tick();
+    if (immediate) {
+      tick();
+    }
     const id = window.setInterval(tick, intervalMs);
     return () => window.clearInterval(id);
-  }, [enabled, intervalMs, pollWhenHidden, onRefreshRef]);
+  }, [enabled, intervalMs, pollWhenHidden, immediate, onRefreshRef]);
 }

@@ -4,12 +4,13 @@ import { Monitor, Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useEffect, useState } from "react";
 
+import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { focusRing } from "@/lib/ui";
 
 const OPTIONS = [
-  { value: "light", label: "Light", icon: Sun },
-  { value: "dark", label: "Dark", icon: Moon },
-  { value: "system", label: "System", icon: Monitor },
+  { value: "light", labelKey: "theme.light" as const, icon: Sun },
+  { value: "dark", labelKey: "theme.dark" as const, icon: Moon },
+  { value: "system", labelKey: "theme.system" as const, icon: Monitor },
 ] as const;
 
 type Props = {
@@ -19,6 +20,7 @@ type Props = {
 };
 
 export function ThemeToggle({ className, showLabels = false }: Props) {
+  const t = useTranslations();
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
@@ -36,9 +38,10 @@ export function ThemeToggle({ className, showLabels = false }: Props) {
   }
 
   return (
-    <div className={`tp-filter-bar ${className ?? ""}`} role="group" aria-label="Color theme">
-      {OPTIONS.map(({ value, label, icon: Icon }) => {
+    <div className={`tp-filter-bar ${className ?? ""}`} role="group" aria-label={t("theme.label")}>
+      {OPTIONS.map(({ value, labelKey, icon: Icon }) => {
         const active = theme === value;
+        const label = t(labelKey);
         return (
           <button
             key={value}
