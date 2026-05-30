@@ -11,7 +11,6 @@ import { LoadingBar } from "@/components/LoadingBar";
 import { ScoreRing } from "@/components/ScoreMeter";
 import { StudentReviewShare } from "@/components/StudentReviewShare";
 import { TeacherStudentRejoinShare } from "@/components/TeacherStudentRejoinShare";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import {
   gradingStateFor,
   isFullyGraded,
@@ -22,18 +21,10 @@ import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { useScoreCopy } from "@/lib/i18n/score-copy";
 import type { Form, Question, StudentAnswers } from "@/lib/forms";
 import { isNoTimeLimitSession } from "@/lib/session-window";
-import { parseStudentAnswersJson, stableStringifyStudentAnswers } from "@/lib/student-answers-json";
-import { TEACHER_WATCH_ANSWER_DRAFT_EVENT } from "@/lib/broadcast-exam-drafts";
-import { teacherWatchChannelName } from "@/lib/broadcast-teacher-watch";
+import { stableStringifyStudentAnswers } from "@/lib/student-answers-json";
 import { notifyStudentExamFeedback } from "@/lib/notify-student-exam-feedback";
-import { notifyStudentFeedbackDraft } from "@/lib/notify-student-feedback-draft";
-import { useThrottledCallback } from "@/lib/use-throttled-callback";
-import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
 import { usePollingRefresh } from "@/lib/use-polling-refresh";
-import {
-  parseLiveTeacherFeedback,
-  type LiveTeacherFeedbackByQuestionId,
-} from "@/lib/live-teacher-feedback";
+import { type LiveTeacherFeedbackByQuestionId } from "@/lib/live-teacher-feedback";
 import { focusRing, ui } from "@/lib/ui";
 import { messageForBackgroundRefreshError } from "@/lib/background-network-error";
 import { deferEffect } from "@/lib/defer-effect";
@@ -68,7 +59,6 @@ type SnapshotJson = {
   updatedAt: string | null;
 };
 
-type RealtimeMode = "connecting" | "live" | "offline";
 
 function formatCountdown(ms: number): string {
   if (ms <= 0) {
@@ -82,51 +72,6 @@ function formatCountdown(ms: number): string {
 
 function maskDeviceId(id: string): string {
   return `…${id.slice(-8)}`;
-}
-
-function sessionWindowOpen(opensAt: string, closesAt: string, nowMs: number): boolean {
-  return nowMs >= new Date(opensAt).getTime() && nowMs <= new Date(closesAt).getTime();
-}
-
-function mergeSnapshotFromRow(prev: SnapshotJson, row: Record<string, unknown>): SnapshotJson {
-  const answers = parseStudentAnswersJson(row.answers);
-  const answersUnchanged =
-    stableStringifyStudentAnswers(prev.answers) === stableStringifyStudentAnswers(answers);
-  const dn =
-    typeof row.student_display_name === "string" ? row.student_display_name.trim() : prev.student.displayName;
-  const lastActivityAt =
-    typeof row.last_activity_at === "string" ? row.last_activity_at : prev.student.lastActivityAt;
-  const updatedAt = typeof row.updated_at === "string" ? row.updated_at : prev.updatedAt;
-  const liveTeacherFeedback = parseLiveTeacherFeedback(row.live_teacher_feedback);
-  const feedbackUnchanged =
-    JSON.stringify(prev.liveTeacherFeedback) === JSON.stringify(liveTeacherFeedback);
-
-  if (
-    answersUnchanged &&
-    feedbackUnchanged &&
-    updatedAt === prev.updatedAt &&
-    dn === prev.student.displayName &&
-    (row.suspended_at != null) === prev.student.suspended &&
-    (row.finished_at != null) === prev.student.finished &&
-    lastActivityAt === prev.student.lastActivityAt
-  ) {
-    return prev;
-  }
-
-  return {
-    ...prev,
-    answers,
-    liveTeacherFeedback,
-    student: {
-      ...prev.student,
-      hasJoined: true,
-      displayName: dn,
-      suspended: row.suspended_at != null,
-      finished: row.finished_at != null,
-      lastActivityAt,
-    },
-    updatedAt,
-  };
 }
 
 export default function WatchStudentExamPage() {
@@ -143,7 +88,6 @@ export default function WatchStudentExamPage() {
   const [loadError, setLoadError] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
   const [nowTick, setNowTick] = useState(() => Date.now());
-  const [realtimeMode, setRealtimeMode] = useState<RealtimeMode>("connecting");
   const [pointsDraftsByQuestionId, setPointsDraftsByQuestionId] = useState<Record<string, number>>({});
   const [gradeDraftsByQuestionId, setGradeDraftsByQuestionId] = useState<Record<string, number>>({});
   /** Server-confirmed earned points by question id. `undefined` means not graded yet. */
@@ -176,7 +120,6 @@ export default function WatchStudentExamPage() {
   const [liveFeedbackSavingQuestionIds, setLiveFeedbackSavingQuestionIds] = useState<Set<string>>(
     () => new Set(),
   );
-  const [liveAnswerDrafts, setLiveAnswerDrafts] = useState<StudentAnswers>({});
   const [removingExam, setRemovingExam] = useState(false);
   const liveFeedbackSaveTimerRef = useRef<Record<string, number>>({});
   const scheduleLiveFeedbackSaveRef = useRef<(questionId: string) => void>(() => {});
@@ -240,18 +183,8 @@ export default function WatchStudentExamPage() {
     if (!snapshot) {
       return {} as StudentAnswers;
     }
-    return { ...snapshot.answers, ...liveAnswerDrafts };
-  }, [snapshot, liveAnswerDrafts]);
-
-  const broadcastFeedbackDraft = useThrottledCallback(
-    (questionId: string, message: string) => {
-      if (!liveSessionId || !deviceIdNorm) {
-        return;
-      }
-      void notifyStudentFeedbackDraft(liveSessionId, deviceIdNorm, questionId, message);
-    },
-    180,
-  );
+    return snapshot.answers;
+  }, [snapshot]);
 
   const refreshRef = useLatestRef(async () => {
     if (!liveSessionId || !deviceId) {
@@ -303,32 +236,6 @@ export default function WatchStudentExamPage() {
     deferEffect(() => {
       void refreshRef.current();
     });
-  }, [liveSessionId, deviceIdNorm, refreshRef]);
-
-  useEffect(() => {
-    if (!liveSessionId || !deviceIdNorm) {
-      return;
-    }
-
-    let cancelled = false;
-    const supabase = createBrowserSupabaseClient();
-    const channel = supabase
-      .channel(teacherWatchChannelName(liveSessionId, deviceIdNorm))
-      .on("broadcast", { event: TEACHER_WATCH_ANSWER_DRAFT_EVENT }, ({ payload }) => {
-        if (cancelled || !payload || typeof payload !== "object" || Array.isArray(payload)) {
-          return;
-        }
-        const answers = (payload as { answers?: unknown }).answers;
-        if (answers && typeof answers === "object" && !Array.isArray(answers)) {
-          setLiveAnswerDrafts(answers as StudentAnswers);
-        }
-      })
-      .subscribe();
-
-    return () => {
-      cancelled = true;
-      void supabase.removeChannel(channel);
-    };
   }, [liveSessionId, deviceIdNorm, refreshRef]);
 
   usePollingRefresh({
@@ -667,102 +574,6 @@ export default function WatchStudentExamPage() {
   };
 
   useEffect(() => {
-    if (!liveSessionId || !deviceIdNorm) {
-      return;
-    }
-
-    let cancelled = false;
-    deferEffect(() => {
-      setRealtimeMode("connecting");
-    });
-
-    const supabase = createBrowserSupabaseClient();
-    const channel = supabase
-      .channel(`teacher-exam-watch:${liveSessionId}:${deviceIdNorm}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "form_responses",
-          filter: `live_session_id=eq.${liveSessionId}`,
-        },
-        (payload) => {
-          const row = (payload.new ?? null) as Record<string, unknown> | null;
-          if (!row || typeof row.anonymous_session_id !== "string") {
-            return;
-          }
-          if (row.anonymous_session_id.toLowerCase() !== deviceIdNorm) {
-            return;
-          }
-          setSnapshot((prev) => {
-            if (!prev) {
-              return prev;
-            }
-            const next = mergeSnapshotFromRow(prev, row);
-            if (next === prev) {
-              return prev;
-            }
-            return {
-              ...next,
-              liveTeacherFeedback: applyServerLiveFeedback(next.liveTeacherFeedback),
-            };
-          });
-        },
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "form_sessions",
-          filter: `id=eq.${liveSessionId}`,
-        },
-        (payload) => {
-          const row = (payload.new ?? null) as Record<string, unknown> | null;
-          const opensAt = typeof row?.opens_at === "string" ? row.opens_at : null;
-          const closesAt = typeof row?.closes_at === "string" ? row.closes_at : null;
-          if (!opensAt || !closesAt) {
-            return;
-          }
-          const sessionOpen = sessionWindowOpen(opensAt, closesAt, Date.now());
-          setSnapshot((prev) => {
-            if (!prev) {
-              return prev;
-            }
-            if (
-              prev.session.opensAt === opensAt &&
-              prev.session.closesAt === closesAt &&
-              prev.session.sessionOpen === sessionOpen
-            ) {
-              return prev;
-            }
-            return {
-              ...prev,
-              session: { ...prev.session, opensAt, closesAt, sessionOpen },
-            };
-          });
-        },
-      )
-      .subscribe((status) => {
-        if (cancelled) {
-          return;
-        }
-        if (status === "SUBSCRIBED") {
-          setRealtimeMode("live");
-        }
-        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
-          setRealtimeMode("offline");
-        }
-      });
-
-    return () => {
-      cancelled = true;
-      void supabase.removeChannel(channel);
-    };
-  }, [liveSessionId, deviceIdNorm, refreshRef]);
-
-  useEffect(() => {
     const id = window.setInterval(() => setNowTick(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, []);
@@ -816,12 +627,9 @@ export default function WatchStudentExamPage() {
   const canMarkGraded =
     st.finished && !st.graded && allQuestions.length > 0 && allGraded && !anyGradeSaving;
 
-  const streamLine =
-    realtimeMode === "live"
-      ? t("session.watch.streamLive")
-      : realtimeMode === "offline"
-        ? t("session.watch.streamOffline")
-        : t("session.watch.streamConnecting");
+  const streamLine = s.sessionOpen
+    ? t("session.watch.streamLive")
+    : t("session.watch.streamOffline");
 
   const removeStudentExam = async () => {
     if (!liveSessionId || !deviceIdNorm) {
@@ -845,9 +653,6 @@ export default function WatchStudentExamPage() {
     <div className="relative min-h-screen bg-[var(--tp-bg)] py-8 text-[var(--tp-text)] sm:py-10">
       {showCelebrate ? <Confetti /> : null}
       <main className="mx-auto w-full max-w-3xl space-y-6 px-4 sm:px-6">
-        <div className="flex justify-end">
-          <ThemeToggle />
-        </div>
         <div>
           <Link
             href={`/dashboard/sessions/${liveSessionId}`}
@@ -1338,7 +1143,6 @@ export default function WatchStudentExamPage() {
                                   ...current,
                                   [question.id]: next,
                                 }));
-                                broadcastFeedbackDraft(question.id, next);
                                 scheduleLiveFeedbackSave(question.id);
                               }}
                               placeholder={t("session.watch.feedbackPlaceholder")}

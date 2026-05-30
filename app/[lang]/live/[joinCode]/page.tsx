@@ -5,13 +5,12 @@ import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { LoadingBar } from "@/components/LoadingBar";
-import { LIVE_BOARD_BROADCAST_EVENT, liveBoardChannelName } from "@/lib/broadcast-live-board";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { isValidJoinCodeFormat, normalizeJoinCode } from "@/lib/join-code";
 import type { LivePublicBoardPayload } from "@/lib/live-public-board";
 import { isNoTimeLimitSession } from "@/lib/session-window";
 import { deferEffect } from "@/lib/defer-effect";
-import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
+import { usePollingRefresh } from "@/lib/use-polling-refresh";
 
 function formatCountdown(ms: number): string {
   if (ms <= 0) {
@@ -109,21 +108,12 @@ export default function LiveClassDisplayPage() {
     });
   }, [loadBoard]);
 
-  useEffect(() => {
-    if (!codeOk) {
-      return;
-    }
-    const supabase = createBrowserSupabaseClient();
-    const channel = supabase
-      .channel(liveBoardChannelName(code))
-      .on("broadcast", { event: LIVE_BOARD_BROADCAST_EVENT }, () => {
-        void loadBoard({ silent: true });
-      })
-      .subscribe();
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [codeOk, code, loadBoard]);
+  usePollingRefresh({
+    enabled: codeOk,
+    intervalMs: 5000,
+    immediate: false,
+    onRefresh: () => void loadBoard({ silent: true }),
+  });
 
   useEffect(() => {
     const id = window.setInterval(() => setNowTick(Date.now()), 1000);

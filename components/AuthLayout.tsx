@@ -4,7 +4,6 @@ import { type ReactNode } from "react";
 
 import { BrandMark } from "@/components/BrandMark";
 import { LanguageToggle } from "@/components/LanguageToggle";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { LocaleLink } from "@/lib/i18n/client";
 
@@ -72,7 +71,6 @@ export function AuthLayout({ eyebrow, title, subtitle, children, footer }: Props
       <main className="relative flex items-center justify-center p-6 sm:p-10">
         <div className="absolute right-4 top-4 sm:right-6 sm:top-6 flex items-center gap-2">
           <LanguageToggle />
-          <ThemeToggle />
         </div>
         <div className="w-full max-w-md tp-anim-fade-up">
           <div className="lg:hidden mb-6">

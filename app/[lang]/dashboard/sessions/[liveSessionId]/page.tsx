@@ -11,7 +11,6 @@ import { ScoreBar } from "@/components/ScoreMeter";
 import { SessionJoinShare } from "@/components/SessionJoinShare";
 import { StudentReviewShare } from "@/components/StudentReviewShare";
 import { TeacherStudentRejoinShare } from "@/components/TeacherStudentRejoinShare";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import {
   countNeedsGrading,
   gradingRosterPriority,
@@ -23,7 +22,6 @@ import { isNoTimeLimitSession } from "@/lib/session-window";
 import { deferEffect } from "@/lib/defer-effect";
 import { notifyStudentExamResumed } from "@/lib/notify-student-exam-resumed";
 import { usePollingRefresh } from "@/lib/use-polling-refresh";
-import { usePostgresRealtimeRefresh } from "@/lib/use-postgres-realtime-refresh";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { focusRing, ui } from "@/lib/ui";
 
@@ -152,22 +150,9 @@ export default function LiveSessionDetailPage() {
     });
   }, [liveSessionId, refreshOverview]);
 
-  const overviewLive = overview === null || overview.session.sessionOpen;
-
-  usePostgresRealtimeRefresh(
-    Boolean(liveSessionId) && overviewLive,
-    `session-overview:${liveSessionId}`,
-    [
-      { table: "form_responses", filter: `live_session_id=eq.${liveSessionId}` },
-      { table: "form_sessions", filter: `id=eq.${liveSessionId}` },
-    ],
-    refreshOverview,
-    { debounceMs: 500, minIntervalMs: 1000 },
-  );
-
   usePollingRefresh({
     enabled: Boolean(overview?.session.sessionOpen),
-    intervalMs: 4000,
+    intervalMs: 3000,
     immediate: false,
     onRefresh: () => void refreshOverview(),
   });
@@ -340,7 +325,6 @@ export default function LiveSessionDetailPage() {
             </p>
           </div>
           <div className="flex flex-col items-end gap-2">
-            <ThemeToggle />
             <div className="flex flex-wrap gap-2">
               {sessionRunning ? (
                 <ConfirmButton

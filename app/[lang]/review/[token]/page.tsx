@@ -7,7 +7,6 @@ import { Confetti } from "@/components/Confetti";
 import { LoadingBar } from "@/components/LoadingBar";
 import { ScoreRing } from "@/components/ScoreMeter";
 import { StudentTeacherFeedbackCard } from "@/components/StudentTeacherFeedbackCard";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import {
   questionScoreTone,
   scoreTier,
@@ -134,11 +133,6 @@ export default function StudentReviewPage() {
   return (
     <div className="relative min-h-screen bg-[var(--tp-bg)] py-8 text-[var(--tp-text)] sm:py-10">
       {showConfetti ? <Confetti /> : null}
-      <div className="pointer-events-none fixed right-4 top-4 z-50 sm:right-6 sm:top-6">
-        <div className="pointer-events-auto">
-          <ThemeToggle />
-        </div>
-      </div>
       <main className="mx-auto w-full max-w-3xl space-y-6 px-4 sm:px-6">
         <header className="tp-card-accent p-6 sm:p-8 tp-anim-fade-up">
           <div className="flex flex-wrap items-start justify-between gap-5">

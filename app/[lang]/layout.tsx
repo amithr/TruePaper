@@ -4,7 +4,6 @@ import { notFound } from "next/navigation";
 
 import "../globals.css";
 
-import { ThemeProvider } from "@/components/ThemeProvider";
 import { TruepaperToaster } from "@/components/TruepaperToaster";
 import { LOCALES, isLocale } from "@/lib/i18n/config";
 import { getDictionary } from "@/lib/i18n/dictionaries";
@@ -50,15 +49,12 @@ export default async function LocaleRootLayout({ children, params }: Props) {
     <html
       lang={lang}
       className={`${fontSans.variable} ${fontMono.variable} h-full antialiased`}
-      suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col font-sans">
-        <ThemeProvider>
-          <I18nProvider locale={lang} dict={dict}>
-            {children}
-            <TruepaperToaster />
-          </I18nProvider>
-        </ThemeProvider>
+        <I18nProvider locale={lang} dict={dict}>
+          {children}
+          <TruepaperToaster />
+        </I18nProvider>
       </body>
     </html>
   );

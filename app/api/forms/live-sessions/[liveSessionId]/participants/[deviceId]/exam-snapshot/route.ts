@@ -166,6 +166,15 @@ export async function GET(_request: Request, { params }: Params) {
     return NextResponse.json({ error: rowError.message }, { status: 500 });
   }
 
+  // Activity lives in the narrow presence table now (heartbeats stopped
+  // rewriting form_responses). Fall back to the row column for pre-migration data.
+  const presenceRow = await supabase
+    .from("live_session_presence")
+    .select("last_activity_at")
+    .eq("live_session_id", liveSessionId)
+    .eq("anonymous_session_id", deviceId)
+    .maybeSingle();
+
   const nowMs = Date.now();
   const answers = parseStudentAnswersJson(row?.answers);
   const displayName =
@@ -175,7 +184,12 @@ export async function GET(_request: Request, { params }: Params) {
   const gradedAt = typeof row?.text_graded_at === "string" ? row.text_graded_at : null;
   const graded = Boolean(gradedAt);
   const questionGrades = parseQuestionGrades(row?.text_grades);
-  const lastActivityAt = typeof row?.last_activity_at === "string" ? row.last_activity_at : null;
+  const presenceLastActivity =
+    !presenceRow.error && typeof presenceRow.data?.last_activity_at === "string"
+      ? presenceRow.data.last_activity_at
+      : null;
+  const lastActivityAt =
+    presenceLastActivity ?? (typeof row?.last_activity_at === "string" ? row.last_activity_at : null);
   const updatedAt = typeof row?.updated_at === "string" ? row.updated_at : null;
 
   const pointsPossible = sumPossiblePoints(form.questions);

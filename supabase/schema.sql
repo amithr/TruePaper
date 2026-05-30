@@ -95,6 +95,51 @@ create unique index if not exists form_responses_student_review_token_uidx
 
 create index if not exists form_responses_form_id_idx on public.form_responses (form_id);
 
+-- Narrow, high-churn presence table. Heartbeats write here (not the wide
+-- form_responses row) so autosave/heartbeat traffic stops rewriting the
+-- answers/feedback JSONB. fillfactor leaves room for HOT updates.
+create table if not exists public.live_session_presence (
+  live_session_id uuid not null references public.form_sessions (id) on delete cascade,
+  anonymous_session_id text not null,
+  last_activity_at timestamptz,
+  last_typing_at timestamptz,
+  primary key (live_session_id, anonymous_session_id)
+) with (fillfactor = 70);
+
+alter table public.live_session_presence enable row level security;
+
+create or replace function public.touch_live_session_presence(
+  p_live_session_id uuid,
+  p_device_id text,
+  p_is_typing boolean,
+  p_interaction boolean
+)
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  insert into public.live_session_presence as p (
+    live_session_id, anonymous_session_id, last_activity_at, last_typing_at
+  )
+  values (
+    p_live_session_id,
+    p_device_id,
+    case when coalesce(p_interaction, true) then timezone('utc', now()) else null end,
+    case when coalesce(p_is_typing, false) then timezone('utc', now()) else null end
+  )
+  on conflict (live_session_id, anonymous_session_id) do update
+  set
+    last_activity_at = case
+      when coalesce(p_interaction, true) then timezone('utc', now())
+      else p.last_activity_at
+    end,
+    last_typing_at = case
+      when coalesce(p_is_typing, false) then timezone('utc', now())
+      else p.last_typing_at
+    end;
+$$;
+
 create or replace function public.update_updated_at_column()
 returns trigger as $$
 begin
@@ -486,15 +531,18 @@ begin
 
   select count(*)::int into inprog
   from public.form_responses fr
+  left join public.live_session_presence p
+    on p.live_session_id = fr.live_session_id
+   and p.anonymous_session_id = fr.anonymous_session_id
   where fr.live_session_id = fs.id
     and fr.student_id is null
     and fr.suspended_at is null
     and fr.finished_at is null
     and (
-      (fr.last_typing_at is not null and (now_ts - fr.last_typing_at) < interval '8 seconds')
+      (p.last_typing_at is not null and (now_ts - p.last_typing_at) < interval '8 seconds')
       or not (
-        (fr.last_activity_at is null or (now_ts - fr.last_activity_at) > interval '45 seconds')
-        and (fr.last_typing_at is null or (now_ts - fr.last_typing_at) > interval '45 seconds')
+        (p.last_activity_at is null or (now_ts - p.last_activity_at) > interval '45 seconds')
+        and (p.last_typing_at is null or (now_ts - p.last_typing_at) > interval '45 seconds')
       )
     );
 
@@ -917,42 +965,20 @@ begin
     raise exception 'exam already submitted';
   end if;
 
-  update public.form_responses
-  set
-    answers = p_answers,
-    updated_at = now(),
-    last_activity_at = timezone('utc', now()),
-    student_display_name = name
-  where live_session_id = p_live_session_id
-    and anonymous_session_id = p_device_id
-    and student_id is null
-    and suspended_at is null
-    and finished_at is null;
-
-  if found then
-    return;
-  end if;
-
   insert into public.form_responses (
-    form_id,
-    live_session_id,
-    anonymous_session_id,
-    student_id,
-    answers,
-    suspended_at,
-    last_activity_at,
-    student_display_name
+    form_id, live_session_id, anonymous_session_id, student_id, answers, student_display_name
   )
-  values (
-    fid,
-    p_live_session_id,
-    p_device_id,
-    null,
-    p_answers,
-    null,
-    timezone('utc', now()),
-    name
-  );
+  values (fs.form_id, p_live_session_id, p_device_id, null, p_answers, name)
+  on conflict (live_session_id, anonymous_session_id)
+    where live_session_id is not null and anonymous_session_id is not null
+  do update set
+    answers = excluded.answers,
+    updated_at = now(),
+    student_display_name = excluded.student_display_name
+  where form_responses.suspended_at is null
+    and form_responses.finished_at is null;
+
+  perform public.touch_live_session_presence(p_live_session_id, p_device_id, false, true);
 end;
 $$;
 
@@ -994,40 +1020,18 @@ begin
 
   fid := fs.form_id;
 
-  update public.form_responses
-  set
-    suspended_at = coalesce(suspended_at, timezone('utc', now())),
-    updated_at = now(),
-    last_activity_at = timezone('utc', now()),
-    student_display_name = coalesce(nullif(trim(student_display_name), ''), name)
-  where live_session_id = p_live_session_id
-    and anonymous_session_id = p_device_id
-    and student_id is null;
-
-  if found then
-    return;
-  end if;
-
   insert into public.form_responses (
-    form_id,
-    live_session_id,
-    anonymous_session_id,
-    student_id,
-    answers,
-    suspended_at,
-    last_activity_at,
-    student_display_name
+    form_id, live_session_id, anonymous_session_id, student_id, answers, suspended_at, student_display_name
   )
-  values (
-    fid,
-    p_live_session_id,
-    p_device_id,
-    null,
-    '{}'::jsonb,
-    timezone('utc', now()),
-    timezone('utc', now()),
-    name
-  );
+  values (fs.form_id, p_live_session_id, p_device_id, null, '{}'::jsonb, timezone('utc', now()), name)
+  on conflict (live_session_id, anonymous_session_id)
+    where live_session_id is not null and anonymous_session_id is not null
+  do update set
+    suspended_at = coalesce(form_responses.suspended_at, timezone('utc', now())),
+    updated_at = now(),
+    student_display_name = coalesce(nullif(trim(form_responses.student_display_name), ''), excluded.student_display_name);
+
+  perform public.touch_live_session_presence(p_live_session_id, p_device_id, false, true);
 end;
 $$;
 
@@ -1067,41 +1071,17 @@ begin
     raise exception 'session is not open';
   end if;
 
-  fid := fs.form_id;
-
-  update public.form_responses
-  set
-    last_activity_at = timezone('utc', now()),
-    updated_at = now(),
-    student_display_name = name
-  where live_session_id = p_live_session_id
-    and anonymous_session_id = p_device_id
-    and student_id is null;
-
-  if found then
-    return;
-  end if;
-
   insert into public.form_responses (
-    form_id,
-    live_session_id,
-    anonymous_session_id,
-    student_id,
-    answers,
-    suspended_at,
-    last_activity_at,
-    student_display_name
+    form_id, live_session_id, anonymous_session_id, student_id, answers, student_display_name
   )
-  values (
-    fid,
-    p_live_session_id,
-    p_device_id,
-    null,
-    '{}'::jsonb,
-    null,
-    timezone('utc', now()),
-    name
-  );
+  values (fs.form_id, p_live_session_id, p_device_id, null, '{}'::jsonb, name)
+  on conflict (live_session_id, anonymous_session_id)
+    where live_session_id is not null and anonymous_session_id is not null
+  do update set
+    updated_at = now(),
+    student_display_name = excluded.student_display_name;
+
+  perform public.touch_live_session_presence(p_live_session_id, p_device_id, false, true);
 end;
 $$;
 
@@ -1143,64 +1123,8 @@ begin
     raise exception 'session is not open';
   end if;
 
-  fid := fs.form_id;
-
-  update public.form_responses
-  set
-    last_activity_at = case
-      when coalesce(p_interaction, true) then timezone('utc', now())
-      else last_activity_at
-    end,
-    last_typing_at = case
-      when coalesce(p_is_typing, false) then timezone('utc', now())
-      else last_typing_at
-    end,
-    updated_at = now(),
-    student_display_name = name
-  where live_session_id = p_live_session_id
-    and anonymous_session_id = p_device_id
-    and student_id is null
-    and suspended_at is null
-    and finished_at is null;
-
-  if found then
-    return;
-  end if;
-
-  if exists (
-    select 1 from public.form_responses fr
-    where fr.live_session_id = p_live_session_id
-      and fr.anonymous_session_id = p_device_id
-      and fr.student_id is null
-  ) then
-    return;
-  end if;
-
-  if not coalesce(p_interaction, true) then
-    return;
-  end if;
-
-  insert into public.form_responses (
-    form_id,
-    live_session_id,
-    anonymous_session_id,
-    student_id,
-    answers,
-    suspended_at,
-    last_activity_at,
-    last_typing_at,
-    student_display_name
-  )
-  values (
-    fid,
-    p_live_session_id,
-    p_device_id,
-    null,
-    '{}'::jsonb,
-    null,
-    timezone('utc', now()),
-    case when coalesce(p_is_typing, false) then timezone('utc', now()) else null end,
-    name
+  perform public.touch_live_session_presence(
+    p_live_session_id, p_device_id, p_is_typing, p_interaction
   );
 end;
 $$;
@@ -1251,55 +1175,73 @@ begin
     and fr.anonymous_session_id = p_device_id
     and fr.student_id is null;
 
-  if found then
-    if susp is not null then
-      raise exception 'cannot submit while suspended';
-    end if;
-    if fin is not null then
-      return;
-    end if;
+  if susp is not null then
+    raise exception 'cannot submit while suspended';
   end if;
 
-  update public.form_responses
-  set
-    finished_at = timezone('utc', now()),
-    last_activity_at = timezone('utc', now()),
-    updated_at = now(),
-    student_display_name = name
-  where live_session_id = p_live_session_id
-    and anonymous_session_id = p_device_id
-    and student_id is null
-    and suspended_at is null
-    and finished_at is null;
-
-  if found then
+  if fin is not null then
     return;
   end if;
 
   insert into public.form_responses (
-    form_id,
-    live_session_id,
-    anonymous_session_id,
-    student_id,
-    answers,
-    suspended_at,
-    finished_at,
-    last_activity_at,
-    student_display_name
+    form_id, live_session_id, anonymous_session_id, student_id, answers, finished_at, student_display_name
   )
-  values (
-    fid,
-    p_live_session_id,
-    p_device_id,
-    null,
-    '{}'::jsonb,
-    null,
-    timezone('utc', now()),
-    timezone('utc', now()),
-    name
+  values (fs.form_id, p_live_session_id, p_device_id, null, '{}'::jsonb, timezone('utc', now()), name)
+  on conflict (live_session_id, anonymous_session_id)
+    where live_session_id is not null and anonymous_session_id is not null
+  do update set
+    finished_at = timezone('utc', now()),
+    updated_at = now(),
+    student_display_name = excluded.student_display_name
+  where form_responses.suspended_at is null
+    and form_responses.finished_at is null;
+
+  perform public.touch_live_session_presence(p_live_session_id, p_device_id, false, true);
+end;
+$$;
+
+-- Slim student poll (~3s): ended / suspend / resume + window. No answers/feedback.
+create or replace function public.get_live_session_student_state(
+  p_live_session_id uuid,
+  p_device_id text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  fs record;
+  r record;
+begin
+  if p_device_id is null
+     or p_device_id !~ '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then
+    raise exception 'invalid device id';
+  end if;
+
+  select opens_at, closes_at into fs
+  from public.form_sessions
+  where id = p_live_session_id
+  limit 1;
+  if not found then
+    raise exception 'session not found';
+  end if;
+
+  select fr.suspended_at, fr.finished_at into r
+  from public.form_responses fr
+  where fr.live_session_id = p_live_session_id
+    and fr.anonymous_session_id = p_device_id
+    and fr.student_id is null;
+
+  return jsonb_build_object(
+    'opensAt', fs.opens_at,
+    'closesAt', fs.closes_at,
+    'suspended', coalesce(r.suspended_at is not null, false),
+    'finished', coalesce(r.finished_at is not null, false)
   );
 end;
 $$;
+
 create or replace function public.set_live_teacher_feedback(
   p_live_session_id uuid,
   p_device_id text,
@@ -1791,6 +1733,8 @@ grant execute on function public.stop_live_session(uuid) to authenticated, servi
 revoke all on function public.lookup_join_code(text) from public;
 revoke all on function public.get_live_session_public_board(text) from public;
 revoke all on function public.get_live_session_student_response(uuid, text) from public;
+revoke all on function public.get_live_session_student_state(uuid, text) from public;
+revoke all on function public.touch_live_session_presence(uuid, text, boolean, boolean) from public;
 revoke all on function public.save_live_session_student_response(uuid, text, jsonb, text) from public;
 revoke all on function public.suspend_live_session_student_tab_leave(uuid, text, text) from public;
 revoke all on function public.register_live_session_student_presence(uuid, text, text) from public;
@@ -1816,6 +1760,8 @@ grant execute on function public.ensure_student_review_token(uuid, text) to auth
 grant execute on function public.get_student_review_by_token(text) to anon, authenticated, service_role;
 grant execute on function public.get_live_session_public_board(text) to anon, authenticated, service_role;
 grant execute on function public.get_live_session_student_response(uuid, text) to anon, authenticated, service_role;
+grant execute on function public.get_live_session_student_state(uuid, text) to anon, authenticated, service_role;
+grant execute on function public.touch_live_session_presence(uuid, text, boolean, boolean) to service_role;
 grant execute on function public.save_live_session_student_response(uuid, text, jsonb, text) to anon, authenticated, service_role;
 grant execute on function public.suspend_live_session_student_tab_leave(uuid, text, text) to anon, authenticated, service_role;
 grant execute on function public.register_live_session_student_presence(uuid, text, text) to anon, authenticated, service_role;
@@ -1827,25 +1773,13 @@ grant execute on function public.teacher_delete_live_session_student(uuid, text)
 grant execute on function public.teacher_delete_live_session(uuid) to authenticated, service_role;
 
 -- ---------------------------------------------------------------------------
--- Realtime (see migration 20260425153000_form_responses_realtime.sql)
+-- Realtime
+--
+-- form_responses is intentionally NOT in the realtime publication and uses the
+-- default (PK) replica identity: at scale students/teachers poll instead of
+-- holding WebSockets (Pro caps Realtime at 10k connections). See migration
+-- 20260530090000_scale_polling_presence.sql.
 -- ---------------------------------------------------------------------------
-alter table public.form_responses replica identity full;
-
-do $$
-begin
-  if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
-     and not exists (
-       select 1
-       from pg_publication_tables
-       where pubname = 'supabase_realtime'
-         and schemaname = 'public'
-         and tablename = 'form_responses'
-     ) then
-    execute 'alter publication supabase_realtime add table public.form_responses';
-  end if;
-end;
-$$;
-
 alter table public.form_sessions replica identity full;
 
 do $$

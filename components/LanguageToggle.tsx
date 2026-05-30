@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 
 import {
   LOCALE_EXPLICIT_COOKIE,
@@ -29,14 +29,20 @@ export function LanguageToggle({ className }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const [, startTransition] = useTransition();
+  const [explicitLocaleCookieTick, setExplicitLocaleCookieTick] = useState(0);
+
+  useEffect(() => {
+    if (explicitLocaleCookieTick === 0) {
+      return;
+    }
+    document.cookie = `${LOCALE_EXPLICIT_COOKIE}=1; path=/; max-age=${60 * 60 * 24 * 365}; samesite=lax`;
+  }, [explicitLocaleCookieTick]);
 
   const choose = (next: Locale) => {
     if (next === locale) {
       return;
     }
-    if (typeof document !== "undefined") {
-      document.cookie = `${LOCALE_EXPLICIT_COOKIE}=1; path=/; max-age=${60 * 60 * 24 * 365}; samesite=lax`;
-    }
+    setExplicitLocaleCookieTick((tick) => tick + 1);
     const search = typeof window !== "undefined" ? window.location.search : "";
     const hash = typeof window !== "undefined" ? window.location.hash : "";
     const target = switchLocaleInPath((pathname ?? `/${locale}`) + search + hash, next);

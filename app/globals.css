@@ -1,6 +1,8 @@
 @import "tailwindcss";
 
 :root {
+  color-scheme: light;
+
   /* Surfaces */
   --tp-bg: #f7f8fc;
   --tp-bg-subtle: #eef0f6;
@@ -100,88 +102,6 @@
   --tp-danger-light: #fb7185;
   --tp-loading-segment-dark: #d4d4d8;
   --tp-danger-bg-strong: #fee2e2;
-}
-
-.dark {
-  color-scheme: dark;
-
-  --tp-bg: #0c0e14;
-  --tp-bg-subtle: #151821;
-  --tp-bg-pattern: radial-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px);
-  --tp-surface: #1a1d27;
-  --tp-surface-raised: #212532;
-  --tp-border: #2a2f3d;
-  --tp-border-strong: #383e50;
-
-  --tp-text: #f1f5f9;
-  --tp-text-secondary: #94a3b8;
-  --tp-text-muted: #64748b;
-
-  --tp-brand: #6366f1;
-  --tp-brand-hover: #818cf8;
-  --tp-brand-soft: #1e1b4b;
-  --tp-brand-text: #c7d2fe;
-
-  --tp-accent: #3b82f6;
-  --tp-accent-hover: #60a5fa;
-  --tp-accent-soft: #172554;
-  --tp-accent-ring: #2563eb;
-
-  --tp-violet: #8b5cf6;
-  --tp-violet-soft: #2e1065;
-  --tp-coral: #fb7185;
-  --tp-coral-soft: #450a0a;
-  --tp-mint: #34d399;
-  --tp-mint-soft: #064e3b;
-  --tp-amber: #fbbf24;
-  --tp-amber-soft: #451a03;
-  --tp-sky: #38bdf8;
-  --tp-sky-soft: #0c4a6e;
-
-  --tp-success: #34d399;
-  --tp-success-soft: #064e3b;
-  --tp-success-border: #065f46;
-  --tp-danger: #f87171;
-  --tp-danger-soft: #450a0a;
-  --tp-danger-border: #7f1d1d;
-  --tp-warning: #fbbf24;
-  --tp-warning-soft: #451a03;
-  --tp-warning-border: #78350f;
-  --tp-warning-text: #fcd34d;
-
-  --tp-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.35),
-    0 8px 24px -8px rgba(0, 0, 0, 0.45);
-  --tp-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --tp-shadow-lg:
-    0 1px 2px rgba(0, 0, 0, 0.35),
-    0 12px 32px -10px rgba(0, 0, 0, 0.55);
-  --tp-shadow-brand:
-    0 1px 2px rgba(59, 130, 246, 0.25),
-    0 10px 24px -8px rgba(59, 130, 246, 0.35);
-
-  --background: var(--tp-bg);
-  --foreground: var(--tp-text);
-
-  --tp-on-accent: #ffffff;
-  --tp-success-text: #6ee7b7;
-  --tp-danger-text: #fca5a5;
-  --tp-danger-text-strong: #f87171;
-  --tp-violet-text: #c4b5fd;
-  --tp-violet-text-strong: #a78bfa;
-  --tp-violet-border: #5b21b6;
-  --tp-accent-text: #93c5fd;
-  --tp-accent-border: #1e3a8a;
-  --tp-feedback-border: #0c4a6e;
-  --tp-feedback-bg-start: #0c1929;
-  --tp-feedback-bg-end: #0f2744;
-  --tp-feedback-title: #7dd3fc;
-  --tp-feedback-body: #bae6fd;
-  --tp-grade-strip-bg: rgba(26, 29, 39, 0.92);
-  --tp-score-great-text: #6ee7b7;
-  --tp-score-solid-text: #fcd34d;
-  --tp-score-needs-text: #fca5a5;
-  --tp-loading-segment-dark: #52525b;
 }
 
 @theme inline {

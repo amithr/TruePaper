@@ -13,20 +13,23 @@ export default function LoginPage() {
   const t = useTranslations();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(() => {
+    if (typeof window === "undefined") {
+      return "";
+    }
+    return new URLSearchParams(window.location.search).get("auth_error") ?? "";
+  });
   const [pending, setPending] = useState(false);
 
-  /** Read OAuth callback errors out of the URL once on mount and strip them. */
+  /** Strip OAuth callback errors from the URL after showing them once. */
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
     const params = new URLSearchParams(window.location.search);
-    const authError = params.get("auth_error");
-    if (!authError) {
+    if (!params.get("auth_error")) {
       return;
     }
-    setError(authError);
     params.delete("auth_error");
     const query = params.toString();
     const nextUrl = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`;

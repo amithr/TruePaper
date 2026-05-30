@@ -66,12 +66,6 @@
     "toggleAria": "Language",
     "chooseLanguage": "Choose language"
   },
-  "theme": {
-    "label": "Color theme",
-    "light": "Light",
-    "dark": "Dark",
-    "system": "System"
-  },
   "auth": {
     "eyebrowTeacher": "Teacher",
     "login": {

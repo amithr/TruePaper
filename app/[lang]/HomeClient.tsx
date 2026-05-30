@@ -37,7 +37,6 @@ const StudentExamQuestion = dynamic(
   { ssr: false },
 );
 import { LanguageToggle } from "@/components/LanguageToggle";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import {
   createFreshAnonymousSessionId,
   getOrCreateAnonymousSessionId,
@@ -57,7 +56,6 @@ import { parseLiveSessionStudentGet } from "@/lib/live-session-student-get";
 import { isValidJoinCodeFormat, normalizeJoinCode } from "@/lib/join-code";
 import { isValidResumeCodeFormat, normalizeResumeCode } from "@/lib/resume-code";
 import { isNoTimeLimitSession } from "@/lib/session-window";
-import { LIVE_BOARD_BROADCAST_EVENT, liveBoardChannelName } from "@/lib/broadcast-live-board";
 import type { StudentExamRemotePatch } from "@/lib/student-exam-remote-patch";
 import { mergeStudentAnswersForSave } from "@/lib/collect-student-exam-answers";
 import { shouldApplyServerAnswersOnLoad } from "@/lib/student-exam-answer-hydration";
@@ -67,11 +65,8 @@ import { fetchStudentLiveTeacherFeedback } from "@/lib/fetch-student-live-feedba
 import { hasLiveTeacherFeedbackContent } from "@/lib/live-teacher-feedback";
 import { requestJson } from "@/lib/request-json";
 import { stableStringifyStudentAnswers } from "@/lib/student-answers-json";
-import { createBrowserSupabaseClient } from "@/lib/supabase/browser";
 import { usePollingRefresh } from "@/lib/use-polling-refresh";
-import { notifyTeacherWatchAnswerDraft } from "@/lib/notify-teacher-watch-answer-draft";
-import { useStudentExamRealtime } from "@/lib/use-student-exam-realtime";
-import { useThrottledCallback } from "@/lib/use-throttled-callback";
+import { useStudentExamStatePoll } from "@/lib/use-student-exam-state-poll";
 import { focusRing, ui } from "@/lib/ui";
 
 import type { ClientSessionData } from "@/lib/client-session";
@@ -150,38 +145,9 @@ function examProtectionHandlers(enabled: boolean) {
 const E2E_AUTOSAVE =
   typeof process !== "undefined" && process.env.NEXT_PUBLIC_E2E_AUTOSAVE === "1";
 const AUTOSAVE_DEBOUNCE_MS = E2E_AUTOSAVE ? 200 : 600;
-const AUTOSAVE_MAX_WAIT_MS = E2E_AUTOSAVE ? 800 : 2000;
-
-async function notifyLiveBoardRefresh(joinCode: string): Promise<void> {
-  const code = joinCode.trim().toUpperCase();
-  if (!code) {
-    return;
-  }
-  try {
-    const supabase = createBrowserSupabaseClient();
-    const channel = supabase.channel(liveBoardChannelName(code));
-    await new Promise<void>((resolve, reject) => {
-      const timeout = window.setTimeout(() => {
-        void supabase.removeChannel(channel);
-        reject(new Error("timeout"));
-      }, 5000);
-      channel.subscribe(async (status) => {
-        if (status === "SUBSCRIBED") {
-          window.clearTimeout(timeout);
-          await channel.send({
-            type: "broadcast",
-            event: LIVE_BOARD_BROADCAST_EVENT,
-            payload: { at: new Date().toISOString() },
-          });
-          void supabase.removeChannel(channel);
-          resolve();
-        }
-      });
-    });
-  } catch {
-    /* optional */
-  }
-}
+// Forces a save (and thus a teacher live-typing refresh) at least this often
+// during continuous typing. ~3s aligns with the teacher's 3s overview poll.
+const AUTOSAVE_MAX_WAIT_MS = E2E_AUTOSAVE ? 800 : 3000;
 
 function serializeBuilderFormDetails(form: Form): string {
   return JSON.stringify({
@@ -210,7 +176,6 @@ function HomeChrome({ children }: { children: React.ReactNode }) {
       <div className="pointer-events-none fixed right-4 top-4 z-50 sm:right-6 sm:top-6">
         <div className="pointer-events-auto flex items-center gap-2">
           <LanguageToggle />
-          <ThemeToggle />
         </div>
       </div>
       {children}
@@ -320,8 +285,10 @@ export default function HomeClient({ initialSession }: HomeClientProps) {
       /* ignore */
     }
   }, []);
-  const lastPersistedBuilderFormDetailsRef = useRef("");
-  const lastPersistedBuilderQuestionJsonByIdRef = useRef<Record<string, string>>({});
+  const [persistedBuilderFormDetails, setPersistedBuilderFormDetails] = useState("");
+  const [persistedBuilderQuestionJsonById, setPersistedBuilderQuestionJsonById] = useState<
+    Record<string, string>
+  >({});
   const builderSaveInFlightRef = useRef(false);
   const builderSavedClearRef = useRef<number | undefined>(undefined);
   const [isLoadingForms, setIsLoadingForms] = useState(false);
@@ -340,22 +307,24 @@ export default function HomeClient({ initialSession }: HomeClientProps) {
   useEffect(() => {
     const intent = readTeacherHomeIntent();
     const formId = readFormIdFromUrl();
-    setHomePageIntent(intent);
-    if (formId) {
-      setActiveFormId(formId);
-      const pending = peekPendingBuilderForm(formId);
-      if (pending) {
-        setAuthForms((prev) =>
-          prev.some((form) => form.id === formId) ? prev : [...prev, pending],
-        );
+    const pending = formId ? peekPendingBuilderForm(formId) : null;
+    deferEffect(() => {
+      setHomePageIntent(intent);
+      if (formId) {
+        setActiveFormId(formId);
+        if (pending) {
+          setAuthForms((prev) =>
+            prev.some((form) => form.id === formId) ? prev : [...prev, pending],
+          );
+        }
       }
-    }
-    if (intent === "builder") {
-      setMode("teacher");
-    } else if (intent === "join") {
-      setMode("student");
-    }
-    setUrlSynced(true);
+      if (intent === "builder") {
+        setMode("teacher");
+      } else if (intent === "join") {
+        setMode("student");
+      }
+      setUrlSynced(true);
+    });
   }, []);
 
   const activeForm = useMemo(
@@ -411,7 +380,7 @@ export default function HomeClient({ initialSession }: HomeClientProps) {
           /* ignore */
         }
       })();
-    }, 450);
+    }, 2000);
   }, [
     joinedSession,
     anonymousSessionId,
@@ -433,7 +402,7 @@ export default function HomeClient({ initialSession }: HomeClientProps) {
       return;
     }
     const now = Date.now();
-    if (now - lastPointerInteractionPingAtRef.current < 1200) {
+    if (now - lastPointerInteractionPingAtRef.current < 3000) {
       return;
     }
     lastPointerInteractionPingAtRef.current = now;
@@ -687,13 +656,17 @@ export default function HomeClient({ initialSession }: HomeClientProps) {
     if (homePageIntent !== "builder") {
       return;
     }
-    setActiveFormId("");
-    setHomePageIntent("none");
-    router.replace("/");
+    deferEffect(() => {
+      setActiveFormId("");
+      setHomePageIntent("none");
+      router.replace("/");
+    });
   }, [session, homePageIntent, router, urlSynced]);
 
   useEffect(() => {
-    setPreviewAnswers({});
+    deferEffect(() => {
+      setPreviewAnswers({});
+    });
   }, [activeFormId]);
 
   const joinedLiveSessionId = joinedSession?.liveSessionId ?? "";
@@ -872,10 +845,11 @@ export default function HomeClient({ initialSession }: HomeClientProps) {
     }
   }, [t]);
 
-  useStudentExamRealtime({
+  useStudentExamStatePoll({
     liveSessionId: joinedLiveSessionId,
     deviceId: anonymousSessionId,
-    enabled: Boolean(joinedLiveSessionId && anonymousSessionId && studentAnswersHydrated),
+    enabled:
+      Boolean(joinedLiveSessionId && anonymousSessionId && studentAnswersHydrated) && !examFinished,
     onPatch: applyStudentExamRemotePatch,
   });
 
@@ -1040,33 +1014,17 @@ export default function HomeClient({ initialSession }: HomeClientProps) {
     t,
   ]);
 
-  const broadcastAnswerDraft = useThrottledCallback(
-    (liveSessionId: string, deviceId: string, answers: StudentAnswers) => {
-      void notifyTeacherWatchAnswerDraft(liveSessionId, deviceId, answers);
-    },
-    180,
-  );
-
   const patchTextAnswer = useCallback(
     (questionId: string, next: string) => {
       setExamAnswers((prev) => {
         const updated = { ...prev, [questionId]: next };
         latestStudentAnswersRef.current = updated;
-        if (joinedSession && anonymousSessionId) {
-          broadcastAnswerDraft(joinedSession.liveSessionId, anonymousSessionId, updated);
-        }
         return updated;
       });
       scheduleTypingHeartbeat();
       scheduleStudentAutosave();
     },
-    [
-      scheduleTypingHeartbeat,
-      scheduleStudentAutosave,
-      joinedSession,
-      anonymousSessionId,
-      broadcastAnswerDraft,
-    ],
+    [scheduleTypingHeartbeat, scheduleStudentAutosave],
   );
 
   const patchChoiceAnswer = useCallback(
@@ -1074,19 +1032,12 @@ export default function HomeClient({ initialSession }: HomeClientProps) {
       setExamAnswers((prev) => {
         const updated = { ...prev, [questionId]: next };
         latestStudentAnswersRef.current = updated;
-        if (joinedSession && anonymousSessionId) {
-          void notifyTeacherWatchAnswerDraft(
-            joinedSession.liveSessionId,
-            anonymousSessionId,
-            updated,
-          );
-        }
         return updated;
       });
       scheduleTypingHeartbeat();
       scheduleStudentAutosave();
     },
-    [scheduleTypingHeartbeat, scheduleStudentAutosave, joinedSession, anonymousSessionId],
+    [scheduleTypingHeartbeat, scheduleStudentAutosave],
   );
 
   useEffect(() => {
@@ -1141,9 +1092,6 @@ export default function HomeClient({ initialSession }: HomeClientProps) {
           setExamSuspended(false);
           setStatusMessage(body.error ?? t("home.status.alreadySubmitted"));
           return;
-        }
-        if (res.ok && joinCodeInput) {
-          void notifyLiveBoardRefresh(joinCodeInput);
         }
       } catch {
         /* ignore */
@@ -1339,20 +1287,25 @@ export default function HomeClient({ initialSession }: HomeClientProps) {
   /** Refresh the dirty-tracker baseline when the active form changes (e.g. opening a different form). */
   useEffect(() => {
     if (!activeForm) {
-      lastPersistedBuilderFormDetailsRef.current = "";
-      lastPersistedBuilderQuestionJsonByIdRef.current = {};
-      setBuilderSaveStatus("idle");
-      setBuilderSaveError("");
+      deferEffect(() => {
+        setPersistedBuilderFormDetails("");
+        setPersistedBuilderQuestionJsonById({});
+        setBuilderSaveStatus("idle");
+        setBuilderSaveError("");
+      });
       return;
     }
-    lastPersistedBuilderFormDetailsRef.current = serializeBuilderFormDetails(activeForm);
+    const details = serializeBuilderFormDetails(activeForm);
     const persistedQuestions: Record<string, string> = {};
     for (const question of activeForm.questions) {
       persistedQuestions[question.id] = serializeBuilderQuestion(question);
     }
-    lastPersistedBuilderQuestionJsonByIdRef.current = persistedQuestions;
-    setBuilderSaveStatus("idle");
-    setBuilderSaveError("");
+    deferEffect(() => {
+      setPersistedBuilderFormDetails(details);
+      setPersistedBuilderQuestionJsonById(persistedQuestions);
+      setBuilderSaveStatus("idle");
+      setBuilderSaveError("");
+    });
   }, [activeFormId]); // intentionally not [activeForm] — recomputes only when opening a different form
 
   /** Compute whether the active form has unsaved edits. */
@@ -1360,25 +1313,24 @@ export default function HomeClient({ initialSession }: HomeClientProps) {
     if (!activeForm) {
       return false;
     }
-    if (
-      serializeBuilderFormDetails(activeForm) !==
-      lastPersistedBuilderFormDetailsRef.current
-    ) {
+    if (serializeBuilderFormDetails(activeForm) !== persistedBuilderFormDetails) {
       return true;
     }
     for (const question of activeForm.questions) {
       const json = serializeBuilderQuestion(question);
-      if (json !== lastPersistedBuilderQuestionJsonByIdRef.current[question.id]) {
+      if (json !== persistedBuilderQuestionJsonById[question.id]) {
         return true;
       }
     }
     return false;
-  }, [activeForm, builderSaveStatus]);
+  }, [activeForm, persistedBuilderFormDetails, persistedBuilderQuestionJsonById]);
 
   /** Reset "Saved" pill back to idle as soon as the teacher makes a new edit. */
   useEffect(() => {
     if (builderSaveStatus === "saved" && builderHasUnsavedChanges) {
-      setBuilderSaveStatus("idle");
+      deferEffect(() => {
+        setBuilderSaveStatus("idle");
+      });
     }
   }, [builderHasUnsavedChanges, builderSaveStatus]);
 
@@ -1389,11 +1341,11 @@ export default function HomeClient({ initialSession }: HomeClientProps) {
     }
 
     const detailsJson = serializeBuilderFormDetails(form);
-    const formDetailsDirty = detailsJson !== lastPersistedBuilderFormDetailsRef.current;
+    const formDetailsDirty = detailsJson !== persistedBuilderFormDetails;
     const dirtyQuestions: Question[] = [];
     for (const question of form.questions) {
       const questionJson = serializeBuilderQuestion(question);
-      if (questionJson !== lastPersistedBuilderQuestionJsonByIdRef.current[question.id]) {
+      if (questionJson !== persistedBuilderQuestionJsonById[question.id]) {
         dirtyQuestions.push(question);
       }
     }
@@ -1417,9 +1369,10 @@ export default function HomeClient({ initialSession }: HomeClientProps) {
             liveTeacherFeedbackEnabled: form.liveTeacherFeedbackEnabled,
           }),
         });
-        lastPersistedBuilderFormDetailsRef.current = detailsJson;
+        setPersistedBuilderFormDetails(detailsJson);
       }
 
+      const nextPersistedQuestions = { ...persistedBuilderQuestionJsonById };
       for (const question of dirtyQuestions) {
         await requestJson<{ ok: true }>(`/api/questions/${question.id}`, {
           method: "PATCH",
@@ -1432,8 +1385,10 @@ export default function HomeClient({ initialSession }: HomeClientProps) {
             points: question.points,
           }),
         });
-        lastPersistedBuilderQuestionJsonByIdRef.current[question.id] =
-          serializeBuilderQuestion(question);
+        nextPersistedQuestions[question.id] = serializeBuilderQuestion(question);
+      }
+      if (dirtyQuestions.length > 0) {
+        setPersistedBuilderQuestionJsonById(nextPersistedQuestions);
       }
 
       setBuilderSaveStatus("saved");
@@ -1454,7 +1409,13 @@ export default function HomeClient({ initialSession }: HomeClientProps) {
     } finally {
       builderSaveInFlightRef.current = false;
     }
-  }, [activeFormId, latestActiveFormRef, t]);
+  }, [
+    activeFormId,
+    latestActiveFormRef,
+    persistedBuilderFormDetails,
+    persistedBuilderQuestionJsonById,
+    t,
+  ]);
 
   /** Cleanup the "Saved" timeout if the form unmounts. */
   useEffect(() => {
@@ -1506,8 +1467,10 @@ export default function HomeClient({ initialSession }: HomeClientProps) {
         ...form,
         questions: [...form.questions, data.question],
       }));
-      lastPersistedBuilderQuestionJsonByIdRef.current[data.question.id] =
-        serializeBuilderQuestion(data.question);
+      setPersistedBuilderQuestionJsonById((prev) => ({
+        ...prev,
+        [data.question.id]: serializeBuilderQuestion(data.question),
+      }));
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : t("home.errors.addQuestion"));
     } finally {
@@ -1526,7 +1489,11 @@ export default function HomeClient({ initialSession }: HomeClientProps) {
         ...form,
         questions: form.questions.filter((question) => question.id !== questionId),
       }));
-      delete lastPersistedBuilderQuestionJsonByIdRef.current[questionId];
+      setPersistedBuilderQuestionJsonById((prev) => {
+        const next = { ...prev };
+        delete next[questionId];
+        return next;
+      });
       const nextAnswers = { ...latestStudentAnswersRef.current };
       delete nextAnswers[questionId];
       latestStudentAnswersRef.current = nextAnswers;
@@ -1779,12 +1746,8 @@ export default function HomeClient({ initialSession }: HomeClientProps) {
           }),
         },
       );
-      const codeForBoard = joinCodeInput;
       clearJoinFormFields();
       leaveJoinedSession();
-      if (codeForBoard) {
-        void notifyLiveBoardRefresh(codeForBoard);
-      }
       router.replace("/");
       router.refresh();
     } catch (error) {

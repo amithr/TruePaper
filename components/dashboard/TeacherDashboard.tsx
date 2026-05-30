@@ -4,7 +4,6 @@ import { useCallback, useState } from "react";
 
 import { BrandMark } from "@/components/BrandMark";
 import { LanguageToggle } from "@/components/LanguageToggle";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import { DashboardFormLibrary } from "@/components/dashboard/DashboardFormLibrary";
 import { DashboardLazySection } from "@/components/dashboard/DashboardLazySection";
 import { DashboardPastSessions } from "@/components/dashboard/DashboardPastSessions";
@@ -71,7 +70,6 @@ export function TeacherDashboard({
           <BrandMark />
           <div className="flex items-center gap-2">
             <LanguageToggle />
-            <ThemeToggle />
             <LocaleLink
               href="/#join-session"
               className={`${ui.btnSecondary} hidden sm:inline-flex`}

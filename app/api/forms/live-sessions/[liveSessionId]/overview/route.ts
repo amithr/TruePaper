@@ -113,6 +113,26 @@ export async function GET(_request: Request, { params }: Params) {
     return NextResponse.json({ error: rowsError.message }, { status: 500 });
   }
 
+  // Activity/typing live in the narrow presence table (heartbeats no longer
+  // rewrite form_responses). Fall back to the row columns if presence is empty
+  // (e.g. before the scale migration backfill ran).
+  const presenceByDevice = new Map<string, { lastActivityAt: string | null; lastTypingAt: string | null }>();
+  const presence = await supabase
+    .from("live_session_presence")
+    .select("anonymous_session_id, last_activity_at, last_typing_at")
+    .eq("live_session_id", liveSessionId);
+  if (!presence.error) {
+    for (const p of presence.data ?? []) {
+      const device = (p.anonymous_session_id as string | null)?.toLowerCase();
+      if (device) {
+        presenceByDevice.set(device, {
+          lastActivityAt: (p.last_activity_at as string | null) ?? null,
+          lastTypingAt: (p.last_typing_at as string | null) ?? null,
+        });
+      }
+    }
+  }
+
   const { data: questionRows, error: qError } = await supabase
     .from("questions")
     .select("id, points, question_type")
@@ -136,8 +156,10 @@ export async function GET(_request: Request, { params }: Params) {
     const suspendedAt = r.suspended_at as string | null;
     const finishedAt = r.finished_at as string | null;
     const gradedAt = (r.text_graded_at as string | null | undefined) ?? null;
-    const lastActivityAt = r.last_activity_at as string | null;
-    const lastTypingAt = r.last_typing_at as string | null;
+    const deviceKey = (r.anonymous_session_id as string | null)?.toLowerCase() ?? "";
+    const pres = presenceByDevice.get(deviceKey);
+    const lastActivityAt = pres?.lastActivityAt ?? (r.last_activity_at as string | null);
+    const lastTypingAt = pres?.lastTypingAt ?? (r.last_typing_at as string | null);
     const grades = parseQuestionGrades(r.text_grades);
     const pointsEarned = gradedAt ? sumEarnedPoints(grades, questions) : null;
     const answers = parseStudentAnswersJson(r.answers);

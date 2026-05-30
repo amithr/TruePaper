@@ -12,7 +12,6 @@ import { notifyStudentExamResumed } from "@/lib/notify-student-exam-resumed";
 import { isNoTimeLimitSession } from "@/lib/session-window";
 import type { SuspendedStudentRow, TeacherSessionSummary } from "@/lib/teacher-sessions";
 import { usePollingRefresh } from "@/lib/use-polling-refresh";
-import { usePostgresRealtimeRefresh } from "@/lib/use-postgres-realtime-refresh";
 import { focusRing, ui } from "@/lib/ui";
 import { messageForBackgroundRefreshError } from "@/lib/background-network-error";
 import { requestJson } from "@/lib/request-json";
@@ -82,17 +81,9 @@ export function DashboardRunningSessions({
     return () => window.clearInterval(id);
   }, []);
 
-  usePostgresRealtimeRefresh(
-    true,
-    "teacher-dashboard-active",
-    [{ table: "form_responses" }, { table: "form_sessions" }],
-    refreshActive,
-    { debounceMs: 600, minIntervalMs: 2000 },
-  );
-
   usePollingRefresh({
     enabled: sessions.length > 0,
-    intervalMs: 8000,
+    intervalMs: 5000,
     immediate: false,
     onRefresh: () => void refreshActive(),
   });

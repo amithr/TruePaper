@@ -5,8 +5,6 @@ import { isValidAnonymousSessionId } from "@/lib/anonymous-session";
 import { isValidLiveSessionDisplayName, normalizeLiveSessionDisplayName } from "@/lib/live-session-display-name";
 import { finalizeLiveSessionIfClosed } from "@/lib/live-session-finalize";
 import { parseLiveSessionStudentGet } from "@/lib/live-session-student-get";
-import { broadcastTeacherWatchRefresh } from "@/lib/broadcast-teacher-watch";
-import { notifyLiveSessionActivity } from "@/lib/notify-live-session-activity";
 import { createSupabaseAnonServiceClient } from "@/lib/supabase/anon-service";
 
 type Params = {
@@ -126,10 +124,6 @@ export async function PUT(request: Request, { params }: Params) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
-    void notifyLiveSessionActivity(liveSessionId);
-    void broadcastTeacherWatchRefresh(supabase, liveSessionId, deviceId).catch(() => {
-      /* watch page may poll */
-    });
     return NextResponse.json({ ok: true });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Configuration error.";

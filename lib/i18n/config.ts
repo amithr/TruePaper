@@ -23,7 +23,7 @@ export const LOCALE_LABELS: Record<Locale, string> = {
 /** Short codes shown in compact UIs (e.g. the language toggle). */
 export const LOCALE_SHORT: Record<Locale, string> = {
   en: "EN",
-  uk: "UK",
+  uk: "UA",
 };
 
 export function isLocale(value: unknown): value is Locale {

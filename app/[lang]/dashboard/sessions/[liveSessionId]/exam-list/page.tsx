@@ -7,7 +7,6 @@ import { useCallback, useEffect, useState } from "react";
 
 import { LoadingBar } from "@/components/LoadingBar";
 import { SessionExamRoster } from "@/components/SessionExamRoster";
-import { ThemeToggle } from "@/components/ThemeToggle";
 import {
   countNeedsGrading,
   gradingRosterPriority,
@@ -15,15 +14,18 @@ import {
   type GradingRosterFilter,
 } from "@/lib/grading-roster";
 import type { LiveSessionOverviewPayload } from "@/lib/live-session-overview";
+import type { StudentAnswers } from "@/lib/forms";
 import { deferEffect } from "@/lib/defer-effect";
 import { isNoTimeLimitSession } from "@/lib/session-window";
 import { usePollingRefresh } from "@/lib/use-polling-refresh";
-import { usePostgresRealtimeRefresh } from "@/lib/use-postgres-realtime-refresh";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { focusRing, ui } from "@/lib/ui";
 import { messageForBackgroundRefreshError } from "@/lib/background-network-error";
 import { requestJson } from "@/lib/request-json";
-import { useLiveSessionAnswerDrafts } from "@/lib/use-live-session-answer-drafts";
+
+// Live typing now comes from autosaved answers in the overview poll (no client
+// Realtime). Kept as a stable empty map so the roster prop contract is intact.
+const EMPTY_LIVE_DRAFTS: Record<string, StudentAnswers> = {};
 
 function formatCountdown(ms: number): string {
   if (ms <= 0) {
@@ -47,10 +49,7 @@ export default function SessionExamListPage() {
   const [lastOverviewSyncAt, setLastOverviewSyncAt] = useState<number | null>(null);
   const [rosterFilter, setRosterFilter] = useState<GradingRosterFilter>("all");
 
-  const liveDraftsByDevice = useLiveSessionAnswerDrafts(
-    Boolean(overview?.session.sessionOpen),
-    liveSessionId,
-  );
+  const liveDraftsByDevice = EMPTY_LIVE_DRAFTS;
 
   const refreshOverview = useCallback(async () => {
     if (!liveSessionId) {
@@ -80,22 +79,9 @@ export default function SessionExamListPage() {
     });
   }, [liveSessionId, refreshOverview]);
 
-  const overviewLive = overview === null || overview.session.sessionOpen;
-
-  usePostgresRealtimeRefresh(
-    Boolean(liveSessionId) && overviewLive,
-    `exam-list:${liveSessionId}`,
-    [
-      { table: "form_responses", filter: `live_session_id=eq.${liveSessionId}` },
-      { table: "form_sessions", filter: `id=eq.${liveSessionId}` },
-    ],
-    refreshOverview,
-    { debounceMs: 500, minIntervalMs: 1000 },
-  );
-
   usePollingRefresh({
     enabled: Boolean(overview?.session.sessionOpen),
-    intervalMs: 4000,
+    intervalMs: 3000,
     immediate: false,
     onRefresh: () => void refreshOverview(),
   });
@@ -169,7 +155,6 @@ export default function SessionExamListPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <ThemeToggle />
             <a
               href={`/api/forms/live-sessions/${liveSessionId}/exam-bundle-pdf`}
               download

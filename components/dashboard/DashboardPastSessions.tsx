@@ -11,7 +11,6 @@ import { deferEffect } from "@/lib/defer-effect";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { ui } from "@/lib/ui";
 import { requestJson } from "@/lib/request-json";
-import { usePostgresRealtimeRefresh } from "@/lib/use-postgres-realtime-refresh";
 
 type Props = {
   onError: (message: string) => void;
@@ -56,18 +55,6 @@ export function DashboardPastSessions({ onError }: Props) {
       void loadPage(0);
     });
   }, [loadPage]);
-
-  const refreshCurrentPage = useCallback(() => {
-    void loadPage(page);
-  }, [loadPage, page]);
-
-  usePostgresRealtimeRefresh(
-    true,
-    "teacher-dashboard-past",
-    [{ table: "form_responses" }, { table: "form_sessions" }],
-    refreshCurrentPage,
-    { debounceMs: 600, minIntervalMs: 2000 },
-  );
 
   const deleteSession = async (sessionId: string) => {
     setDeletingSessionId(sessionId);

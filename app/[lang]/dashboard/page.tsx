@@ -1,4 +1,4 @@
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 
 import { TeacherDashboard } from "@/components/dashboard/TeacherDashboard";
 import { isLocale } from "@/lib/i18n/config";

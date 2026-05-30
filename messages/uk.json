@@ -66,12 +66,6 @@
     "toggleAria": "Мова",
     "chooseLanguage": "Оберіть мову"
   },
-  "theme": {
-    "label": "Колірна тема",
-    "light": "Світла",
-    "dark": "Темна",
-    "system": "Системна"
-  },
   "auth": {
     "eyebrowTeacher": "Вчитель",
     "login": {
