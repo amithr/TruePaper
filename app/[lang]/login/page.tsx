@@ -71,7 +71,7 @@ export default function LoginPage() {
             {t("auth.login.createAccount")}
           </LocaleLink>{" "}
           · {t("auth.login.studentsJoinSuffix")}{" "}
-          <LocaleLink href="/#join-session" className={ui.link}>
+          <LocaleLink href="/join" className={ui.link}>
             {t("auth.login.joinPageLink")}
           </LocaleLink>
         </p>

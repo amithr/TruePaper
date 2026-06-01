@@ -71,7 +71,7 @@ export function TeacherDashboard({
           <div className="flex items-center gap-2">
             <LanguageToggle />
             <LocaleLink
-              href="/#join-session"
+              href="/join"
               className={`${ui.btnSecondary} hidden sm:inline-flex`}
               aria-label={t("dashboard.studentJoinPageAria")}
             >

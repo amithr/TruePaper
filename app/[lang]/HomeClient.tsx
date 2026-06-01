@@ -8,6 +8,7 @@ import dynamic from "next/dynamic";
 
 import { JoinCodeInput } from "@/components/JoinCodeInput";
 import { LoadingBar } from "@/components/LoadingBar";
+import { LandingHero } from "./LandingHero";
 
 /**
  * Heavy or rarely-rendered widgets are pulled into their own JS chunks so the
@@ -170,11 +171,36 @@ function serializeBuilderQuestion(question: Question): string {
 /** Why a logged-in teacher should remain on `/` instead of the dashboard. */
 type TeacherHomeIntent = "builder" | "join" | "none";
 
-function HomeChrome({ children }: { children: React.ReactNode }) {
+function HomeChrome({
+  children,
+  guestHeader,
+}: {
+  children: React.ReactNode;
+  /** Guest landing: Sign in + language toggle in one aligned row. */
+  guestHeader?: boolean;
+}) {
+  const t = useTranslations();
+
+  if (guestHeader) {
+    return (
+      <>
+        <header className="tp-home-chrome pointer-events-none fixed inset-x-0 top-0 z-50">
+          <div className="tp-home-chrome__inner pointer-events-auto">
+            <Link href="/login" className={`tp-btn-secondary tp-home-chrome__signin ${focusRing}`}>
+              {t("common.signIn")}
+            </Link>
+            <LanguageToggle />
+          </div>
+        </header>
+        {children}
+      </>
+    );
+  }
+
   return (
     <>
       <div className="pointer-events-none fixed right-4 top-4 z-50 sm:right-6 sm:top-6">
-        <div className="pointer-events-auto flex items-center gap-2">
+        <div className="pointer-events-auto flex items-center">
           <LanguageToggle />
         </div>
       </div>
@@ -215,9 +241,14 @@ type HomeClientProps = {
    * on every home-page load.
    */
   initialSession: SessionData | null;
+  /** Guest-only: marketing homepage vs dedicated student join page. */
+  guestView?: "landing" | "join";
 };
 
-export default function HomeClient({ initialSession }: HomeClientProps) {
+export default function HomeClient({
+  initialSession,
+  guestView = "landing",
+}: HomeClientProps) {
   const router = useRouter();
   const t = useTranslations();
   const { formatPointsScore, scoreTierMessage } = useScoreCopy();
@@ -301,6 +332,8 @@ export default function HomeClient({ initialSession }: HomeClientProps) {
   const tabLeaveReportedRef = useRef(false);
   const studentResponseLoadKeyRef = useRef<string | null>(null);
   const [studentAnswersHydrated, setStudentAnswersHydrated] = useState(false);
+  /** False on guest `/` until we know the URL is not a student join deep link. */
+  const [guestLandingReady, setGuestLandingReady] = useState(guestView !== "landing");
 
   const isTeacher = session?.profile?.role === "teacher";
 
@@ -309,6 +342,14 @@ export default function HomeClient({ initialSession }: HomeClientProps) {
     const formId = readFormIdFromUrl();
     const pending = formId ? peekPendingBuilderForm(formId) : null;
     deferEffect(() => {
+      if (!initialSession && guestView === "landing" && intent === "join") {
+        const suffix = `${window.location.search}${window.location.hash}`;
+        router.replace(suffix ? `/join${suffix}` : "/join");
+        return;
+      }
+      if (guestView === "landing") {
+        setGuestLandingReady(true);
+      }
       setHomePageIntent(intent);
       if (formId) {
         setActiveFormId(formId);
@@ -325,7 +366,7 @@ export default function HomeClient({ initialSession }: HomeClientProps) {
       }
       setUrlSynced(true);
     });
-  }, []);
+  }, [guestView, initialSession, router]);
 
   const activeForm = useMemo(
     () => authForms.find((form) => form.id === activeFormId),
@@ -1878,9 +1919,11 @@ export default function HomeClient({ initialSession }: HomeClientProps) {
     homePageIntent === "none" &&
     !joinedSession;
 
+  const showGuestHeader = guestView === "landing" && !session;
+
   if (!urlSynced || teacherPendingDashboardRedirect) {
     return (
-      <HomeChrome>
+      <HomeChrome guestHeader={showGuestHeader}>
         <div className="min-h-screen bg-[var(--tp-bg)] py-8 text-[var(--tp-text)] sm:py-10">
           <main className="mx-auto w-full max-w-5xl tp-card p-8">
             <div className="animate-pulse space-y-4" aria-hidden="true">
@@ -2067,10 +2110,16 @@ export default function HomeClient({ initialSession }: HomeClientProps) {
     </section>
   );
 
+  const isGuestMarketing = !session && guestView === "landing" && guestLandingReady;
+  const isGuestJoinPage = !session && guestView === "join";
+  const mainClassName = isGuestMarketing
+    ? "tp-guest-landing-main"
+    : `${ui.pageMain} tp-card p-6 sm:p-8`;
+
   return (
-    <HomeChrome>
+    <HomeChrome guestHeader={isGuestMarketing}>
       <div className={ui.page}>
-        <main className={`${ui.pageMain} tp-card p-6 sm:p-8`}>
+        <main className={mainClassName}>
         {urlAuthNotice ? (
           <div
             className={`mb-6 ${ui.alertWarning}`}
@@ -2086,31 +2135,35 @@ export default function HomeClient({ initialSession }: HomeClientProps) {
             </button>
           </div>
         ) : null}
-        {!session ? (
-          <div className="mb-8 space-y-6">
-            {joinSessionSection}
-            <div className="rounded-[var(--tp-radius)] border border-[var(--tp-border)] bg-[var(--tp-surface)] p-6 sm:p-7">
-              <p className={ui.sectionTitle}>{t("home.guest.eyebrow")}</p>
-              <h1 className="mt-1 text-xl font-bold text-[var(--tp-text)]">
-                {t("home.guest.title")}
-              </h1>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <Link
-                  href="/login"
-                  className={`${ui.btnPrimary} ${focusRing}`}
+        {isGuestMarketing ? (
+          <LandingHero teacherCtaHref="/register" joinHref="/join" />
+        ) : null}
+        {isGuestJoinPage ? (
+          <div className="tp-guest-join mx-auto max-w-lg">
+            <div className="mb-6">
+              <Link
+                href="/"
+                className={`inline-flex items-center gap-1.5 text-sm font-medium text-[var(--tp-text-secondary)] hover:text-[var(--tp-text)] ${focusRing}`}
+              >
+                <svg
+                  aria-hidden
+                  className="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
                 >
-                  {t("home.guest.signIn")}
-                </Link>
-                <Link
-                  href="/register"
-                  className={`${ui.btnSecondary} ${focusRing}`}
-                >
-                  {t("home.guest.createAccount")}
-                </Link>
-              </div>
+                  <path d="M19 12H5M12 5l-7 7 7 7" />
+                </svg>
+                TruePaper
+              </Link>
             </div>
+            {joinSessionSection}
           </div>
-        ) : isTeacher ? (
+        ) : null}
+        {session && isTeacher ? (
           <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
             <div className="min-w-0 flex-1">
               <Link

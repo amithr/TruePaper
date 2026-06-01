@@ -18,26 +18,25 @@ type Props = {
 export function AuthLayout({ eyebrow, title, subtitle, children, footer }: Props) {
   const t = useTranslations();
   return (
-    <div className="grid min-h-screen grid-cols-1 bg-[var(--tp-bg)] lg:grid-cols-2">
-      {/* Brand panel */}
-      <aside className="relative hidden overflow-hidden lg:flex lg:flex-col lg:justify-between lg:p-10">
+    <div className="grid min-h-screen grid-cols-1 bg-[var(--tp-bg)] lg:grid-cols-[1fr_min(34rem,50vw)]">
+      {/* Brand panel — gradient on the aside itself; avoid negative z-index (it paints behind the panel and shows page bg). */}
+      <aside
+        className="relative hidden overflow-hidden lg:flex lg:flex-col lg:justify-between lg:p-10"
+        style={{
+          background:
+            "linear-gradient(135deg, var(--tp-brand) 0%, var(--tp-sky) 60%, var(--tp-violet) 100%)",
+        }}
+      >
         <div
           aria-hidden
-          className="absolute inset-0 -z-10"
-          style={{
-            background:
-              "linear-gradient(135deg, var(--tp-brand) 0%, var(--tp-sky) 60%, var(--tp-violet) 100%)",
-          }}
-        />
-        <div
-          aria-hidden
-          className="absolute inset-0 -z-10 opacity-30"
+          className="pointer-events-none absolute inset-0 opacity-30"
           style={{
             backgroundImage:
               "radial-gradient(circle at 20% 20%, rgba(255,255,255,0.4) 0, transparent 40%), radial-gradient(circle at 80% 70%, rgba(255,255,255,0.25) 0, transparent 45%)",
           }}
         />
-        <BrandMark size="lg" href="/" />
+        <div className="relative z-10 flex min-h-0 flex-1 flex-col justify-between gap-8">
+        <BrandMark size="lg" href="/" variant="onDark" />
         <div className="space-y-6 text-white">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/80">
             {t("brand.sidePanelEyebrow")}
@@ -60,19 +59,20 @@ export function AuthLayout({ eyebrow, title, subtitle, children, footer }: Props
         </div>
         <p className="text-xs text-white/70">
           {t("brand.forTeachers")} ·{" "}
-          <LocaleLink href="/#join-session" className="underline">
+          <LocaleLink href="/join" className="underline underline-offset-2">
             {t("brand.studentsJoinFromPage")}
           </LocaleLink>
           .
         </p>
+        </div>
       </aside>
 
       {/* Form panel */}
-      <main className="relative flex items-center justify-center p-6 sm:p-10">
+      <main className="relative flex items-center justify-center p-6 sm:p-10 lg:justify-start lg:pl-10 xl:pl-14">
         <div className="absolute right-4 top-4 sm:right-6 sm:top-6 flex items-center gap-2">
           <LanguageToggle />
         </div>
-        <div className="w-full max-w-md tp-anim-fade-up">
+        <div className="w-full max-w-lg tp-anim-fade-up">
           <div className="lg:hidden mb-6">
             <BrandMark size="lg" href="/" />
           </div>

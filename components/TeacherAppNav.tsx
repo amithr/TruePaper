@@ -17,7 +17,7 @@ export function TeacherAppNav({ active }: Props) {
       <LocaleLink href="/dashboard" className={active === "dashboard" ? ui.pillActive : ui.pill}>
         {t("nav.formLibrary")}
       </LocaleLink>
-      <LocaleLink href="/#join-session" className={active === "join" ? ui.pillActive : ui.pill}>
+      <LocaleLink href="/join" className={active === "join" ? ui.pillActive : ui.pill}>
         {t("nav.studentJoin")}
       </LocaleLink>
     </nav>

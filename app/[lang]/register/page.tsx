@@ -109,7 +109,7 @@ export default function RegisterPage() {
             {t("auth.register.signIn")}
           </LocaleLink>{" "}
           · {t("auth.register.studentsJoinSuffix")}{" "}
-          <LocaleLink href="/#join-session" className={ui.link}>
+          <LocaleLink href="/join" className={ui.link}>
             {t("auth.register.joinPageLink")}
           </LocaleLink>
         </p>

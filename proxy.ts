@@ -63,6 +63,26 @@ function isLocalizedHome(pathname: string): Locale | null {
   return rest === "/" ? seg : null;
 }
 
+/** Student join deep links belong on `/join`, not the teacher marketing homepage. */
+function hasStudentJoinQuery(request: NextRequest): boolean {
+  const { searchParams } = request.nextUrl;
+  return (
+    searchParams.has("code") || searchParams.has("join") || searchParams.has("resume")
+  );
+}
+
+function redirectToLocaleJoin(request: NextRequest, locale: Locale): NextResponse {
+  const target = request.nextUrl.clone();
+  target.pathname = `/${locale}/join`;
+  const redirect = NextResponse.redirect(target);
+  redirect.cookies.set(LOCALE_COOKIE, locale, {
+    path: "/",
+    maxAge: ONE_YEAR_SECONDS,
+    sameSite: "lax",
+  });
+  return redirect;
+}
+
 function preferredLocale(request: NextRequest): Locale {
   const cookieValue = request.cookies.get(LOCALE_COOKIE)?.value;
   if (isExplicitLocaleChoice(request) && isLocale(cookieValue)) {
@@ -107,6 +127,9 @@ export async function proxy(request: NextRequest) {
   const seg = firstSegment(pathname);
   if (seg && (LOCALES as readonly string[]).includes(seg)) {
     const homeLocale = isLocalizedHome(pathname);
+    if (homeLocale && hasStudentJoinQuery(request)) {
+      return redirectToLocaleJoin(request, homeLocale);
+    }
     if (homeLocale && !isExplicitLocaleChoice(request)) {
       const detected = pickLocaleFromAcceptLanguage(request.headers.get("accept-language"));
       if (detected !== homeLocale) {

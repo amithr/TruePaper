@@ -7,6 +7,8 @@ type Props = {
   size?: "default" | "lg";
   href?: string | null;
   showText?: boolean;
+  /** White wordmark for gradient / dark panels (e.g. auth side panel). */
+  variant?: "default" | "onDark";
   className?: string;
 };
 
@@ -14,6 +16,7 @@ export function BrandMark({
   size = "default",
   href = "/",
   showText = true,
+  variant = "default",
   className,
 }: Props) {
   const t = useTranslations();
@@ -26,7 +29,11 @@ export function BrandMark({
         T
       </span>
       {showText ? (
-        <span className="text-base font-bold tracking-tight text-[var(--tp-text)] sm:text-lg">
+        <span
+          className={`text-base font-bold tracking-tight sm:text-lg ${
+            variant === "onDark" ? "text-white" : "text-[var(--tp-text)]"
+          }`}
+        >
           {t("common.appName")}
         </span>
       ) : null}

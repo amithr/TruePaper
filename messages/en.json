@@ -44,7 +44,8 @@
     "noLimit": "No limit",
     "min": "min",
     "noTimeLimit": "No time limit",
-    "updatedAt": "Updated {time}"
+    "updatedAt": "Updated {time}",
+    "signIn": "Sign in"
   },
   "brand": {
     "forTeachers": "For teachers",
@@ -151,11 +152,56 @@
     "statusGradedEarned": "Graded — you earned {score}."
   },
   "home": {
-    "guest": {
-      "eyebrow": "For teachers",
-      "title": "Build forms. Watch your class write.",
-      "signIn": "Sign in",
-      "createAccount": "Create account"
+    "landing": {
+      "eyebrow": "Live exams, no setup",
+      "headline": "Grade while they write — with one code.",
+      "subheadline": "Run a live exam in minutes. Students join on their phones, you watch every answer take shape, and leave feedback before they hand it in.",
+      "teacherCta": "Create your first live exam",
+      "teacherCtaSignedIn": "Open dashboard",
+      "ctaFinePrint": "Free to start · No credit card",
+      "studentLink": "Have a session code? Join as a student",
+      "proofStat": "Built for K–12 and university classrooms",
+      "proofQuote": "I caught three misconceptions before the bell — without collecting papers.",
+      "proofQuoteAttribution": "AP Biology teacher",
+      "trustSetup": "Ready in under 2 minutes",
+      "trustDevices": "Works on any phone or laptop",
+      "trustPrivacy": "Students join with a first name only",
+      "howItWorksTitle": "How it works",
+      "howItWorksStep1Title": "Share one code",
+      "howItWorksStep1Body": "Start a session. Your class joins from their browser — no app installs.",
+      "howItWorksStep2Title": "Watch them write",
+      "howItWorksStep2Body": "See every answer appear live on your roster as students type.",
+      "howItWorksStep3Title": "Nudge and grade",
+      "howItWorksStep3Body": "Leave feedback while they work, then score submissions in one place.",
+      "footerCtaTitle": "Ready for your next class?",
+      "footerCtaSub": "Set up your first live exam in minutes.",
+      "captions": {
+        "share": "Start a session.",
+        "join": "The class joins with one code.",
+        "write": "Watch every answer as it's written.",
+        "nudge": "Nudge them live.",
+        "grade": "Submit and grade in one place."
+      },
+      "stage": {
+        "liveLabel": "Live session",
+        "timer": "44:58",
+        "rosterAva": "Ava",
+        "rosterLiam": "Liam",
+        "rosterNoah": "Noah",
+        "joinName": "Ava",
+        "joinHint": "Enter code to join",
+        "questionPrompt": "In one sentence, what powers photosynthesis?",
+        "optionA": "Sunlight",
+        "optionB": "Moonlight",
+        "optionC": "Static electricity",
+        "answerText": "Plants trap sunlight.",
+        "saving": "Saving…",
+        "saved": "Saved",
+        "feedbackLabel": "Live feedback",
+        "feedbackText": "Great start — name the pigment too.",
+        "submitted": "Submitted",
+        "scoreLabel": "Score"
+      }
     },
     "join": {
       "eyebrow": "Join",

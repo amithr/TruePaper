@@ -1,7 +1,7 @@
 "use client";
 
 import { useLocaleRouter as useRouter } from "@/lib/i18n/client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { LoadingBar } from "@/components/LoadingBar";
@@ -11,6 +11,8 @@ import { deferEffect } from "@/lib/defer-effect";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { ui } from "@/lib/ui";
 import { requestJson } from "@/lib/request-json";
+
+const ROW_EXIT_MS = 320;
 
 type Props = {
   onError: (message: string) => void;
@@ -24,8 +26,14 @@ export function DashboardPastSessions({ onError }: Props) {
   const [page, setPage] = useState(0);
   const [loading, setLoading] = useState(true);
   const [deletingSessionId, setDeletingSessionId] = useState<string | null>(null);
+  const [exitingSessionIds, setExitingSessionIds] = useState<Set<string>>(() => new Set());
+  const pageRef = useRef(0);
+  const finishedExitRef = useRef<Set<string>>(new Set());
 
   const totalPages = Math.max(1, Math.ceil(total / PAST_SESSIONS_PAGE_SIZE));
+  const hasVisibleRows = sessions.length > 0 || exitingSessionIds.size > 0;
+  const showEmpty =
+    !loading && total === 0 && sessions.length === 0 && exitingSessionIds.size === 0;
 
   const loadPage = useCallback(
     async (pageIndex: number) => {
@@ -41,6 +49,7 @@ export function DashboardPastSessions({ onError }: Props) {
         setSessions(data.sessions);
         setTotal(data.total);
         setPage(data.page);
+        pageRef.current = data.page;
       } catch (e) {
         onError(e instanceof Error ? e.message : t("pastSessions.errors.load"));
       } finally {
@@ -56,6 +65,47 @@ export function DashboardPastSessions({ onError }: Props) {
     });
   }, [loadPage]);
 
+  const finishRowExit = useCallback(
+    (sessionId: string) => {
+      if (finishedExitRef.current.has(sessionId)) {
+        return;
+      }
+      finishedExitRef.current.add(sessionId);
+
+      setExitingSessionIds((prev) => {
+        const next = new Set(prev);
+        next.delete(sessionId);
+        return next;
+      });
+
+      setSessions((prev) => {
+        const next = prev.filter((s) => s.id !== sessionId);
+        if (next.length === 0 && pageRef.current > 0) {
+          void loadPage(pageRef.current - 1);
+        }
+        return next;
+      });
+      setTotal((prev) => Math.max(0, prev - 1));
+    },
+    [loadPage],
+  );
+
+  const beginRowExit = useCallback(
+    (sessionId: string) => {
+      finishedExitRef.current.delete(sessionId);
+      const reducedMotion =
+        typeof window !== "undefined" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      if (reducedMotion) {
+        finishRowExit(sessionId);
+        return;
+      }
+      setExitingSessionIds((prev) => new Set(prev).add(sessionId));
+      window.setTimeout(() => finishRowExit(sessionId), ROW_EXIT_MS);
+    },
+    [finishRowExit],
+  );
+
   const deleteSession = async (sessionId: string) => {
     setDeletingSessionId(sessionId);
     onError("");
@@ -63,8 +113,7 @@ export function DashboardPastSessions({ onError }: Props) {
       await requestJson<{ ok: true }>(`/api/forms/live-sessions/${sessionId}`, {
         method: "DELETE",
       });
-      const nextPage = sessions.length === 1 && page > 0 ? page - 1 : page;
-      await loadPage(nextPage);
+      beginRowExit(sessionId);
     } catch (e) {
       onError(e instanceof Error ? e.message : t("pastSessions.errors.delete"));
     } finally {
@@ -76,13 +125,11 @@ export function DashboardPastSessions({ onError }: Props) {
     <section className="tp-card p-6">
       <p className={ui.sectionTitle}>{t("dashboard.historyEyebrow")}</p>
       <h2 className="text-xl font-semibold tracking-tight">{t("dashboard.pastSessionsTitle")}</h2>
-      {loading && sessions.length === 0 ? (
+      {loading && sessions.length === 0 && exitingSessionIds.size === 0 ? (
         <LoadingBar className="mt-4 max-w-md" label={t("loading.pastSessions")} />
       ) : null}
-      {!loading && total === 0 ? (
-        <p className="mt-4 tp-empty">{t("pastSessions.empty")}</p>
-      ) : null}
-      {!loading && sessions.length > 0 ? (
+      {showEmpty ? <p className="mt-4 tp-empty">{t("pastSessions.empty")}</p> : null}
+      {!loading && hasVisibleRows ? (
         <div className="mt-4 space-y-3">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[32rem] text-left text-sm">
@@ -96,57 +143,73 @@ export function DashboardPastSessions({ onError }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {sessions.map((s) => (
-                  <tr
-                    key={s.id}
-                    role="link"
-                    tabIndex={0}
-                    onClick={() => router.push(`/dashboard/sessions/${s.id}`)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        router.push(`/dashboard/sessions/${s.id}`);
+                {sessions.map((s) => {
+                  const exiting = exitingSessionIds.has(s.id);
+                  return (
+                    <tr
+                      key={s.id}
+                      role={exiting ? undefined : "link"}
+                      tabIndex={exiting ? -1 : 0}
+                      onClick={
+                        exiting
+                          ? undefined
+                          : () => router.push(`/dashboard/sessions/${s.id}`)
                       }
-                    }}
-                    className="cursor-pointer border-b border-[var(--tp-border)]/60 last:border-0 hover:bg-[var(--tp-bg-subtle)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--tp-accent-ring)] focus-visible:ring-inset transition-colors"
-                  >
-                    <td className="py-3 pr-4 font-medium text-[var(--tp-text)]">
-                      {s.formTitle}
-                    </td>
-                    <td className="py-3 pr-4 font-mono text-xs tracking-[0.25em] text-[var(--tp-text-muted)]">
-                      {s.joinCode}
-                    </td>
-                    <td className="py-3 pr-4 text-[var(--tp-text-secondary)]">
-                      {new Date(s.closesAt).toLocaleDateString([], {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                      })}
-                    </td>
-                    <td className="py-3 pr-4 text-[var(--tp-text)]">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span>{s.responseCount}</span>
-                        {s.needsGradingCount > 0 ? (
-                          <span className="tp-grade-pill tp-grade-pill--needs">
-                            {t("pastSessions.toGrade", { n: s.needsGradingCount })}
-                          </span>
-                        ) : null}
-                      </div>
-                    </td>
-                    <td className="py-3" onClick={(event) => event.stopPropagation()}>
-                      <ConfirmButton
-                        tone="danger"
-                        label={t("common.delete")}
-                        confirmLabel={t("common.tapAgain")}
-                        busy={deletingSessionId === s.id}
-                        busyLabel={t("common.deleting")}
-                        disabled={deletingSessionId !== null}
-                        className="px-2 py-1 text-xs"
-                        onConfirm={() => void deleteSession(s.id)}
-                      />
-                    </td>
-                  </tr>
-                ))}
+                      onKeyDown={
+                        exiting
+                          ? undefined
+                          : (event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                router.push(`/dashboard/sessions/${s.id}`);
+                              }
+                            }
+                      }
+                      aria-hidden={exiting}
+                      className={`border-b border-[var(--tp-border)]/60 last:border-0 transition-colors ${
+                        exiting
+                          ? "tp-anim-fade-out"
+                          : "cursor-pointer hover:bg-[var(--tp-bg-subtle)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--tp-accent-ring)] focus-visible:ring-inset"
+                      }`}
+                    >
+                      <td className="py-3 pr-4 font-medium text-[var(--tp-text)]">
+                        {s.formTitle}
+                      </td>
+                      <td className="py-3 pr-4 font-mono text-xs tracking-[0.25em] text-[var(--tp-text-muted)]">
+                        {s.joinCode}
+                      </td>
+                      <td className="py-3 pr-4 text-[var(--tp-text-secondary)]">
+                        {new Date(s.closesAt).toLocaleDateString([], {
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        })}
+                      </td>
+                      <td className="py-3 pr-4 text-[var(--tp-text)]">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span>{s.responseCount}</span>
+                          {s.needsGradingCount > 0 ? (
+                            <span className="tp-grade-pill tp-grade-pill--needs">
+                              {t("pastSessions.toGrade", { n: s.needsGradingCount })}
+                            </span>
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="py-3" onClick={(event) => event.stopPropagation()}>
+                        <ConfirmButton
+                          tone="danger"
+                          label={t("common.delete")}
+                          confirmLabel={t("common.tapAgain")}
+                          busy={deletingSessionId === s.id}
+                          busyLabel={t("common.deleting")}
+                          disabled={deletingSessionId !== null || exiting}
+                          className="px-2 py-1 text-xs"
+                          onConfirm={() => void deleteSession(s.id)}
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
