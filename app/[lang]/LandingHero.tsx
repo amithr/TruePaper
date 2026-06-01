@@ -56,6 +56,10 @@ export function LandingHero({
                 <CheckDot />
                 {t("home.landing.trustPrivacy")}
               </li>
+              <li>
+                <CheckDot />
+                {t("home.landing.trustNoPaste")}
+              </li>
             </ul>
 
             <p className="tp-lp__student-link">
@@ -213,9 +217,12 @@ export function LandingHero({
                           {t("home.landing.stage.optionC")}
                         </li>
                       </ul>
-                      <div className="tp-lp-answer">
-                        <span className="tp-lp-type tp-lp-type--answer">{answer}</span>
-                        <span className="tp-lp-save">
+                    <div className="tp-lp-answer">
+                      <span className="tp-lp-type tp-lp-type--answer">{answer}</span>
+                      <span className="tp-lp-paste-toast" role="presentation">
+                        {t("home.landing.stage.pasteBlocked")}
+                      </span>
+                      <span className="tp-lp-save">
                           <span className="tp-lp-save__dot" />
                           <span className="tp-lp-save__saving">
                             {t("home.landing.stage.saving")}

@@ -2785,6 +2785,40 @@ body {
   min-height: 2rem;
 }
 
+/* Brief toast when a paste is blocked (Act 3 — write). */
+.tp-lp-paste-toast {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  border-radius: 9999px;
+  border: 1px solid var(--tp-warning-border, var(--tp-amber));
+  background: var(--tp-surface);
+  padding: 0.2rem 0.55rem;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--tp-warning-text, var(--tp-text));
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  animation: tp-lp-paste-toast var(--tp-lp-clock) var(--tp-ease-soft) infinite;
+}
+
+@keyframes tp-lp-paste-toast {
+  0%, 44% { opacity: 0; transform: translate(-50%, -50%) scale(0.92); }
+  47% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  52%, 100% { opacity: 0; transform: translate(-50%, -50%) scale(0.96); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tp-lp-paste-toast {
+    display: none;
+  }
+}
+
 .tp-lp-type--answer {
   font-size: 0.75rem;
   line-height: 1.45;
