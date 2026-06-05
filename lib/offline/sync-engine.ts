@@ -25,11 +25,11 @@ export async function drainSyncQueue(
   deviceId: string,
   transport: SyncTransport,
 ): Promise<{ synced: number; failed: number; pending: number }> {
-  if (typeof navigator !== "undefined" && !navigator.onLine) {
-    const pending = (await listPendingSyncItems(liveSessionId, deviceId)).length;
-    return { synced: 0, failed: 0, pending };
-  }
-
+  // NOTE: we intentionally do NOT short-circuit on `navigator.onLine === false`.
+  // That flag has frequent false negatives (desktops, VMs, some networks), which
+  // previously left students stuck "offline" forever with answers never syncing.
+  // Always attempt; the transport reports real network failures, which we treat
+  // as the source of truth for connectivity.
   const items = await listPendingSyncItems(liveSessionId, deviceId);
   let synced = 0;
   let failed = 0;

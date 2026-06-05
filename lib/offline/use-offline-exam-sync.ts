@@ -119,7 +119,10 @@ export function useOfflineExamSync({
             submissionId: item.submissionId,
           }),
         );
-        const online = typeof navigator !== "undefined" && navigator.onLine;
+        // Trust the actual transport result over navigator.onLine (false negatives).
+        // A successful sync proves we're online even if the browser flag disagrees.
+        const navOnline = typeof navigator !== "undefined" && navigator.onLine;
+        const online = navOnline || result.synced > 0;
         const syncedAt = result.synced > 0 ? Date.now() : lastSyncedAtRef.current;
         publish({
           pendingCount: result.pending,
@@ -169,9 +172,9 @@ export function useOfflineExamSync({
     if (dirtySinceRef.current === null) {
       dirtySinceRef.current = Date.now();
     }
-    publish({
-      state: navigator.onLine ? "syncing" : "offline",
-    });
+    // Optimistically show "syncing"; the drain reports real offline status if the
+    // request actually fails (navigator.onLine is unreliable, so don't trust it here).
+    publish({ state: "syncing" });
 
     const flush = async () => {
       const current = getAnswersRef.current();
@@ -262,7 +265,9 @@ export function useOfflineExamSync({
     const onOffline = () => publish({ state: "offline" });
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
-    publish({ state: navigator.onLine ? "synced" : "offline" });
+    // Optimistic on load: assume reachable and let a failed request prove otherwise.
+    // The "offline" event still flips us if the connection genuinely drops.
+    publish({ state: "synced" });
     return () => {
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);

@@ -1788,7 +1788,22 @@ export default function HomeClient({
   };
 
   const submitExam = async () => {
-    if (!joinedSession || !anonymousSessionId || !activeExamDisplayName) {
+    if (!joinedSession) {
+      return;
+    }
+    // Recover the device id if React state lost it (e.g. storage was briefly
+    // blocked on mount). getOrCreate returns the *stored* id when present, so this
+    // won't orphan a student's existing answers — it just unblocks submit.
+    let deviceId = anonymousSessionId;
+    if (!deviceId) {
+      deviceId = getOrCreateAnonymousSessionId();
+      if (deviceId) {
+        setAnonymousSessionId(deviceId);
+      }
+    }
+    if (!deviceId || !activeExamDisplayName) {
+      // Never silently no-op: tell the student why nothing happened.
+      setStatusMessage(t("home.errors.submitExam"));
       return;
     }
 
@@ -1815,7 +1830,7 @@ export default function HomeClient({
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            deviceId: anonymousSessionId,
+            deviceId,
             displayName: activeExamDisplayName,
             answers,
           }),
@@ -1828,7 +1843,7 @@ export default function HomeClient({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            deviceId: anonymousSessionId,
+            deviceId,
             displayName: activeExamDisplayName,
           }),
         },
@@ -3136,7 +3151,7 @@ export default function HomeClient({
                 <button
                   type="button"
                   onClick={() => void submitExam()}
-                  disabled={isMutating || !anonymousSessionId}
+                  disabled={isMutating}
                   className={`${
                     examAllAnswered
                       ? `tp-submit-ready ${focusRing}`

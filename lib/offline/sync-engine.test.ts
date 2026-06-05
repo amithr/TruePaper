@@ -46,13 +46,13 @@ describe("drainSyncQueue", () => {
     vi.restoreAllMocks();
   });
 
-  it("does not drain when offline", async () => {
+  it("still attempts when navigator reports offline (flag has false negatives)", async () => {
     queue.push(seedItem());
     Object.defineProperty(navigator, "onLine", { value: false, configurable: true });
-    const transport = vi.fn();
+    const transport = vi.fn().mockResolvedValue({ ok: true });
     const result = await drainSyncQueue(TEST_LIVE_SESSION_ID, TEST_DEVICE_ID, transport);
-    expect(result).toEqual({ synced: 0, failed: 0, pending: 1 });
-    expect(transport).not.toHaveBeenCalled();
+    expect(transport).toHaveBeenCalled();
+    expect(result).toEqual({ synced: 1, failed: 0, pending: 0 });
   });
 
   it("syncs pending items and removes on success", async () => {
