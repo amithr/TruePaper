@@ -132,7 +132,14 @@ export function DashboardPastSessions({ onError }: Props) {
       {!loading && hasVisibleRows ? (
         <div className="mt-4 space-y-3">
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[32rem] text-left text-sm">
+            <table className="w-full min-w-[32rem] table-fixed text-left text-sm">
+              <colgroup>
+                <col className="w-[32%]" />
+                <col className="w-[16%]" />
+                <col className="w-[18%]" />
+                <col className="w-[18%]" />
+                <col className="w-[16%]" />
+              </colgroup>
               <thead>
                 <tr className="border-b border-[var(--tp-border)] text-[var(--tp-text-muted)]">
                   <th className="py-2 pr-4 font-medium">{t("pastSessions.colForm")}</th>
@@ -172,7 +179,7 @@ export function DashboardPastSessions({ onError }: Props) {
                           : "cursor-pointer hover:bg-[var(--tp-bg-subtle)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--tp-accent-ring)] focus-visible:ring-inset"
                       }`}
                     >
-                      <td className="py-3 pr-4 font-medium text-[var(--tp-text)]">
+                      <td className="truncate py-3 pr-4 font-medium text-[var(--tp-text)]">
                         {s.formTitle}
                       </td>
                       <td className="py-3 pr-4 font-mono text-xs tracking-[0.25em] text-[var(--tp-text-muted)]">
