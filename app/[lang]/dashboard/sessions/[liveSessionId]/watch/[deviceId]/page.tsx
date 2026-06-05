@@ -2,9 +2,10 @@
 
 import { useParams } from "next/navigation";
 
-import { LocaleLink as Link, useLocaleRouter as useRouter } from "@/lib/i18n/client";
+import { useLocaleRouter as useRouter } from "@/lib/i18n/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { LoadingBar } from "@/components/LoadingBar";
 import { OverflowMenu, type OverflowMenuItem } from "@/components/OverflowMenu";
 import {
@@ -624,12 +625,15 @@ export default function WatchStudentExamPage() {
     return (
       <div className="min-h-screen bg-[var(--tp-bg)] py-8 text-[var(--tp-text)] sm:py-10">
         <main className="mx-auto w-full max-w-3xl px-4 sm:px-6">
-          <Link
-            href={liveSessionId ? `/dashboard/sessions/${liveSessionId}` : "/dashboard"}
-            className="text-sm font-medium text-zinc-700 underline"
-          >
-            {t("session.backSessionBoard")}
-          </Link>
+          <Breadcrumbs
+            items={[
+              { label: t("nav.dashboard"), href: "/dashboard" },
+              ...(liveSessionId
+                ? [{ label: t("nav.liveSession"), href: `/dashboard/sessions/${liveSessionId}` }]
+                : []),
+              { label: t("nav.studentExam") },
+            ]}
+          />
           {loadError ? (
             <p className="mt-6 tp-alert tp-alert-error">
               {loadError}
@@ -733,12 +737,16 @@ export default function WatchStudentExamPage() {
       <main className="mx-auto w-full max-w-3xl space-y-5 px-4 sm:px-6">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <Link
-              href={`/dashboard/sessions/${liveSessionId}`}
-              className={`text-sm font-medium text-[var(--tp-text-secondary)] underline ${focusRing}`}
-            >
-              {t("session.backSessionBoard")}
-            </Link>
+            <Breadcrumbs
+              items={[
+                { label: t("nav.dashboard"), href: "/dashboard" },
+                {
+                  label: snapshot.form.title || t("nav.liveSession"),
+                  href: `/dashboard/sessions/${liveSessionId}`,
+                },
+                { label: titleName },
+              ]}
+            />
             <h1 className="mt-3 truncate text-2xl font-bold tracking-tight">{titleName}</h1>
             <p className="mt-1 text-sm text-[var(--tp-text-secondary)]">
               {s.sessionOpen

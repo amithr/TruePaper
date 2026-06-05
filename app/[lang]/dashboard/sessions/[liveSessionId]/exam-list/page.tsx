@@ -2,11 +2,13 @@
 
 import { useParams } from "next/navigation";
 
-import { LocaleLink as Link, useLocaleRouter as useRouter } from "@/lib/i18n/client";
+import { useLocaleRouter as useRouter } from "@/lib/i18n/client";
 import { useCallback, useEffect, useState } from "react";
 
+import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { LoadingBar } from "@/components/LoadingBar";
 import { SessionExamRoster } from "@/components/SessionExamRoster";
+import { SessionJoinShare } from "@/components/SessionJoinShare";
 import {
   countNeedsGrading,
   gradingRosterPriority,
@@ -102,9 +104,13 @@ export default function SessionExamListPage() {
     return (
       <div className={ui.page}>
         <main className={ui.pageMain}>
-          <Link href={`/dashboard/sessions/${liveSessionId}`} className={`text-sm font-medium underline ${focusRing}`}>
-            {t("session.backSessionBoard")}
-          </Link>
+          <Breadcrumbs
+            items={[
+              { label: t("nav.dashboard"), href: "/dashboard" },
+              { label: t("nav.liveSession"), href: `/dashboard/sessions/${liveSessionId}` },
+              { label: t("session.examList.title") },
+            ]}
+          />
           {loadError ? (
             <p className="mt-6 tp-alert tp-alert-error">{loadError}</p>
           ) : (
@@ -137,12 +143,13 @@ export default function SessionExamListPage() {
       <main className={`${ui.pageMain} space-y-6`}>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
-            <Link
-              href={`/dashboard/sessions/${liveSessionId}`}
-              className={`text-sm font-medium text-[var(--tp-text-secondary)] underline ${focusRing}`}
-            >
-              {t("session.backSessionBoard")}
-            </Link>
+            <Breadcrumbs
+              items={[
+                { label: t("nav.dashboard"), href: "/dashboard" },
+                { label: s.formTitle, href: `/dashboard/sessions/${liveSessionId}` },
+                { label: t("session.examList.title") },
+              ]}
+            />
             <h1 className="mt-4 text-2xl font-bold tracking-tight">{t("session.examList.title")}</h1>
             <p className="mt-1 text-sm text-[var(--tp-text-secondary)]">
               {t("session.examList.subtitle", { formTitle: s.formTitle, joinCode: s.joinCode })}
@@ -160,6 +167,9 @@ export default function SessionExamListPage() {
               })}
               {activeCount > 0 ? t("session.roster.workingNow", { count: activeCount }) : null}
             </p>
+            <div className="mt-3">
+              <SessionJoinShare joinCode={s.joinCode} />
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <a

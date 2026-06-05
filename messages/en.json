@@ -62,7 +62,10 @@
     "templateLibrary": "Template library",
     "studentJoin": "Student join",
     "dashboard": "Dashboard",
-    "studentJoinAria": "Student join page"
+    "studentJoinAria": "Student join page",
+    "breadcrumbAria": "Breadcrumb",
+    "liveSession": "Live session",
+    "studentExam": "Student exam"
   },
   "language": {
     "toggleAria": "Language",
@@ -393,8 +396,6 @@
       "syncPendingOther": "{n} pending syncs",
       "syncOffline": "Offline"
     },
-    "backDashboard": "← Dashboard",
-    "backSessionBoard": "← Session board",
     "codeLabel": "Code {joinCode}",
     "liveOpenNoLimit": "Live session open · No time limit",
     "liveOpenTimeLeft": "Live session open · Time left {timeLeft}",

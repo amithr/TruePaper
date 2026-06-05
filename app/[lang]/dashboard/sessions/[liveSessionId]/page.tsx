@@ -2,9 +2,10 @@
 
 import { useParams } from "next/navigation";
 
-import { LocaleLink as Link, useLocaleRouter as useRouter } from "@/lib/i18n/client";
+import { useLocaleRouter as useRouter } from "@/lib/i18n/client";
 import { useCallback, useEffect, useState } from "react";
 
+import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { LoadingBar } from "@/components/LoadingBar";
 import { SaveTemplateModal } from "@/components/library/SaveTemplateModal";
@@ -24,7 +25,7 @@ import { notifyStudentExamResumed } from "@/lib/notify-student-exam-resumed";
 import { useLiveSessionAnswerDrafts } from "@/lib/use-live-session-answer-drafts";
 import { usePollingRefresh } from "@/lib/use-polling-refresh";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
-import { focusRing, ui } from "@/lib/ui";
+import { ui } from "@/lib/ui";
 
 import { messageForBackgroundRefreshError } from "@/lib/background-network-error";
 import { requestJson } from "@/lib/request-json";
@@ -171,9 +172,12 @@ export default function LiveSessionDetailPage() {
     return (
       <div className={ui.page}>
         <main className={ui.pageMain}>
-          <Link href="/dashboard" className="text-sm font-medium text-[var(--tp-text-secondary)] underline">
-            {t("session.backDashboard")}
-          </Link>
+          <Breadcrumbs
+            items={[
+              { label: t("nav.dashboard"), href: "/dashboard" },
+              { label: t("nav.liveSession") },
+            ]}
+          />
           {loadError ? (
             <p className="mt-6 tp-alert tp-alert-error">
               {loadError}
@@ -265,9 +269,12 @@ export default function LiveSessionDetailPage() {
       <main className={`${ui.pageMain} space-y-6`}>
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
-            <Link href="/dashboard" className={`text-sm font-medium text-[var(--tp-text-secondary)] underline ${focusRing}`}>
-            {t("session.backDashboard")}
-            </Link>
+            <Breadcrumbs
+              items={[
+                { label: t("nav.dashboard"), href: "/dashboard" },
+                { label: s.formTitle },
+              ]}
+            />
             <h1 className="mt-4 text-2xl font-bold tracking-tight">{s.formTitle}</h1>
             <p className="mt-1 text-sm text-[var(--tp-text-secondary)]">
               {sessionRunning

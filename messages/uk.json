@@ -62,7 +62,10 @@
     "templateLibrary": "Бібліотека шаблонів",
     "studentJoin": "Приєднання учня",
     "dashboard": "Панель керування",
-    "studentJoinAria": "Сторінка приєднання учня"
+    "studentJoinAria": "Сторінка приєднання учня",
+    "breadcrumbAria": "Навігаційний шлях",
+    "liveSession": "Жива сесія",
+    "studentExam": "Робота учня"
   },
   "language": {
     "toggleAria": "Мова",
@@ -393,8 +396,6 @@
       "syncPendingOther": "{n} очікує синхронізації",
       "syncOffline": "Офлайн"
     },
-    "backDashboard": "← Панель керування",
-    "backSessionBoard": "← Дошка сесії",
     "codeLabel": "Код {joinCode}",
     "liveOpenNoLimit": "Жива сесія відкрита · Без обмеження часу",
     "liveOpenTimeLeft": "Жива сесія відкрита · Залишилось {timeLeft}",

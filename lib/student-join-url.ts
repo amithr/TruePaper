@@ -6,7 +6,7 @@ export function buildStudentJoinUrl(origin: string, joinCode: string, studentSlo
   if (!origin || !isValidJoinCodeFormat(code)) {
     return "";
   }
-  const u = new URL("/", origin);
+  const u = new URL("/join", origin);
   u.searchParams.set("code", code);
   u.searchParams.set("new", "1");
   u.searchParams.set("student", studentSlotId ?? crypto.randomUUID());

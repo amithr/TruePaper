@@ -89,15 +89,18 @@ export function OverflowMenu({ label, items, className = "" }: Props) {
         </svg>
       </button>
       {open ? (
-        <div
-          id={menuId}
-          role="menu"
-          className="tp-overflow-menu"
-          onClick={() => setOpen(false)}
-        >
+        <div id={menuId} role="menu" className="tp-overflow-menu">
           {items.map((item, index) => {
             if (item.type === "custom") {
-              return <div key={item.key}>{item.node}</div>;
+              return (
+                <div
+                  key={item.key}
+                  className="px-3 py-2"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  {item.node}
+                </div>
+              );
             }
             if (item.type === "link") {
               return (
@@ -109,6 +112,7 @@ export function OverflowMenu({ label, items, className = "" }: Props) {
                   target={item.target}
                   rel={item.rel}
                   className={`tp-overflow-menu__item ${focusRing}`}
+                  onClick={() => setOpen(false)}
                 >
                   {item.label}
                 </a>
@@ -120,7 +124,10 @@ export function OverflowMenu({ label, items, className = "" }: Props) {
                 type="button"
                 role="menuitem"
                 disabled={item.disabled}
-                onClick={item.onClick}
+                onClick={() => {
+                  item.onClick();
+                  setOpen(false);
+                }}
                 className={`tp-overflow-menu__item ${
                   item.tone === "danger" ? "tp-overflow-menu__item--danger" : ""
                 } ${focusRing}`}
