@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   computeLiveParticipantUiStatus,
   LIVE_INTERACTION_IDLE_MS,
-  LIVE_TYPING_INDICATOR_MS,
 } from "@/lib/participant-status";
 
 const now = Date.UTC(2026, 5, 5, 12, 0, 0);

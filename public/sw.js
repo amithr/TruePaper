@@ -50,8 +50,6 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  const url = new URL(request.url);
-
   event.respondWith(
     fetch(request)
       .then((response) => {

@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 
-import type { Form } from "@/lib/forms";
 import { mapTemplateSummary, questionCountFromSnapshot } from "@/lib/library/mappers";
 import {
   buildSnapshotFromForm,

@@ -34,7 +34,7 @@ describe("SessionExamRoster", () => {
   it("shows offline sync badge", () => {
     renderWithI18n(
       <SessionExamRoster
-        textQuestionIds={[]}
+        previewQuestions={[]}
         participants={[participant({ syncState: "offline" })]}
         liveDraftsByDevice={{}}
         onOpenExam={vi.fn()}
@@ -47,7 +47,7 @@ describe("SessionExamRoster", () => {
   it("shows pending sync badge with count", () => {
     renderWithI18n(
       <SessionExamRoster
-        textQuestionIds={[]}
+        previewQuestions={[]}
         participants={[participant({ syncState: "pending", pendingSyncCount: 4 })]}
         liveDraftsByDevice={{}}
         onOpenExam={vi.fn()}
@@ -61,7 +61,7 @@ describe("SessionExamRoster", () => {
   it("hides sync badge after submission", () => {
     renderWithI18n(
       <SessionExamRoster
-        textQuestionIds={[]}
+        previewQuestions={[]}
         participants={[
           participant({
             finishedAt: "2026-06-05T12:05:00.000Z",
@@ -76,10 +76,24 @@ describe("SessionExamRoster", () => {
     expect(screen.queryByTestId("roster-sync-badge")).not.toBeInTheDocument();
   });
 
+  it("shows live draft text under the student name", () => {
+    renderWithI18n(
+      <SessionExamRoster
+        previewQuestions={[{ id: "q1", type: "extendedWritten" }]}
+        participants={[participant({ status: "started" })]}
+        liveDraftsByDevice={{
+          [TEST_DEVICE_ID.toLowerCase()]: { q1: "Draft answer in progress" },
+        }}
+        onOpenExam={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("Draft answer in progress")).toBeInTheDocument();
+  });
+
   it("shows status chips for working, idle, and submitted students", () => {
     renderWithI18n(
       <SessionExamRoster
-        textQuestionIds={[]}
+        previewQuestions={[]}
         participants={[
           participant({ status: "started", displayName: "Working Student" }),
           participant({

@@ -1,6 +1,23 @@
 import type { StudentAnswers } from "@/lib/forms";
+import { previewResponseText } from "@/lib/response-types/answers";
+import { isWrittenResponseType, normalizeResponseType } from "@/lib/response-types/types";
 
 const DEFAULT_MAX_LEN = 96;
+
+export type RosterPreviewQuestion = { id: string; type: string };
+
+/** Questions whose answers appear as live roster subtitles. */
+export function rosterPreviewQuestions(
+  questions: readonly RosterPreviewQuestion[],
+): RosterPreviewQuestion[] {
+  return questions.filter((q) => isWrittenResponseType(normalizeResponseType(q.type)));
+}
+
+export function rosterPreviewQuestionIds(
+  questions: readonly RosterPreviewQuestion[],
+): string[] {
+  return rosterPreviewQuestions(questions).map((q) => q.id);
+}
 
 /** Longest non-empty text response among the form's text questions. */
 export function longestTextAnswer(
@@ -36,6 +53,22 @@ export function liveTypingPreview(
   maxLen = DEFAULT_MAX_LEN,
 ): string {
   return truncateTypingPreview(longestTextAnswer(answers, textQuestionIds), maxLen);
+}
+
+/** Type-aware roster preview (extendedWritten, shortAnswer, structuredMultiPart, …). */
+export function liveSessionRosterPreview(
+  answers: StudentAnswers,
+  questions: readonly RosterPreviewQuestion[],
+  maxLen = DEFAULT_MAX_LEN,
+): string {
+  let best = "";
+  for (const q of rosterPreviewQuestions(questions)) {
+    const chunk = previewResponseText(normalizeResponseType(q.type), answers[q.id], maxLen);
+    if (chunk.length > best.length) {
+      best = chunk;
+    }
+  }
+  return truncateTypingPreview(best, maxLen);
 }
 
 /** Word count across text question answers. */

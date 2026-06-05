@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { TemplateScopeBadge } from "@/components/library/TemplateScopeBadge";
 import { LoadingBar } from "@/components/LoadingBar";
+import { deferEffect } from "@/lib/defer-effect";
 import { mergeBrowseWithCache, touchRecentTemplate } from "@/lib/library/cache";
 import type { LibraryBrowseResult, LibraryTemplateDetail, LibraryTemplateSummary } from "@/lib/library/types";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
@@ -27,7 +28,7 @@ export function TemplateLibraryBrowser({ initialScope = "", onError }: Props) {
   const [gradeLevel, setGradeLevel] = useState("");
   const [language, setLanguage] = useState("");
   const [nmtDpa, setNmtDpa] = useState(false);
-  const [interactionType, setInteractionType] = useState("");
+  const interactionType = "";
   const [page, setPage] = useState(0);
   const [result, setResult] = useState<LibraryBrowseResult | null>(null);
   const [loading, setLoading] = useState(true);
@@ -71,7 +72,9 @@ export function TemplateLibraryBrowser({ initialScope = "", onError }: Props) {
   }, [queryString, scope, onError, t]);
 
   useEffect(() => {
-    void loadBrowse();
+    deferEffect(() => {
+      void loadBrowse();
+    });
   }, [loadBrowse]);
 
   useEffect(() => {
@@ -81,7 +84,7 @@ export function TemplateLibraryBrowser({ initialScope = "", onError }: Props) {
   }, [result]);
 
   useEffect(() => {
-    setPage(0);
+    deferEffect(() => setPage(0));
   }, [scope, q, subject, gradeLevel, language, nmtDpa, interactionType]);
 
   const openPreview = async (item: LibraryTemplateSummary) => {

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import type { SaveTemplateInput, TemplateScope, TemplateSourceKind } from "@/lib/library/types";
+import { deferEffect } from "@/lib/defer-effect";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { focusRing, ui } from "@/lib/ui";
 import { requestJson } from "@/lib/request-json";
@@ -52,10 +53,12 @@ export function SaveTemplateModal({
     if (!open) {
       return;
     }
-    setTitle(defaultTitle);
-    setSubject(defaultSubject);
-    setGradeLevel(defaultGradeLevel);
-    setError("");
+    deferEffect(() => {
+      setTitle(defaultTitle);
+      setSubject(defaultSubject);
+      setGradeLevel(defaultGradeLevel);
+      setError("");
+    });
     void requestJson<{ profile: { organizationId: string | null; departmentId: string | null } }>(
       "/api/library/org",
     )

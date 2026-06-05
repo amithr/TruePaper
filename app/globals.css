@@ -1992,6 +1992,11 @@ body {
   animation: none;
 }
 
+.tp-submit-ready--done {
+  cursor: default;
+  opacity: 1;
+}
+
 .tp-submit-ready__arrow {
   opacity: 0.9;
 }

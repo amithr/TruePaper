@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { TemplateLibraryBrowser } from "@/components/library/TemplateLibraryBrowser";
 import { TeacherAppNav } from "@/components/TeacherAppNav";
+import { deferEffect } from "@/lib/defer-effect";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { focusRing, ui } from "@/lib/ui";
 import { requestJson } from "@/lib/request-json";
@@ -37,7 +38,9 @@ export default function TemplateLibraryPage() {
   };
 
   useEffect(() => {
-    void loadOrg();
+    deferEffect(() => {
+      void loadOrg();
+    });
   }, []);
 
   const saveOrg = async () => {

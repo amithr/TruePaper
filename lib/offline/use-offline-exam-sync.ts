@@ -10,7 +10,11 @@ import {
   type ClientSyncState,
 } from "@/lib/offline/config";
 import { isIdbAvailable } from "@/lib/offline/idb";
-import { pendingSyncCount, enqueueSyncItem } from "@/lib/offline/sync-queue";
+import {
+  clearPendingSyncQueue,
+  pendingSyncCount,
+  enqueueSyncItem,
+} from "@/lib/offline/sync-queue";
 import { drainSyncQueue } from "@/lib/offline/sync-engine";
 import { putStudentAnswersSync } from "@/lib/offline/sync-transport";
 import type { ConnectionSnapshot } from "@/lib/offline/types";
@@ -205,6 +209,19 @@ export function useOfflineExamSync({
     runDrain,
   ]);
 
+  const acknowledgeSynced = useCallback(async (): Promise<void> => {
+    if (!liveSessionId || !deviceId) {
+      return;
+    }
+    await clearPendingSyncQueue(liveSessionId, deviceId);
+    markFullySynced();
+    publish({
+      pendingCount: 0,
+      state: navigator.onLine ? "synced" : "local_only",
+      lastSyncedAt: Date.now(),
+    });
+  }, [liveSessionId, deviceId, markFullySynced, publish]);
+
   const flushNow = useCallback(async (): Promise<{ pending: number }> => {
     if (!liveSessionId || !deviceId || !displayName) {
       return { pending: 0 };
@@ -269,6 +286,7 @@ export function useOfflineExamSync({
     snapshot,
     scheduleSync,
     flushNow,
+    acknowledgeSynced,
     refreshPending,
   };
 }

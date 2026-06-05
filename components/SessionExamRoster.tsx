@@ -5,7 +5,10 @@ import type { StudentAnswers } from "@/lib/forms";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { useScoreCopy } from "@/lib/i18n/score-copy";
 import type { LiveSessionOverviewParticipant } from "@/lib/live-session-overview";
-import { liveTypingPreview } from "@/lib/live-typing-preview";
+import {
+  liveSessionRosterPreview,
+  type RosterPreviewQuestion,
+} from "@/lib/live-typing-preview";
 import {
   participantAvatarGradient,
   participantInitials,
@@ -14,7 +17,7 @@ import type { LiveParticipantUiStatus } from "@/lib/participant-status";
 import { focusRing } from "@/lib/ui";
 
 type Props = {
-  textQuestionIds: string[];
+  previewQuestions: RosterPreviewQuestion[];
   participants: LiveSessionOverviewParticipant[];
   liveDraftsByDevice: Record<string, StudentAnswers>;
   onOpenExam: (deviceId: string) => void;
@@ -127,7 +130,7 @@ function RosterStatusBadge({
 function rosterSubtitle(
   p: LiveSessionOverviewParticipant,
   liveDraft: StudentAnswers | undefined,
-  textQuestionIds: string[],
+  previewQuestions: RosterPreviewQuestion[],
   t: ReturnType<typeof useTranslations>,
   scoreTierMessage: (tier: ReturnType<typeof scoreTier>) => string,
 ): string {
@@ -148,14 +151,10 @@ function rosterSubtitle(
       : t("session.roster.subtitleSubmittedOther", { count });
   }
 
-  const showLive =
-    p.status === "typing" ||
-    (liveDraft && liveTypingPreview(liveDraft, textQuestionIds).length > 0);
-  if (showLive && liveDraft) {
-    const preview = liveTypingPreview(liveDraft, textQuestionIds);
-    if (preview) {
-      return preview;
-    }
+  const draftPreview = liveDraft ? liveSessionRosterPreview(liveDraft, previewQuestions) : "";
+  const showLive = p.status === "typing" || draftPreview.length > 0;
+  if (showLive && draftPreview) {
+    return draftPreview;
   }
 
   if (p.textPreview) {
@@ -166,14 +165,14 @@ function rosterSubtitle(
 }
 
 function RosterRow({
-  textQuestionIds,
+  previewQuestions,
   participant: p,
   liveDraftsByDevice,
   onOpenExam,
   onResumeStudent,
   resumeBusyDeviceId,
 }: {
-  textQuestionIds: string[];
+  previewQuestions: RosterPreviewQuestion[];
   participant: LiveSessionOverviewParticipant;
   liveDraftsByDevice: Record<string, StudentAnswers>;
   onOpenExam: (deviceId: string) => void;
@@ -186,10 +185,9 @@ function RosterRow({
   const liveDraft = liveDraftsByDevice[deviceNorm];
   const initials = participantInitials(p.displayName, p.anonymousSessionId);
   const gradient = participantAvatarGradient(p.anonymousSessionId);
-  const subtitle = rosterSubtitle(p, liveDraft, textQuestionIds, t, scoreTierMessage);
-  const isLivePreview =
-    p.status === "typing" ||
-    Boolean(liveDraft && liveTypingPreview(liveDraft, textQuestionIds));
+  const draftPreview = liveDraft ? liveSessionRosterPreview(liveDraft, previewQuestions) : "";
+  const subtitle = rosterSubtitle(p, liveDraft, previewQuestions, t, scoreTierMessage);
+  const isLivePreview = p.status === "typing" || draftPreview.length > 0;
 
   const isResumeBusy = resumeBusyDeviceId === deviceNorm;
   const isBlocked = p.status === "blocked";
@@ -265,7 +263,7 @@ function RosterRow({
             {subtitle ? (
               <p
                 className={`tp-roster-row__preview${
-                  isLivePreview && p.status === "typing" ? " tp-roster-row__preview--live" : ""
+                  isLivePreview ? " tp-roster-row__preview--live" : ""
                 }`}
               >
                 {subtitle}
@@ -283,7 +281,7 @@ function RosterRow({
 }
 
 export function SessionExamRoster({
-  textQuestionIds,
+  previewQuestions,
   participants,
   liveDraftsByDevice,
   onOpenExam,
@@ -295,7 +293,7 @@ export function SessionExamRoster({
       {participants.map((p) => (
         <RosterRow
           key={p.anonymousSessionId}
-          textQuestionIds={textQuestionIds}
+          previewQuestions={previewQuestions}
           participant={p}
           liveDraftsByDevice={liveDraftsByDevice}
           onOpenExam={onOpenExam}

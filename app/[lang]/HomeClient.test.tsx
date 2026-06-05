@@ -29,7 +29,8 @@ vi.mock("@/lib/offline/use-offline-exam-sync", () => ({
       idbAvailable: true,
     },
     scheduleSync: vi.fn(),
-    flushNow: vi.fn(),
+    flushNow: vi.fn().mockResolvedValue({ pending: 0 }),
+    acknowledgeSynced: vi.fn().mockResolvedValue(undefined),
     refreshPending: vi.fn(),
   }),
 }));

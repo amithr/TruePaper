@@ -1,3 +1,4 @@
+import type { RosterPreviewQuestion } from "@/lib/live-typing-preview";
 import type { LiveParticipantUiStatus } from "@/lib/participant-status";
 
 export type LiveSessionOverviewSession = {
@@ -9,7 +10,9 @@ export type LiveSessionOverviewSession = {
   formTitle: string;
   sessionOpen: boolean;
   questionTotal: number;
+  /** @deprecated Prefer previewQuestions — kept for older clients. */
   textQuestionIds: string[];
+  previewQuestions: RosterPreviewQuestion[];
 };
 
 export type LiveSessionOverviewParticipant = {

@@ -9,6 +9,7 @@ import {
   writeCookieConsent,
   type CookieConsentChoice,
 } from "@/lib/cookie-consent";
+import { deferEffect } from "@/lib/defer-effect";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { LocaleLink } from "@/lib/i18n/client";
 import { focusRing, ui } from "@/lib/ui";
@@ -25,7 +26,7 @@ export function CookieConsentBanner() {
   }, []);
 
   useEffect(() => {
-    syncFromStorage();
+    deferEffect(() => syncFromStorage());
     const onChange = () => syncFromStorage();
     window.addEventListener("tp-cookie-consent-change", onChange);
     return () => window.removeEventListener("tp-cookie-consent-change", onChange);

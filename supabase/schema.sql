@@ -108,6 +108,18 @@ create table if not exists public.live_session_presence (
 
 alter table public.live_session_presence enable row level security;
 
+drop policy if exists "live_session_presence_select_teacher" on public.live_session_presence;
+create policy "live_session_presence_select_teacher"
+  on public.live_session_presence for select
+  to authenticated
+  using (
+    exists (
+      select 1 from public.form_sessions fs
+      where fs.id = live_session_presence.live_session_id
+        and fs.created_by = auth.uid()
+    )
+  );
+
 create or replace function public.touch_live_session_presence(
   p_live_session_id uuid,
   p_device_id text,

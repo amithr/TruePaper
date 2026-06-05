@@ -69,6 +69,7 @@ import { isValidResumeCodeFormat, normalizeResumeCode } from "@/lib/resume-code"
 import { isNoTimeLimitSession } from "@/lib/session-window";
 import type { StudentExamRemotePatch } from "@/lib/student-exam-remote-patch";
 import { mergeStudentAnswersForSave } from "@/lib/collect-student-exam-answers";
+import { notifyTeacherWatchAnswerDraft } from "@/lib/notify-teacher-watch-answer-draft";
 import { shouldApplyServerAnswersOnLoad } from "@/lib/student-exam-answer-hydration";
 import { fetchStudentAlreadySubmitted } from "@/lib/fetch-student-submission-status";
 import { fetchStudentExamStatus } from "@/lib/fetch-student-exam-status";
@@ -164,14 +165,6 @@ function examProtectionHandlers(enabled: boolean) {
     },
   };
 }
-
-/** Debounce after the last keystroke; max-wait forces a save during continuous typing (teacher live view). */
-const E2E_AUTOSAVE =
-  typeof process !== "undefined" && process.env.NEXT_PUBLIC_E2E_AUTOSAVE === "1";
-const AUTOSAVE_DEBOUNCE_MS = E2E_AUTOSAVE ? 200 : 600;
-// Forces a save (and thus a teacher live-typing refresh) at least this often
-// during continuous typing. ~3s aligns with the teacher's 3s overview poll.
-const AUTOSAVE_MAX_WAIT_MS = E2E_AUTOSAVE ? 800 : 3000;
 
 function serializeBuilderFormDetails(form: Form): string {
   return JSON.stringify({
@@ -325,9 +318,7 @@ export default function HomeClient({
   const examFormRef = useRef<HTMLFormElement>(null);
   const latestStudentAnswersRef = useRef<StudentAnswers>({});
   const lastPersistedAnswersJsonRef = useRef("");
-  const suspendAutosaveRef = useRef(false);
-  const autosaveTimerRef = useRef<number | undefined>(undefined);
-  const lastAutosaveSentAtRef = useRef(0);
+  const [autosaveSuspended, setAutosaveSuspended] = useState(false);
   const pendingDirtySinceRef = useRef<number | null>(null);
   const autosaveStatusElRef = useRef<HTMLParagraphElement>(null);
   const autosaveBannerClearRef = useRef<number | undefined>(undefined);
@@ -801,7 +792,7 @@ export default function HomeClient({
       !examSuspended &&
       !examFinished &&
       !airAlertPaused &&
-      !suspendAutosaveRef.current &&
+      !autosaveSuspended &&
       sessionAllowsAnswerSync(sessionOpen, deliveryMode),
   );
 
@@ -831,9 +822,12 @@ export default function HomeClient({
     },
   });
 
+  const offlineSyncRef = useLatestRef(offlineSync);
+  const answerSyncEnabledRef = useLatestRef(answerSyncEnabled);
+
   useEffect(() => {
     if (!isAirAlertEnabled() || !joinedSession || examFinished) {
-      setAirAlertPaused(false);
+      deferEffect(() => setAirAlertPaused(false));
       return;
     }
     let cancelled = false;
@@ -958,8 +952,8 @@ export default function HomeClient({
         }
 
         setStudentAnswersHydrated(true);
-        if (!fetchFailed && answerSyncEnabled) {
-          void offlineSync.flushNow();
+        if (!fetchFailed && answerSyncEnabledRef.current) {
+          void offlineSyncRef.current.flushNow();
         }
       } catch (error) {
         setStatusMessage(error instanceof Error ? error.message : t("home.errors.loadAnswers"));
@@ -972,7 +966,9 @@ export default function HomeClient({
     }, 0);
 
     return () => clearTimeout(timeoutId);
-  }, [joinedLiveSessionId, anonymousSessionId, t]);
+    // offlineSyncRef / answerSyncEnabledRef intentionally omitted — stable ref indirection
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [joinedLiveSessionId, anonymousSessionId, t, clearJoinFormFields, formatPointsScore]);
 
   useEffect(() => {
     if (!joinedLiveSessionId || !anonymousSessionId || !examFinished || examGraded) {
@@ -1007,7 +1003,7 @@ export default function HomeClient({
       })();
     }, 5000);
     return () => window.clearInterval(intervalId);
-  }, [joinedLiveSessionId, anonymousSessionId, examFinished, examGraded, t]);
+  }, [joinedLiveSessionId, anonymousSessionId, examFinished, examGraded, t, formatPointsScore]);
 
   const refreshLiveTeacherFeedback = useCallback(async () => {
     if (!joinedLiveSessionId || !anonymousSessionId) {
@@ -1137,15 +1133,6 @@ export default function HomeClient({
   );
 
   useEffect(() => {
-    if (!sessionOpen || examSuspended || examFinished) {
-      if (autosaveTimerRef.current !== undefined) {
-        window.clearTimeout(autosaveTimerRef.current);
-        autosaveTimerRef.current = undefined;
-      }
-    }
-  }, [sessionOpen, examSuspended, examFinished]);
-
-  useEffect(() => {
     if (!studentAnswersHydrated || !joinedSession || !sessionOpen || examSuspended || examFinished) {
       return;
     }
@@ -1158,6 +1145,32 @@ export default function HomeClient({
     examSuspended,
     examFinished,
     scheduleStudentAutosave,
+  ]);
+
+  useEffect(() => {
+    if (
+      !studentAnswersHydrated ||
+      !joinedLiveSessionId ||
+      !anonymousSessionId ||
+      !answerSyncEnabled
+    ) {
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      void notifyTeacherWatchAnswerDraft(
+        joinedLiveSessionId,
+        anonymousSessionId,
+        getAnswersForSync(),
+      );
+    }, 250);
+    return () => window.clearTimeout(timeoutId);
+  }, [
+    examAnswers,
+    studentAnswersHydrated,
+    joinedLiveSessionId,
+    anonymousSessionId,
+    answerSyncEnabled,
+    getAnswersForSync,
   ]);
 
   useEffect(() => {
@@ -1193,15 +1206,12 @@ export default function HomeClient({
         /* ignore */
       }
     })();
-  }, [joinedSession, anonymousSessionId, activeExamDisplayName, joinCodeInput, t]);
+  }, [joinedSession, anonymousSessionId, activeExamDisplayName, t, clearJoinFormFields]);
 
   useEffect(() => {
     return () => {
       if (typingHeartbeatTimerRef.current !== undefined) {
         window.clearTimeout(typingHeartbeatTimerRef.current);
-      }
-      if (autosaveTimerRef.current !== undefined) {
-        window.clearTimeout(autosaveTimerRef.current);
       }
       if (autosaveBannerClearRef.current !== undefined) {
         window.clearTimeout(autosaveBannerClearRef.current);
@@ -1402,7 +1412,8 @@ export default function HomeClient({
       setBuilderSaveStatus("idle");
       setBuilderSaveError("");
     });
-  }, [activeFormId]); // intentionally not [activeForm] — recomputes only when opening a different form
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- snapshot only when switching forms
+  }, [activeFormId]);
 
   /** Compute whether the active form has unsaved edits. */
   const builderHasUnsavedChanges = useMemo(() => {
@@ -1760,10 +1771,6 @@ export default function HomeClient({
     latestStudentAnswersRef.current = {};
     lastPersistedAnswersJsonRef.current = "";
     pendingDirtySinceRef.current = null;
-    if (autosaveTimerRef.current !== undefined) {
-      window.clearTimeout(autosaveTimerRef.current);
-      autosaveTimerRef.current = undefined;
-    }
     setAutosaveStatus("");
     studentResponseLoadKeyRef.current = null;
     setExamAnswers({});
@@ -1780,46 +1787,6 @@ export default function HomeClient({
     setStatusMessage(t("home.status.leftSession"));
   };
 
-  const saveStudentAnswers = async () => {
-    if (!joinedSession || !anonymousSessionId || !activeExamDisplayName) {
-      return;
-    }
-
-    setIsMutating(true);
-    setStatusMessage("");
-    const textQuestions = joinedSession.form.questions.filter((q) => questionSupportsLiveFeedback(q.type));
-    const answers = mergeStudentAnswersForSave(
-      latestStudentAnswersRef.current,
-      examFormRef.current,
-      textQuestions,
-    );
-    latestStudentAnswersRef.current = answers;
-    suspendAutosaveRef.current = true;
-    try {
-      await requestJson<{ ok: true }>(
-        `/api/public/live-sessions/${joinedSession.liveSessionId}/responses`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            deviceId: anonymousSessionId,
-            displayName: activeExamDisplayName,
-            answers,
-          }),
-        },
-      );
-      lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(answers);
-      pendingDirtySinceRef.current = null;
-      setAutosaveStatus(t("home.autosave.saved"));
-      setStatusMessage(t("home.status.answersSaved"));
-    } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : t("home.errors.saveAnswers"));
-    } finally {
-      suspendAutosaveRef.current = false;
-      setIsMutating(false);
-    }
-  };
-
   const submitExam = async () => {
     if (!joinedSession || !anonymousSessionId || !activeExamDisplayName) {
       return;
@@ -1834,29 +1801,23 @@ export default function HomeClient({
       textQuestions,
     );
     latestStudentAnswersRef.current = answers;
-    suspendAutosaveRef.current = true;
-    if (autosaveTimerRef.current !== undefined) {
-      window.clearTimeout(autosaveTimerRef.current);
-      autosaveTimerRef.current = undefined;
-    }
+    setAutosaveSuspended(true);
     try {
       setAutosaveStatus(t("home.autosave.saving"));
-      const { pending } = await offlineSync.flushNow();
-      if (pending > 0) {
-        await requestJson<{ ok: true }>(
-          `/api/public/live-sessions/${joinedSession.liveSessionId}/responses`,
-          {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              deviceId: anonymousSessionId,
-              displayName: activeExamDisplayName,
-              answers,
-            }),
-          },
-        );
-        lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(answers);
-      }
+      await offlineSync.flushNow();
+      await requestJson<{ ok: true }>(
+        `/api/public/live-sessions/${joinedSession.liveSessionId}/responses`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            deviceId: anonymousSessionId,
+            displayName: activeExamDisplayName,
+            answers,
+          }),
+        },
+      );
+      lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(answers);
       await requestJson<{ ok: true }>(
         `/api/public/live-sessions/${joinedSession.liveSessionId}/finish`,
         {
@@ -1868,16 +1829,19 @@ export default function HomeClient({
           }),
         },
       );
-      setAutosaveStatus(t("home.autosave.saved"));
-      clearJoinFormFields();
-      leaveJoinedSession();
-      router.replace("/");
-      router.refresh();
+      await offlineSync.acknowledgeSynced();
+      if (autosaveBannerClearRef.current !== undefined) {
+        window.clearTimeout(autosaveBannerClearRef.current);
+        autosaveBannerClearRef.current = undefined;
+      }
+      setAutosaveStatus("");
+      setExamFinished(true);
+      setStatusMessage(t("home.status.submitted"));
     } catch (error) {
       setAutosaveStatus(t("home.autosave.failed"));
       setStatusMessage(error instanceof Error ? error.message : t("home.errors.submitExam"));
     } finally {
-      suspendAutosaveRef.current = false;
+      setAutosaveSuspended(false);
       setIsMutating(false);
     }
   };
@@ -3165,9 +3129,14 @@ export default function HomeClient({
                     examAllAnswered
                       ? `tp-submit-ready ${focusRing}`
                       : `${ui.btnPrimary} min-h-11 disabled:opacity-50`
-                  }`}
+                  }${isMutating ? " tp-submit-ready--busy" : ""}`}
+                  aria-busy={isMutating}
                   aria-label={
-                    examAllAnswered ? t("home.exam.submitReadyAria") : t("home.exam.submitAria")
+                    isMutating
+                      ? t("common.submitting")
+                      : examAllAnswered
+                        ? t("home.exam.submitReadyAria")
+                        : t("home.exam.submitAria")
                   }
                 >
                   <svg
@@ -3182,8 +3151,32 @@ export default function HomeClient({
                   >
                     <path d="M5 12l5 5L20 7" />
                   </svg>
-                  {examAllAnswered ? t("home.exam.submitReady") : t("home.exam.submitExam")}
+                  {isMutating
+                    ? t("common.submitting")
+                    : examAllAnswered
+                      ? t("home.exam.submitReady")
+                      : t("home.exam.submitExam")}
                 </button>
+              ) : joinedSession && examFinished ? (
+                <span
+                  className="tp-submit-ready tp-submit-ready--done inline-flex min-h-11 items-center gap-2 px-5"
+                  role="status"
+                  data-testid="student-submit-done"
+                >
+                  <svg
+                    aria-hidden
+                    className="h-4 w-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M5 12l5 5L20 7" />
+                  </svg>
+                  {t("home.exam.submitted")}
+                </span>
               ) : null}
             </div>
             ) : null}

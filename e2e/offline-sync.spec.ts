@@ -14,7 +14,6 @@ test.describe.configure({ mode: "serial" });
 
 test.describe("Offline exam sync E2E", () => {
   let fixture: Awaited<ReturnType<typeof loadE2eFixture>>;
-  let deviceId: string;
 
   test.beforeAll(async () => {
     fixture = await loadE2eFixture();
@@ -24,7 +23,7 @@ test.describe("Offline exam sync E2E", () => {
   test("student keeps progress offline and syncs after reconnect", async ({ page, context }) => {
     test.skip(!fixture);
     await joinStudentSession(page, fixture!.joinCode, "E2E Offline Student");
-    deviceId = await readAnonymousDeviceId(page);
+    await readAnonymousDeviceId(page);
 
     await typeStudentAnswerAndWaitForAutosave(page, longStudentAnswer);
 

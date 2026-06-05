@@ -14,18 +14,14 @@ import {
   type GradingRosterFilter,
 } from "@/lib/grading-roster";
 import type { LiveSessionOverviewPayload } from "@/lib/live-session-overview";
-import type { StudentAnswers } from "@/lib/forms";
 import { deferEffect } from "@/lib/defer-effect";
 import { isNoTimeLimitSession } from "@/lib/session-window";
+import { useLiveSessionAnswerDrafts } from "@/lib/use-live-session-answer-drafts";
 import { usePollingRefresh } from "@/lib/use-polling-refresh";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { focusRing, ui } from "@/lib/ui";
 import { messageForBackgroundRefreshError } from "@/lib/background-network-error";
 import { requestJson } from "@/lib/request-json";
-
-// Live typing now comes from autosaved answers in the overview poll (no client
-// Realtime). Kept as a stable empty map so the roster prop contract is intact.
-const EMPTY_LIVE_DRAFTS: Record<string, StudentAnswers> = {};
 
 function formatCountdown(ms: number): string {
   if (ms <= 0) {
@@ -50,7 +46,10 @@ export default function SessionExamListPage() {
   const [rosterFilter, setRosterFilter] = useState<GradingRosterFilter>("all");
   const [filterInitialized, setFilterInitialized] = useState(false);
 
-  const liveDraftsByDevice = EMPTY_LIVE_DRAFTS;
+  const liveDraftsByDevice = useLiveSessionAnswerDrafts(
+    Boolean(overview?.session.sessionOpen),
+    liveSessionId,
+  );
 
   const refreshOverview = useCallback(async () => {
     if (!liveSessionId) {
@@ -259,7 +258,7 @@ export default function SessionExamListPage() {
           ) : (
             <div className="mt-4">
               <SessionExamRoster
-                textQuestionIds={s.textQuestionIds}
+                previewQuestions={s.previewQuestions ?? s.textQuestionIds.map((id) => ({ id, type: "text" }))}
                 liveDraftsByDevice={liveDraftsByDevice}
                 participants={displayedParticipants}
                 onOpenExam={(deviceId) =>

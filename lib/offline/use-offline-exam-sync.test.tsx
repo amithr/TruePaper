@@ -6,6 +6,7 @@ import { TEST_DEVICE_ID, TEST_DISPLAY_NAME, TEST_LIVE_SESSION_ID } from "@/lib/t
 
 const pendingSyncCount = vi.fn();
 const enqueueSyncItem = vi.fn();
+const clearPendingSyncQueue = vi.fn();
 const drainSyncQueue = vi.fn();
 const putStudentAnswersSync = vi.fn();
 const saveLocalAnswers = vi.fn();
@@ -14,6 +15,7 @@ const isIdbAvailable = vi.fn();
 vi.mock("@/lib/offline/sync-queue", () => ({
   pendingSyncCount: (...args: unknown[]) => pendingSyncCount(...args),
   enqueueSyncItem: (...args: unknown[]) => enqueueSyncItem(...args),
+  clearPendingSyncQueue: (...args: unknown[]) => clearPendingSyncQueue(...args),
 }));
 
 vi.mock("@/lib/offline/sync-engine", () => ({
@@ -38,6 +40,8 @@ describe("useOfflineExamSync", () => {
   beforeEach(() => {
     pendingSyncCount.mockReset();
     enqueueSyncItem.mockReset();
+    clearPendingSyncQueue.mockReset();
+    clearPendingSyncQueue.mockResolvedValue(undefined);
     drainSyncQueue.mockReset();
     putStudentAnswersSync.mockReset();
     saveLocalAnswers.mockReset();
@@ -177,5 +181,32 @@ describe("useOfflineExamSync", () => {
     expect(drainSyncQueue).toHaveBeenCalled();
     expect(onSynced).toHaveBeenCalled();
     expect(result.current.snapshot.state).toBe("synced");
+  });
+
+  it("acknowledgeSynced clears pending queue and marks synced", async () => {
+    const answers = { q1: "done" };
+    const onSynced = vi.fn();
+
+    const { result } = renderHook(() =>
+      useOfflineExamSync({
+        enabled: true,
+        liveSessionId: TEST_LIVE_SESSION_ID,
+        deviceId: TEST_DEVICE_ID,
+        displayName: TEST_DISPLAY_NAME,
+        getAnswers: () => answers,
+        onSynced,
+      }),
+    );
+
+    await waitFor(() => expect(result.current.snapshot.idbAvailable).toBe(true));
+
+    await act(async () => {
+      await result.current.acknowledgeSynced();
+    });
+
+    expect(clearPendingSyncQueue).toHaveBeenCalledWith(TEST_LIVE_SESSION_ID, TEST_DEVICE_ID);
+    expect(onSynced).toHaveBeenCalled();
+    expect(result.current.snapshot.state).toBe("synced");
+    expect(result.current.snapshot.pendingCount).toBe(0);
   });
 });

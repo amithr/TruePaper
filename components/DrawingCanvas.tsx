@@ -9,6 +9,7 @@ import {
   type DrawingPoint,
   type DrawingStroke,
 } from "@/lib/response-types/drawing";
+import { deferEffect } from "@/lib/defer-effect";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { focusRing } from "@/lib/ui";
 
@@ -45,7 +46,7 @@ export function DrawingCanvas({
   const [localStrokes, setLocalStrokes] = useState(strokes);
 
   useEffect(() => {
-    setLocalStrokes(strokes);
+    deferEffect(() => setLocalStrokes(strokes));
   }, [strokes]);
 
   const paint = useCallback(() => {

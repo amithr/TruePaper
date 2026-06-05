@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  liveSessionRosterPreview,
   liveTypingPreview,
+  rosterPreviewQuestionIds,
   textAnswerWordCount,
   truncateTypingPreview,
 } from "@/lib/live-typing-preview";
@@ -16,6 +18,24 @@ describe("liveTypingPreview", () => {
         40,
       ),
     ).toBe(`${"a".repeat(39)}…`);
+  });
+
+  it("uses written question types for roster preview", () => {
+    expect(
+      liveSessionRosterPreview(
+        { q1: "hello world", q2: "Mitochondria" },
+        [
+          { id: "q1", type: "extendedWritten" },
+          { id: "q2", type: "multipleChoice" },
+        ],
+      ),
+    ).toBe("hello world");
+    expect(
+      rosterPreviewQuestionIds([
+        { id: "q1", type: "shortAnswer" },
+        { id: "q2", type: "multipleChoice" },
+      ]),
+    ).toEqual(["q1"]);
   });
 
   it("counts words on text questions only", () => {

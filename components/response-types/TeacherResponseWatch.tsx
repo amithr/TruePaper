@@ -21,6 +21,7 @@ import {
   type MatchingConfig,
   type OrderingConfig,
 } from "@/lib/response-types/types";
+import { deferEffect } from "@/lib/defer-effect";
 import { focusRing } from "@/lib/ui";
 
 type FeedbackEditorProps = {
@@ -49,7 +50,6 @@ type Props = {
 };
 
 function WrittenFeedbackBlock({
-  questionId,
   showEditor,
   draftMessage,
   isSaving,
@@ -58,7 +58,7 @@ function WrittenFeedbackBlock({
   onFocus,
   onBlur,
   onChange,
-}: FeedbackEditorProps & { liveFeedbackEnabled: boolean }) {
+}: Omit<FeedbackEditorProps, "questionId"> & { liveFeedbackEnabled: boolean }) {
   const t = useTranslations();
 
   if (!liveFeedbackEnabled && !showEditor) {
@@ -133,7 +133,7 @@ export function TeacherResponseWatch({
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    setAnnotationDraft(canvasStrokes);
+    deferEffect(() => setAnnotationDraft(canvasStrokes));
   }, [canvasStrokes]);
 
   const scheduleCanvasSave = useCallback(

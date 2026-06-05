@@ -66,9 +66,76 @@ function rowToSummary(
 }
 
 const COUNTS_SELECT_WITH_GRADED =
-  "live_session_id, suspended_at, finished_at, text_graded_at, last_activity_at, last_typing_at";
+  "live_session_id, anonymous_session_id, suspended_at, finished_at, text_graded_at, last_activity_at, last_typing_at";
 const COUNTS_SELECT_LEGACY =
-  "live_session_id, suspended_at, finished_at, last_activity_at, last_typing_at";
+  "live_session_id, anonymous_session_id, suspended_at, finished_at, last_activity_at, last_typing_at";
+
+type PresenceActivity = {
+  lastActivityAt: string | null;
+  lastTypingAt: string | null;
+};
+
+function presenceKey(liveSessionId: string, deviceId: string): string {
+  return `${liveSessionId}:${deviceId.toLowerCase()}`;
+}
+
+async function loadPresenceBySessionDevice(
+  supabase: SupabaseClient,
+  sessionIds: string[],
+): Promise<Map<string, PresenceActivity>> {
+  const map = new Map<string, PresenceActivity>();
+  if (sessionIds.length === 0) {
+    return map;
+  }
+
+  const { data, error } = await supabase
+    .from("live_session_presence")
+    .select("live_session_id, anonymous_session_id, last_activity_at, last_typing_at")
+    .in("live_session_id", sessionIds);
+
+  if (error) {
+    if (error.message.includes("live_session_presence") || error.code === "42P01") {
+      return map;
+    }
+    throw new Error(error.message);
+  }
+
+  for (const row of data ?? []) {
+    const liveSessionId = row.live_session_id as string | null;
+    const deviceId = (row.anonymous_session_id as string | null)?.trim() ?? "";
+    if (!liveSessionId || !deviceId) {
+      continue;
+    }
+    map.set(presenceKey(liveSessionId, deviceId), {
+      lastActivityAt: (row.last_activity_at as string | null) ?? null,
+      lastTypingAt: (row.last_typing_at as string | null) ?? null,
+    });
+  }
+
+  return map;
+}
+
+function resolveParticipantActivity(
+  liveSessionId: string,
+  row: Record<string, unknown>,
+  presenceByKey: Map<string, PresenceActivity>,
+): PresenceActivity {
+  const deviceId = (row.anonymous_session_id as string | null)?.trim() ?? "";
+  const pres = deviceId ? presenceByKey.get(presenceKey(liveSessionId, deviceId)) : undefined;
+  return {
+    lastActivityAt: pres?.lastActivityAt ?? (row.last_activity_at as string | null),
+    lastTypingAt: pres?.lastTypingAt ?? (row.last_typing_at as string | null),
+  };
+}
+
+/** @internal exported for unit tests */
+export function resolveParticipantActivityForTest(
+  liveSessionId: string,
+  row: Record<string, unknown>,
+  presenceByKey: Map<string, PresenceActivity>,
+): PresenceActivity {
+  return resolveParticipantActivity(liveSessionId, row, presenceByKey);
+}
 
 async function attachResponseCounts(
   supabase: SupabaseClient,
@@ -88,6 +155,8 @@ async function attachResponseCounts(
   const needsGrading = new Map<string, number>();
 
   if (ids.length > 0) {
+    const presenceByKey = await loadPresenceBySessionDevice(supabase, ids);
+
     const primary = await supabase
       .from("form_responses")
       .select(COUNTS_SELECT_WITH_GRADED)
@@ -117,6 +186,7 @@ async function attachResponseCounts(
       assigned.set(lid, (assigned.get(lid) ?? 0) + 1);
       const finishedAt = row.finished_at as string | null;
       const gradedAt = (row.text_graded_at as string | null | undefined) ?? null;
+      const { lastActivityAt, lastTypingAt } = resolveParticipantActivity(lid, row, presenceByKey);
       if (finishedAt) {
         finished.set(lid, (finished.get(lid) ?? 0) + 1);
         if (!gradedAt) {
@@ -130,8 +200,8 @@ async function attachResponseCounts(
             suspendedAt: row.suspended_at as string | null,
             finishedAt,
             gradedAt,
-            lastActivityAt: row.last_activity_at as string | null,
-            lastTypingAt: row.last_typing_at as string | null,
+            lastActivityAt,
+            lastTypingAt,
           },
           windowOpen,
           nowMs,

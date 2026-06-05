@@ -9,11 +9,18 @@ export function newSubmissionId(): string {
   return `sub-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-async function clearPendingForSession(liveSessionId: string, deviceId: string): Promise<void> {
+export async function clearPendingSyncQueue(
+  liveSessionId: string,
+  deviceId: string,
+): Promise<void> {
   const existing = await listPendingSyncItems(liveSessionId, deviceId);
   for (const item of existing) {
     await idbDelete("sync_queue", item.submissionId);
   }
+}
+
+async function clearPendingForSession(liveSessionId: string, deviceId: string): Promise<void> {
+  await clearPendingSyncQueue(liveSessionId, deviceId);
 }
 
 export async function enqueueSyncItem(input: {

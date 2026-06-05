@@ -262,6 +262,7 @@ export default function WatchStudentExamPage() {
     deferEffect(() => {
       setPointsDraftsByQuestionId(nextPoints);
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on question list only
   }, [snapshot?.form.questions]);
 
   useEffect(() => {
@@ -296,6 +297,7 @@ export default function WatchStudentExamPage() {
         return next;
       });
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- preserve in-flight grade drafts on poll
   }, [snapshot?.questionGrades, snapshot?.form.questions]);
 
   useEffect(() => {
@@ -319,6 +321,7 @@ export default function WatchStudentExamPage() {
         return next;
       });
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- preserve in-flight feedback drafts on poll
   }, [snapshot?.liveTeacherFeedback, snapshot]);
 
   const persistLiveFeedbackRef = useLatestRef(async (questionId: string) => {
@@ -428,6 +431,8 @@ export default function WatchStudentExamPage() {
         setLoadError(e instanceof Error ? e.message : t("session.errors.saveFeedback"));
       }
     },
+    // applyServerLiveFeedback reads refs only; stable across renders
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [deviceIdNorm, liveSessionId, t],
   );
 
@@ -536,6 +541,8 @@ export default function WatchStudentExamPage() {
         setLoadError(e instanceof Error ? e.message : t("session.errors.saveEarned"));
       }
     },
+    // latestGradeDraftsRef is stable; omit from deps to avoid grade autosave churn
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [liveSessionId, deviceIdNorm, t],
   );
 

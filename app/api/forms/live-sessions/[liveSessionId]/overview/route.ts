@@ -3,7 +3,11 @@ import { NextResponse } from "next/server";
 import { countAnsweredQuestions } from "@/lib/count-answered-questions";
 import { parseQuestionGrades, sumEarnedPoints, sumPossiblePoints } from "@/lib/exam-grades";
 import { isMissingColumnError } from "@/lib/is-missing-db-column";
-import { liveTypingPreview, textAnswerWordCount } from "@/lib/live-typing-preview";
+import {
+  liveSessionRosterPreview,
+  rosterPreviewQuestionIds,
+  textAnswerWordCount,
+} from "@/lib/live-typing-preview";
 import { parseStudentAnswersJson } from "@/lib/student-answers-json";
 import { finalizeLiveSessionIfClosed } from "@/lib/live-session-finalize";
 import { computeLiveParticipantUiStatus } from "@/lib/participant-status";
@@ -177,7 +181,8 @@ export async function GET(_request: Request, { params }: Params) {
     type: q.question_type as string,
   }));
   const questionIds = questions.map((q) => q.id);
-  const textQuestionIds = questions.filter((q) => q.type === "text").map((q) => q.id);
+  const previewQuestions = questions.map((q) => ({ id: q.id, type: q.type }));
+  const textQuestionIds = rosterPreviewQuestionIds(previewQuestions);
   const questionTotal = questionIds.length;
   const pointsPossible = sumPossiblePoints(questions);
 
@@ -195,7 +200,7 @@ export async function GET(_request: Request, { params }: Params) {
     const pointsEarned = gradedAt ? sumEarnedPoints(grades, questions) : null;
     const answers = parseStudentAnswersJson(r.answers);
     const answeredCount = countAnsweredQuestions(answers, questionIds);
-    const textPreview = liveTypingPreview(answers, textQuestionIds);
+    const textPreview = liveSessionRosterPreview(answers, previewQuestions);
     const textWordCount = textAnswerWordCount(answers, textQuestionIds);
     return {
       anonymousSessionId: r.anonymous_session_id as string,
@@ -231,6 +236,7 @@ export async function GET(_request: Request, { params }: Params) {
       sessionOpen: windowOpen,
       questionTotal,
       textQuestionIds,
+      previewQuestions,
     },
     participants,
   });
