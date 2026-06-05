@@ -1,5 +1,7 @@
 "use client";
 
+import { useCallback, useMemo } from "react";
+
 import type { ScoreTier } from "@/lib/exam-grades";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 
@@ -7,12 +9,18 @@ import { useTranslations } from "@/lib/i18n/I18nProvider";
 export function useScoreCopy() {
   const t = useTranslations();
 
-  return {
-    formatPointsScore(earned: number, possible: number): string {
+  // Stable function identities so callers can safely list these in effect /
+  // callback dependency arrays without triggering re-render loops.
+  const formatPointsScore = useCallback(
+    (earned: number, possible: number): string => {
       const unit = possible === 1 ? t("grades.point") : t("grades.points");
       return t("grades.formatPoints", { earned, possible, unit });
     },
-    scoreTierMessage(tier: ScoreTier): string {
+    [t],
+  );
+
+  const scoreTierMessage = useCallback(
+    (tier: ScoreTier): string => {
       switch (tier) {
         case "perfect":
           return t("grades.tier.perfect");
@@ -24,5 +32,11 @@ export function useScoreCopy() {
           return t("grades.tier.needsWork");
       }
     },
-  };
+    [t],
+  );
+
+  return useMemo(
+    () => ({ formatPointsScore, scoreTierMessage }),
+    [formatPointsScore, scoreTierMessage],
+  );
 }

@@ -78,12 +78,16 @@ describe("PUT /api/public/live-sessions/[id]/responses", () => {
     expect(body).toEqual({ ok: true, deduped: true });
   });
 
-  it("uses legacy 4-arg RPC when submissionId is omitted", async () => {
+  it("generates a server-side submissionId when omitted (avoids 4-arg overload ambiguity)", async () => {
+    const uuidRe =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
     const supabase = createMockSupabase({
       rpc: (name, args) => {
         expect(name).toBe("save_live_session_student_response");
-        expect(args.p_submission_id).toBeUndefined();
-        return { data: null, error: null };
+        // Always the 5-arg form: p_submission_id is populated even when the client omits it.
+        expect(typeof args.p_submission_id).toBe("string");
+        expect(args.p_submission_id as string).toMatch(uuidRe);
+        return { data: { ok: true, deduped: false }, error: null };
       },
     });
     createSupabaseAnonServiceClient.mockReturnValue(supabase);

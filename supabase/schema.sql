@@ -34,6 +34,9 @@ create table if not exists public.form_sessions (
   opens_at timestamptz not null default now(),
   closes_at timestamptz not null,
   created_at timestamptz not null default now(),
+  delivery_mode text not null default 'live'
+    check (delivery_mode in ('live', 'self_paced', 'hybrid')),
+  accept_late_sync boolean not null default true,
   constraint form_sessions_join_code_fmt check (
     join_code ~ '^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{6}$'
   ),
@@ -58,6 +61,8 @@ create table if not exists public.form_responses (
   live_teacher_feedback jsonb not null default '{}'::jsonb,
   student_resume_code text,
   student_review_token text,
+  last_synced_submission_id uuid,
+  server_received_sequence bigint not null default 0,
   updated_at timestamptz not null default now(),
   constraint form_responses_responder_chk check (
     (student_id is not null and anonymous_session_id is null and live_session_id is null)
@@ -103,10 +108,27 @@ create table if not exists public.live_session_presence (
   anonymous_session_id text not null,
   last_activity_at timestamptz,
   last_typing_at timestamptz,
+  pending_sync_count integer not null default 0,
+  sync_state text not null default 'synced'
+    check (sync_state in ('synced', 'pending', 'offline')),
   primary key (live_session_id, anonymous_session_id)
 ) with (fillfactor = 70);
 
 alter table public.live_session_presence enable row level security;
+
+-- Idempotent dedupe ledger for offline answer sync. Only security-definer RPCs
+-- touch this table; RLS is enabled with no policies so clients cannot read/write.
+create table if not exists public.answer_sync_submissions (
+  submission_id uuid primary key,
+  live_session_id uuid not null references public.form_sessions (id) on delete cascade,
+  device_id text not null,
+  received_at timestamptz not null default now()
+);
+
+create index if not exists answer_sync_submissions_session_device_idx
+  on public.answer_sync_submissions (live_session_id, device_id);
+
+alter table public.answer_sync_submissions enable row level security;
 
 drop policy if exists "live_session_presence_select_teacher" on public.live_session_presence;
 create policy "live_session_presence_select_teacher"
@@ -920,23 +942,27 @@ $$;
 
 drop function if exists public.save_live_session_student_response(uuid, text, jsonb);
 
+-- Idempotent save with late-sync support for closed sessions. The optional
+-- submission id dedupes retried offline syncs.
 create or replace function public.save_live_session_student_response(
   p_live_session_id uuid,
   p_device_id text,
   p_answers jsonb,
-  p_display_name text
+  p_display_name text,
+  p_submission_id uuid default null
 )
-returns void
+returns jsonb
 language plpgsql
 security definer
 set search_path = public
 as $$
 declare
   fs record;
-  fid uuid;
   susp timestamptz;
   fin timestamptz;
   name text;
+  window_open boolean;
+  allow_save boolean;
 begin
   name := trim(coalesce(p_display_name, ''));
   if name is null or name = '' or length(name) > 120 then
@@ -944,7 +970,7 @@ begin
   end if;
 
   if p_device_id is null
-     or p_device_id !~ '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then
+     or lower(p_device_id) !~ '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then
     raise exception 'invalid device id';
   end if;
 
@@ -952,21 +978,35 @@ begin
     raise exception 'answers must be a json object';
   end if;
 
+  if p_submission_id is not null then
+    if exists (
+      select 1 from public.answer_sync_submissions
+      where submission_id = p_submission_id
+    ) then
+      return jsonb_build_object('ok', true, 'deduped', true);
+    end if;
+  end if;
+
   select * into fs from public.form_sessions where id = p_live_session_id limit 1;
   if not found then
     raise exception 'session not found';
   end if;
 
-  if timezone('utc', now()) < fs.opens_at or timezone('utc', now()) > fs.closes_at then
+  window_open := timezone('utc', now()) >= fs.opens_at
+    and timezone('utc', now()) <= fs.closes_at;
+
+  allow_save := window_open
+    or fs.delivery_mode in ('self_paced', 'hybrid')
+    or coalesce(fs.accept_late_sync, true);
+
+  if not allow_save then
     raise exception 'session is not open';
   end if;
-
-  fid := fs.form_id;
 
   select fr.suspended_at, fr.finished_at into susp, fin
   from public.form_responses fr
   where fr.live_session_id = p_live_session_id
-    and fr.anonymous_session_id = p_device_id
+    and lower(fr.anonymous_session_id) = lower(p_device_id)
     and fr.student_id is null;
 
   if susp is not null then
@@ -980,19 +1020,42 @@ begin
   insert into public.form_responses (
     form_id, live_session_id, anonymous_session_id, student_id, answers, student_display_name
   )
-  values (fs.form_id, p_live_session_id, p_device_id, null, p_answers, name)
+  values (fs.form_id, p_live_session_id, lower(p_device_id), null, p_answers, name)
   on conflict (live_session_id, anonymous_session_id)
     where live_session_id is not null and anonymous_session_id is not null
   do update set
     answers = excluded.answers,
     updated_at = now(),
-    student_display_name = excluded.student_display_name
+    student_display_name = excluded.student_display_name,
+    last_synced_submission_id = coalesce(p_submission_id, form_responses.last_synced_submission_id),
+    server_received_sequence = form_responses.server_received_sequence + 1
   where form_responses.suspended_at is null
     and form_responses.finished_at is null;
 
+  if p_submission_id is not null then
+    insert into public.answer_sync_submissions (submission_id, live_session_id, device_id)
+    values (p_submission_id, p_live_session_id, lower(p_device_id))
+    on conflict (submission_id) do nothing;
+  end if;
+
+  update public.live_session_presence
+  set
+    pending_sync_count = 0,
+    sync_state = 'synced',
+    last_activity_at = now()
+  where live_session_id = p_live_session_id
+    and lower(anonymous_session_id) = lower(p_device_id);
+
   perform public.touch_live_session_presence(p_live_session_id, p_device_id, false, true);
+
+  return jsonb_build_object('ok', true, 'deduped', false);
 end;
 $$;
+
+-- The 5-arg overload above is the single entry point. The legacy 4-arg wrapper
+-- was removed (see 20260605180000_drop_legacy_save_response_wrapper.sql) because
+-- it created PostgREST overload ambiguity; drop it here for older databases.
+drop function if exists public.save_live_session_student_response(uuid, text, jsonb, text);
 
 drop function if exists public.suspend_live_session_student_tab_leave(uuid, text);
 
@@ -1098,13 +1161,17 @@ end;
 $$;
 
 drop function if exists public.heartbeat_live_session_student(uuid, text, boolean, boolean);
+drop function if exists public.heartbeat_live_session_student(uuid, text, boolean, boolean, text);
 
+-- Heartbeat with optional pending-sync metadata for the teacher roster.
 create or replace function public.heartbeat_live_session_student(
   p_live_session_id uuid,
   p_device_id text,
   p_is_typing boolean,
   p_interaction boolean,
-  p_display_name text
+  p_display_name text,
+  p_pending_sync_count integer default 0,
+  p_sync_state text default 'synced'
 )
 returns void
 language plpgsql
@@ -1113,31 +1180,40 @@ set search_path = public
 as $$
 declare
   fs record;
-  fid uuid;
-  name text;
 begin
-  name := trim(coalesce(p_display_name, ''));
-  if name is null or name = '' or length(name) > 120 then
-    raise exception 'display name must be 1–120 characters';
-  end if;
-
   if p_device_id is null
-     or p_device_id !~ '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then
+     or lower(p_device_id) !~ '^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' then
     raise exception 'invalid device id';
   end if;
 
-  select * into fs from public.form_sessions where id = p_live_session_id limit 1;
+  select opens_at, closes_at, delivery_mode into fs
+  from public.form_sessions
+  where id = p_live_session_id
+  limit 1;
   if not found then
     raise exception 'session not found';
   end if;
 
   if timezone('utc', now()) < fs.opens_at or timezone('utc', now()) > fs.closes_at then
-    raise exception 'session is not open';
+    if fs.delivery_mode not in ('self_paced', 'hybrid') then
+      raise exception 'session is not open';
+    end if;
   end if;
 
   perform public.touch_live_session_presence(
     p_live_session_id, p_device_id, p_is_typing, p_interaction
   );
+
+  update public.live_session_presence
+  set
+    pending_sync_count = greatest(0, coalesce(p_pending_sync_count, 0)),
+    sync_state = case
+      when coalesce(p_pending_sync_count, 0) > 0 then 'pending'
+      when p_sync_state in ('offline', 'pending', 'synced') then p_sync_state
+      else 'synced'
+    end
+  where live_session_id = p_live_session_id
+    and lower(anonymous_session_id) = lower(p_device_id);
 end;
 $$;
 
@@ -1747,10 +1823,10 @@ revoke all on function public.get_live_session_public_board(text) from public;
 revoke all on function public.get_live_session_student_response(uuid, text) from public;
 revoke all on function public.get_live_session_student_state(uuid, text) from public;
 revoke all on function public.touch_live_session_presence(uuid, text, boolean, boolean) from public;
-revoke all on function public.save_live_session_student_response(uuid, text, jsonb, text) from public;
+revoke all on function public.save_live_session_student_response(uuid, text, jsonb, text, uuid) from public;
 revoke all on function public.suspend_live_session_student_tab_leave(uuid, text, text) from public;
 revoke all on function public.register_live_session_student_presence(uuid, text, text) from public;
-revoke all on function public.heartbeat_live_session_student(uuid, text, boolean, boolean, text) from public;
+revoke all on function public.heartbeat_live_session_student(uuid, text, boolean, boolean, text, integer, text) from public;
 revoke all on function public.finish_live_session_student_response(uuid, text, text) from public;
 revoke all on function public.set_live_teacher_feedback(uuid, text, uuid, text) from public;
 revoke all on function public.ensure_student_resume_code(uuid, text) from public;
@@ -1774,10 +1850,10 @@ grant execute on function public.get_live_session_public_board(text) to anon, au
 grant execute on function public.get_live_session_student_response(uuid, text) to anon, authenticated, service_role;
 grant execute on function public.get_live_session_student_state(uuid, text) to anon, authenticated, service_role;
 grant execute on function public.touch_live_session_presence(uuid, text, boolean, boolean) to service_role;
-grant execute on function public.save_live_session_student_response(uuid, text, jsonb, text) to anon, authenticated, service_role;
+grant execute on function public.save_live_session_student_response(uuid, text, jsonb, text, uuid) to anon, authenticated, service_role;
 grant execute on function public.suspend_live_session_student_tab_leave(uuid, text, text) to anon, authenticated, service_role;
 grant execute on function public.register_live_session_student_presence(uuid, text, text) to anon, authenticated, service_role;
-grant execute on function public.heartbeat_live_session_student(uuid, text, boolean, boolean, text) to anon, authenticated, service_role;
+grant execute on function public.heartbeat_live_session_student(uuid, text, boolean, boolean, text, integer, text) to anon, authenticated, service_role;
 grant execute on function public.finish_live_session_student_response(uuid, text, text) to anon, authenticated, service_role;
 grant execute on function public.set_live_teacher_feedback(uuid, text, uuid, text) to authenticated, service_role;
 grant execute on function public.teacher_clear_live_session_student_suspension(uuid, text) to authenticated, service_role;

@@ -1818,6 +1818,14 @@ export default function HomeClient({
       textQuestions,
     );
     latestStudentAnswersRef.current = answers;
+    // Always send a submissionId so the server hits the unambiguous 5-arg RPC.
+    // Calling the save RPC with exactly 4 args is ambiguous in PostgREST when both
+    // the 4-arg and 5-arg overloads exist, which surfaces as a misleading
+    // "missing save_live_session_student_response (4-arg)" error.
+    const submissionId =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : undefined;
     try {
       setAutosaveStatus(t("home.autosave.saving"));
       // Authoritative save + finish. We intentionally do NOT await offlineSync.flushNow()
@@ -1833,6 +1841,7 @@ export default function HomeClient({
             deviceId,
             displayName: activeExamDisplayName,
             answers,
+            ...(submissionId ? { submissionId } : {}),
           }),
         },
       );

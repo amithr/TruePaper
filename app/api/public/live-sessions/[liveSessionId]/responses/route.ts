@@ -113,37 +113,18 @@ export async function PUT(request: Request, { params }: Params) {
 
   try {
     const supabase = createSupabaseAnonServiceClient();
-    if (submissionId) {
-      const { data, error } = await supabase.rpc("save_live_session_student_response", {
-        p_live_session_id: liveSessionId,
-        p_device_id: deviceId,
-        p_answers: answers,
-        p_display_name: displayName,
-        p_submission_id: submissionId,
-      });
-
-      if (error) {
-        if (error.message.includes("save_live_session_student_response") || error.code === "42883") {
-          return NextResponse.json(
-            {
-              error:
-                "Database is missing save_live_session_student_response (5-arg). Run migrations through 20260605150000_offline_sync.sql.",
-            },
-            { status: 503 },
-          );
-        }
-        return NextResponse.json({ error: error.message }, { status: 400 });
-      }
-
-      const payload = (data ?? {}) as { deduped?: boolean };
-      return NextResponse.json({ ok: true, deduped: payload.deduped === true });
-    }
-
-    const { error } = await supabase.rpc("save_live_session_student_response", {
+    // Always call the 5-arg RPC. Calling the save function with exactly 4 args is
+    // ambiguous to PostgREST when both the 4-arg and 5-arg (default p_submission_id)
+    // overloads exist, surfacing as a misleading "missing (4-arg)" error. Supplying
+    // p_submission_id makes the overload resolution unambiguous. When the client
+    // doesn't provide one, we generate a server-side id (no dedup, same as legacy).
+    const effectiveSubmissionId = submissionId || crypto.randomUUID();
+    const { data, error } = await supabase.rpc("save_live_session_student_response", {
       p_live_session_id: liveSessionId,
       p_device_id: deviceId,
       p_answers: answers,
       p_display_name: displayName,
+      p_submission_id: effectiveSubmissionId,
     });
 
     if (error) {
@@ -151,7 +132,7 @@ export async function PUT(request: Request, { params }: Params) {
         return NextResponse.json(
           {
             error:
-              "Database is missing save_live_session_student_response (4-arg). Run migrations through 20260605150000_offline_sync.sql (includes display-name save RPCs from 20260424130000_live_student_display_name.sql).",
+              "Database is missing save_live_session_student_response (5-arg). Run migrations through 20260605150000_offline_sync.sql (includes display-name save RPCs from 20260424130000_live_student_display_name.sql).",
           },
           { status: 503 },
         );
@@ -159,7 +140,8 @@ export async function PUT(request: Request, { params }: Params) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
-    return NextResponse.json({ ok: true });
+    const payload = (data ?? {}) as { deduped?: boolean };
+    return NextResponse.json({ ok: true, deduped: payload.deduped === true });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Configuration error.";
     return NextResponse.json({ error: message }, { status: 500 });
