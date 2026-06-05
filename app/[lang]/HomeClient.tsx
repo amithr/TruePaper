@@ -75,7 +75,7 @@ import { fetchStudentAlreadySubmitted } from "@/lib/fetch-student-submission-sta
 import { fetchStudentExamStatus } from "@/lib/fetch-student-exam-status";
 import { fetchStudentLiveTeacherFeedback } from "@/lib/fetch-student-live-feedback";
 import { hasLiveTeacherFeedbackContent } from "@/lib/live-teacher-feedback";
-import { requestJson } from "@/lib/request-json";
+import { requestJson, requestJsonWithTimeout } from "@/lib/request-json";
 import { stableStringifyStudentAnswers } from "@/lib/student-answers-json";
 import { usePollingRefresh } from "@/lib/use-polling-refresh";
 import { loadLocalAnswers, mergeAnswersLastWrite } from "@/lib/offline/answer-store";
@@ -1794,6 +1794,8 @@ export default function HomeClient({
 
     setIsMutating(true);
     setStatusMessage("");
+    // Suspend autosave so a background drain can't race the explicit submit below.
+    setAutosaveSuspended(true);
     const textQuestions = joinedSession.form.questions.filter((q) => questionSupportsLiveFeedback(q.type));
     const answers = mergeStudentAnswersForSave(
       latestStudentAnswersRef.current,
@@ -1801,11 +1803,13 @@ export default function HomeClient({
       textQuestions,
     );
     latestStudentAnswersRef.current = answers;
-    setAutosaveSuspended(true);
     try {
       setAutosaveStatus(t("home.autosave.saving"));
-      await offlineSync.flushNow();
-      await requestJson<{ ok: true }>(
+      // Authoritative save + finish. We intentionally do NOT await offlineSync.flushNow()
+      // here: it can block on an in-flight background drain (a timeout-less fetch), which
+      // would freeze the button on "Submitting…" forever. A bounded request guarantees we
+      // always either finish or surface an error.
+      await requestJsonWithTimeout<{ ok: true }>(
         `/api/public/live-sessions/${joinedSession.liveSessionId}/responses`,
         {
           method: "PUT",
@@ -1818,7 +1822,7 @@ export default function HomeClient({
         },
       );
       lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(answers);
-      await requestJson<{ ok: true }>(
+      await requestJsonWithTimeout<{ ok: true }>(
         `/api/public/live-sessions/${joinedSession.liveSessionId}/finish`,
         {
           method: "POST",
@@ -1829,7 +1833,8 @@ export default function HomeClient({
           }),
         },
       );
-      await offlineSync.acknowledgeSynced();
+      // Best-effort: clear any queued autosave items now that the server copy is final.
+      await offlineSync.acknowledgeSynced().catch(() => {});
       if (autosaveBannerClearRef.current !== undefined) {
         window.clearTimeout(autosaveBannerClearRef.current);
         autosaveBannerClearRef.current = undefined;
@@ -1838,8 +1843,15 @@ export default function HomeClient({
       setExamFinished(true);
       setStatusMessage(t("home.status.submitted"));
     } catch (error) {
+      const aborted = error instanceof Error && error.name === "AbortError";
       setAutosaveStatus(t("home.autosave.failed"));
-      setStatusMessage(error instanceof Error ? error.message : t("home.errors.submitExam"));
+      setStatusMessage(
+        aborted
+          ? t("home.errors.submitTimeout")
+          : error instanceof Error
+            ? error.message
+            : t("home.errors.submitExam"),
+      );
     } finally {
       setAutosaveSuspended(false);
       setIsMutating(false);

@@ -67,7 +67,7 @@ test.describe("Teacher roster sync badges E2E", () => {
     const badge = teacherPage.getByTestId("roster-sync-badge").first();
     await expect(badge).toBeVisible({ timeout: 30_000 });
     await expect(badge).toHaveAttribute("data-sync-state", "pending");
-    await expect(badge).toContainText(/3/);
+    await expect(badge).toContainText(/saving/i);
     await teacherContext.close();
   });
 });

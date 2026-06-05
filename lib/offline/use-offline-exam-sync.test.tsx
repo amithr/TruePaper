@@ -5,6 +5,7 @@ import { SYNC_DEBOUNCE_MS } from "@/lib/offline/config";
 import { TEST_DEVICE_ID, TEST_DISPLAY_NAME, TEST_LIVE_SESSION_ID } from "@/lib/test/fixtures";
 
 const pendingSyncCount = vi.fn();
+const prunePendingSyncQueue = vi.fn();
 const enqueueSyncItem = vi.fn();
 const clearPendingSyncQueue = vi.fn();
 const drainSyncQueue = vi.fn();
@@ -14,6 +15,7 @@ const isIdbAvailable = vi.fn();
 
 vi.mock("@/lib/offline/sync-queue", () => ({
   pendingSyncCount: (...args: unknown[]) => pendingSyncCount(...args),
+  prunePendingSyncQueue: (...args: unknown[]) => prunePendingSyncQueue(...args),
   enqueueSyncItem: (...args: unknown[]) => enqueueSyncItem(...args),
   clearPendingSyncQueue: (...args: unknown[]) => clearPendingSyncQueue(...args),
 }));
@@ -39,6 +41,7 @@ import { useOfflineExamSync } from "@/lib/offline/use-offline-exam-sync";
 describe("useOfflineExamSync", () => {
   beforeEach(() => {
     pendingSyncCount.mockReset();
+    prunePendingSyncQueue.mockReset();
     enqueueSyncItem.mockReset();
     clearPendingSyncQueue.mockReset();
     clearPendingSyncQueue.mockResolvedValue(undefined);
@@ -48,6 +51,7 @@ describe("useOfflineExamSync", () => {
     isIdbAvailable.mockReset();
 
     pendingSyncCount.mockResolvedValue(0);
+    prunePendingSyncQueue.mockResolvedValue(0);
     enqueueSyncItem.mockResolvedValue(undefined);
     saveLocalAnswers.mockResolvedValue(undefined);
     drainSyncQueue.mockResolvedValue({ synced: 1, pending: 0 });

@@ -12,7 +12,7 @@ import {
 import { isIdbAvailable } from "@/lib/offline/idb";
 import {
   clearPendingSyncQueue,
-  pendingSyncCount,
+  prunePendingSyncQueue,
   enqueueSyncItem,
 } from "@/lib/offline/sync-queue";
 import { drainSyncQueue } from "@/lib/offline/sync-engine";
@@ -80,7 +80,7 @@ export function useOfflineExamSync({
     if (!liveSessionId || !deviceId) {
       return 0;
     }
-    const count = await pendingSyncCount(liveSessionId, deviceId);
+    const count = await prunePendingSyncQueue(liveSessionId, deviceId);
     publish({ pendingCount: count });
     return count;
   }, [liveSessionId, deviceId, publish]);

@@ -44,7 +44,7 @@ describe("SessionExamRoster", () => {
     expect(badge).toHaveAttribute("data-sync-state", "offline");
   });
 
-  it("shows pending sync badge with count", () => {
+  it("shows a saving badge while a student's answers are syncing", () => {
     renderWithI18n(
       <SessionExamRoster
         previewQuestions={[]}
@@ -55,7 +55,7 @@ describe("SessionExamRoster", () => {
     );
     const badge = screen.getByTestId("roster-sync-badge");
     expect(badge).toHaveAttribute("data-sync-state", "pending");
-    expect(badge.textContent).toMatch(/4 pending syncs/);
+    expect(badge.textContent).toMatch(/Saving/i);
   });
 
   it("hides sync badge after submission", () => {

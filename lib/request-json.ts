@@ -23,3 +23,32 @@ export async function requestJson<T>(input: RequestInfo | URL, init?: RequestIni
   }
   return data;
 }
+
+const DEFAULT_REQUEST_TIMEOUT_MS = 20_000;
+
+/**
+ * `requestJson` that aborts after `timeoutMs` so a hung/stalled server can never
+ * freeze the caller indefinitely. On timeout the promise rejects with an
+ * `AbortError`, letting callers show a "try again" message instead of hanging.
+ */
+export async function requestJsonWithTimeout<T>(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+  timeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS,
+): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  // Honor a caller-supplied signal too: abort our request if theirs fires.
+  if (init?.signal) {
+    if (init.signal.aborted) {
+      controller.abort();
+    } else {
+      init.signal.addEventListener("abort", () => controller.abort(), { once: true });
+    }
+  }
+  try {
+    return await requestJson<T>(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}

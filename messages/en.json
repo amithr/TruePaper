@@ -369,6 +369,7 @@
       "removeQuestion": "Failed to remove question.",
       "saveAnswers": "Failed to save answers.",
       "submitExam": "Could not submit the exam.",
+      "submitTimeout": "Submitting timed out. Check your connection and tap Submit again.",
       "joinSession": "Could not join that session.",
       "rejoinExam": "Could not rejoin that exam."
     },
@@ -392,8 +393,7 @@
       "gradedPill": "Graded",
       "idle": "Idle",
       "workingPill": "Working",
-      "syncPendingOne": "1 pending sync",
-      "syncPendingOther": "{n} pending syncs",
+      "syncSaving": "Saving…",
       "syncOffline": "Offline"
     },
     "codeLabel": "Code {joinCode}",
@@ -833,8 +833,7 @@
       "offline": "Saved locally — will sync when back online",
       "syncing": "Syncing…",
       "synced": "Synced",
-      "localOnly": "Saved on this device",
-      "pending": "{n} change(s) waiting to sync"
+      "localOnly": "Saved on this device"
     },
     "airAlertPaused": "Session paused for safety. Your answers are saved — continue when the alert ends.",
     "idbCleared": "Local save storage was cleared. Your progress may not restore after refresh."

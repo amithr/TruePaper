@@ -78,11 +78,6 @@ function SyncStatusBadge({
     );
   }
   if (p.syncState === "pending" || p.pendingSyncCount > 0) {
-    const pendingCount = Math.max(1, p.pendingSyncCount);
-    const pendingLabel =
-      pendingCount === 1
-        ? t("session.status.syncPendingOne")
-        : t("session.status.syncPendingOther", { n: pendingCount });
     return (
       <span
         className="tp-status tp-status-sync-pending"
@@ -90,7 +85,7 @@ function SyncStatusBadge({
         data-sync-state="pending"
       >
         <span className="tp-status-dot" aria-hidden />
-        {pendingLabel}
+        {t("session.status.syncSaving")}
       </span>
     );
   }

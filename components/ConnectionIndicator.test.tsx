@@ -26,8 +26,9 @@ describe("ConnectionIndicator", () => {
     expect(screen.getByText(/Syncing/i)).toBeInTheDocument();
   });
 
-  it("shows pending count when queue has items", () => {
+  it("shows a plain saved state without a raw pending count", () => {
     renderIndicator("synced", 3);
-    expect(screen.getByText(/3 change/)).toBeInTheDocument();
+    expect(screen.getByText(/Synced/i)).toBeInTheDocument();
+    expect(screen.queryByText(/3 change/)).not.toBeInTheDocument();
   });
 });

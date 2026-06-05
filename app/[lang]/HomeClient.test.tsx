@@ -57,6 +57,7 @@ vi.mock("@/lib/home-url-intent", () => ({
 
 vi.mock("@/lib/request-json", () => ({
   requestJson: vi.fn().mockResolvedValue({ forms: [] }),
+  requestJsonWithTimeout: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
 vi.mock("next/dynamic", () => ({

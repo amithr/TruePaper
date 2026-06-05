@@ -72,3 +72,27 @@ export async function pendingSyncCount(
   const items = await listPendingSyncItems(liveSessionId, deviceId);
   return items.length;
 }
+
+/**
+ * Collapse the queue down to the single newest item. The invariant is ≤1 pending
+ * row per (session, device) — only the latest answers matter — but older builds
+ * (or interrupted writes) could leave orphaned rows behind, which made the
+ * pending count balloon into the thousands. Returns the post-prune count (0 or 1).
+ */
+export async function prunePendingSyncQueue(
+  liveSessionId: string,
+  deviceId: string,
+): Promise<number> {
+  const items = await listPendingSyncItems(liveSessionId, deviceId);
+  if (items.length <= 1) {
+    return items.length;
+  }
+  // listPendingSyncItems sorts ascending by createdAt — keep the most recent.
+  const newest = items[items.length - 1];
+  for (const item of items) {
+    if (item.submissionId !== newest.submissionId) {
+      await idbDelete("sync_queue", item.submissionId);
+    }
+  }
+  return 1;
+}
