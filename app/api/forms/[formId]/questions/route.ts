@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
 import type { Question, QuestionType } from "@/lib/forms";
+import { getResponseTypeMeta, parseResponseConfig } from "@/lib/response-types/registry";
+import { isValidQuestionType } from "@/lib/response-types/valid-types";
 import { getSessionUser } from "@/lib/request-auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -14,6 +16,7 @@ type CreateQuestionBody = {
   options?: string[];
   correctAnswer?: string | null;
   points?: number;
+  responseConfig?: unknown;
 };
 
 export async function POST(request: Request, { params }: Params) {
@@ -33,7 +36,7 @@ export async function POST(request: Request, { params }: Params) {
   const type = body.type;
   const points = Math.max(1, Math.min(1000, Math.floor(Number(body.points) || 1)));
 
-  if (type !== "multipleChoice" && type !== "text") {
+  if (!type || !isValidQuestionType(type)) {
     return NextResponse.json({ error: "Invalid question type." }, { status: 400 });
   }
 
@@ -68,9 +71,9 @@ export async function POST(request: Request, { params }: Params) {
   }
 
   const displayOrder = (maxOrderData?.display_order ?? -1) + 1;
-  const prompt =
-    body.prompt?.trim() ||
-    (type === "multipleChoice" ? "New multiple choice question" : "New text response question");
+  const meta = getResponseTypeMeta(type);
+  const prompt = body.prompt?.trim() || meta.defaultPrompt();
+  const responseConfig = parseResponseConfig(type, body.responseConfig);
   const options =
     type === "multipleChoice"
       ? body.options && body.options.length > 0
@@ -94,8 +97,9 @@ export async function POST(request: Request, { params }: Params) {
       correct_answer: correctAnswer,
       points,
       display_order: displayOrder,
+      response_config: responseConfig,
     })
-    .select("id, prompt, question_type, options, correct_answer, points, display_order")
+    .select("id, prompt, question_type, options, correct_answer, points, display_order, response_config")
     .single();
 
   if (error || !data) {
@@ -116,6 +120,7 @@ export async function POST(request: Request, { params }: Params) {
       correctAnswer: data.question_type === "multipleChoice" ? data.correct_answer : null,
       points: Math.max(1, Math.floor(Number(data.points) || 1)),
       displayOrder: data.display_order,
+      responseConfig: parseResponseConfig(data.question_type, data.response_config),
     } satisfies Question,
   });
 }

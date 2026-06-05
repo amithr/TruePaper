@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { deferEffect } from "@/lib/defer-effect";
 
 import { ConfirmButton } from "@/components/ConfirmButton";
+import { SaveTemplateModal } from "@/components/library/SaveTemplateModal";
 import { LoadingBar } from "@/components/LoadingBar";
 import type { Form } from "@/lib/forms";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
@@ -26,11 +27,16 @@ export function DashboardFormLibrary({ onError }: Props) {
   const [loading, setLoading] = useState(true);
   const [sessionDurations, setSessionDurations] = useState<Record<string, number>>({});
   const [noTimeLimitByForm, setNoTimeLimitByForm] = useState<Record<string, boolean>>({});
+  const [deliveryModeByForm, setDeliveryModeByForm] = useState<
+    Record<string, "live" | "self_paced" | "hybrid">
+  >({});
   const [startingFormId, setStartingFormId] = useState<string | null>(null);
   const [creatingForm, setCreatingForm] = useState(false);
   const [deletingFormId, setDeletingFormId] = useState<string | null>(null);
   const [formLibraryPage, setFormLibraryPage] = useState(0);
   const [formLibrarySearch, setFormLibrarySearch] = useState("");
+  const [saveTemplateFormId, setSaveTemplateFormId] = useState<string | null>(null);
+  const [saveTemplateTitle, setSaveTemplateTitle] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -110,7 +116,10 @@ export function DashboardFormLibrary({ onError }: Props) {
       }>(`/api/forms/${formId}/live-sessions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(noTimeLimit ? { noTimeLimit: true } : { durationMinutes: minutes }),
+        body: JSON.stringify({
+          ...(noTimeLimit ? { noTimeLimit: true } : { durationMinutes: minutes }),
+          deliveryMode: deliveryModeByForm[formId] ?? "live",
+        }),
       });
       router.push(`/dashboard/sessions/${created.liveSessionId}`);
     } catch (e) {
@@ -264,6 +273,24 @@ export function DashboardFormLibrary({ onError }: Props) {
                       />
                       {t("common.noLimit")}
                     </label>
+                    <label className="flex items-center gap-1.5 text-xs text-[var(--tp-text-secondary)]">
+                      <span className="sr-only">{t("formLibrary.deliveryMode")}</span>
+                      <select
+                        value={deliveryModeByForm[form.id] ?? "live"}
+                        onChange={(e) =>
+                          setDeliveryModeByForm((current) => ({
+                            ...current,
+                            [form.id]: e.target.value as "live" | "self_paced" | "hybrid",
+                          }))
+                        }
+                        aria-label={t("formLibrary.deliveryMode")}
+                        className="rounded-[var(--tp-radius-xs)] border border-[var(--tp-border-strong)] bg-transparent px-2 py-1"
+                      >
+                        <option value="live">{t("formLibrary.deliveryLive")}</option>
+                        <option value="self_paced">{t("formLibrary.deliverySelfPaced")}</option>
+                        <option value="hybrid">{t("formLibrary.deliveryHybrid")}</option>
+                      </select>
+                    </label>
                     <button
                       type="button"
                       disabled={startingFormId === form.id}
@@ -279,6 +306,16 @@ export function DashboardFormLibrary({ onError }: Props) {
                         <path d="M8 5v14l11-7z" />
                       </svg>
                       {startingFormId === form.id ? t("common.starting") : t("common.start")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSaveTemplateFormId(form.id);
+                        setSaveTemplateTitle(form.title || "");
+                      }}
+                      className={`${ui.btnSecondary} ${focusRing}`}
+                    >
+                      {t("templateLibrary.save.action")}
                     </button>
                     <Link
                       href={`/?form=${form.id}`}
@@ -333,6 +370,13 @@ export function DashboardFormLibrary({ onError }: Props) {
           ) : null}
         </div>
       ) : null}
+      <SaveTemplateModal
+        open={saveTemplateFormId !== null}
+        onClose={() => setSaveTemplateFormId(null)}
+        sourceKind="form"
+        formId={saveTemplateFormId ?? undefined}
+        defaultTitle={saveTemplateTitle}
+      />
     </section>
   );
 }

@@ -11,6 +11,7 @@ const textQuestion = (id: string): Question => ({
   correctAnswer: null,
   points: 1,
   displayOrder: 0,
+  responseConfig: {},
 });
 
 function formWithTextarea(id: string, value: string): HTMLFormElement {

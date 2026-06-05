@@ -1,0 +1,143 @@
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { SYNC_DEBOUNCE_MS } from "@/lib/offline/config";
+import { TEST_DEVICE_ID, TEST_DISPLAY_NAME, TEST_LIVE_SESSION_ID } from "@/lib/test/fixtures";
+
+const pendingSyncCount = vi.fn();
+const enqueueSyncItem = vi.fn();
+const drainSyncQueue = vi.fn();
+const putStudentAnswersSync = vi.fn();
+const saveLocalAnswers = vi.fn();
+const isIdbAvailable = vi.fn();
+
+vi.mock("@/lib/offline/sync-queue", () => ({
+  pendingSyncCount: (...args: unknown[]) => pendingSyncCount(...args),
+  enqueueSyncItem: (...args: unknown[]) => enqueueSyncItem(...args),
+}));
+
+vi.mock("@/lib/offline/sync-engine", () => ({
+  drainSyncQueue: (...args: unknown[]) => drainSyncQueue(...args),
+}));
+
+vi.mock("@/lib/offline/sync-transport", () => ({
+  putStudentAnswersSync: (...args: unknown[]) => putStudentAnswersSync(...args),
+}));
+
+vi.mock("@/lib/offline/answer-store", () => ({
+  saveLocalAnswers: (...args: unknown[]) => saveLocalAnswers(...args),
+}));
+
+vi.mock("@/lib/offline/idb", () => ({
+  isIdbAvailable: () => isIdbAvailable(),
+}));
+
+import { useOfflineExamSync } from "@/lib/offline/use-offline-exam-sync";
+
+describe("useOfflineExamSync", () => {
+  beforeEach(() => {
+    pendingSyncCount.mockReset();
+    enqueueSyncItem.mockReset();
+    drainSyncQueue.mockReset();
+    putStudentAnswersSync.mockReset();
+    saveLocalAnswers.mockReset();
+    isIdbAvailable.mockReset();
+
+    pendingSyncCount.mockResolvedValue(0);
+    enqueueSyncItem.mockResolvedValue(undefined);
+    saveLocalAnswers.mockResolvedValue(undefined);
+    drainSyncQueue.mockResolvedValue({ synced: 1, pending: 0 });
+    isIdbAvailable.mockResolvedValue(true);
+    Object.defineProperty(navigator, "onLine", { value: true, configurable: true });
+  });
+
+  it("reports idb availability on mount", async () => {
+    const onStatusChange = vi.fn();
+    const { result } = renderHook(() =>
+      useOfflineExamSync({
+        enabled: true,
+        liveSessionId: TEST_LIVE_SESSION_ID,
+        deviceId: TEST_DEVICE_ID,
+        displayName: TEST_DISPLAY_NAME,
+        getAnswers: () => ({}),
+        onStatusChange,
+      }),
+    );
+
+    await waitFor(() => expect(result.current.snapshot.idbAvailable).toBe(true));
+    expect(onStatusChange).toHaveBeenCalled();
+  });
+
+  it("scheduleSync enqueues local save and drain", async () => {
+    const answers = { q1: "answer" };
+    const getAnswers = vi.fn(() => answers);
+    const onSynced = vi.fn();
+
+    const { result } = renderHook(() =>
+      useOfflineExamSync({
+        enabled: true,
+        liveSessionId: TEST_LIVE_SESSION_ID,
+        deviceId: TEST_DEVICE_ID,
+        displayName: TEST_DISPLAY_NAME,
+        getAnswers,
+        onSynced,
+      }),
+    );
+
+    await waitFor(() => expect(result.current.snapshot.idbAvailable).toBe(true));
+
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        result.current.scheduleSync();
+        await vi.advanceTimersByTimeAsync(SYNC_DEBOUNCE_MS + 50);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(saveLocalAnswers).toHaveBeenCalledWith(
+      TEST_LIVE_SESSION_ID,
+      TEST_DEVICE_ID,
+      answers,
+    );
+    expect(enqueueSyncItem).toHaveBeenCalled();
+    expect(drainSyncQueue).toHaveBeenCalled();
+    await waitFor(() => expect(onSynced).toHaveBeenCalled());
+  });
+
+  it("does not reschedule when answers are unchanged", async () => {
+    const answers = { q1: "same" };
+    const getAnswers = vi.fn(() => answers);
+
+    const { result } = renderHook(() =>
+      useOfflineExamSync({
+        enabled: true,
+        liveSessionId: TEST_LIVE_SESSION_ID,
+        deviceId: TEST_DEVICE_ID,
+        displayName: TEST_DISPLAY_NAME,
+        getAnswers,
+      }),
+    );
+
+    await waitFor(() => expect(result.current.snapshot.idbAvailable).toBe(true));
+
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        result.current.scheduleSync();
+        await vi.advanceTimersByTimeAsync(SYNC_DEBOUNCE_MS + 50);
+      });
+      enqueueSyncItem.mockClear();
+
+      await act(async () => {
+        result.current.scheduleSync();
+        await vi.advanceTimersByTimeAsync(SYNC_DEBOUNCE_MS + 50);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(enqueueSyncItem).not.toHaveBeenCalled();
+  });
+});

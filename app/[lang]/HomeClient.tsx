@@ -6,7 +6,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import dynamic from "next/dynamic";
 
+import { ConnectionIndicator } from "@/components/ConnectionIndicator";
 import { JoinCodeInput } from "@/components/JoinCodeInput";
+import { useBodyFocusMode } from "@/lib/use-body-focus-mode";
 import { LoadingBar } from "@/components/LoadingBar";
 import { LandingHero } from "./LandingHero";
 
@@ -15,16 +17,11 @@ import { LandingHero } from "./LandingHero";
  * home page's initial bundle doesn't pay for them. None of these need to
  * render on the first paint:
  *
- *  - `Confetti` — only mounts briefly after the student submits.
  *  - `ScoreRing` — only shown on the submitted/graded overlay.
  *  - `SessionJoinShare` — pulls in `react-qr-code`; only used by teachers
  *    once they have a live banner.
  *  - `StudentExamQuestion` — student exam cards (choices, text areas, badges).
  */
-const Confetti = dynamic(
-  () => import("@/components/Confetti").then((m) => m.Confetti),
-  { ssr: false },
-);
 const ScoreRing = dynamic(
   () => import("@/components/ScoreMeter").then((m) => m.ScoreRing),
   { ssr: false },
@@ -38,6 +35,8 @@ const StudentExamQuestion = dynamic(
   { ssr: false },
 );
 import { LanguageToggle } from "@/components/LanguageToggle";
+import { BuilderResponseConfig } from "@/components/response-types/BuilderResponseConfig";
+import { SaveTemplateModal } from "@/components/library/SaveTemplateModal";
 import {
   createFreshAnonymousSessionId,
   getOrCreateAnonymousSessionId,
@@ -48,7 +47,18 @@ import { scoreTier } from "@/lib/exam-grades";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { useScoreCopy } from "@/lib/i18n/score-copy";
 import { deferEffect } from "@/lib/defer-effect";
+import {
+  readFormIdFromUrl,
+  readTeacherHomeIntent,
+  type TeacherHomeIntent,
+} from "@/lib/home-url-intent";
 import { mergePendingBuilderForm, peekPendingBuilderForm } from "@/lib/pending-builder-form";
+import {
+  listAuthorableResponseTypes,
+  parseResponseConfig,
+  questionSupportsLiveFeedback,
+} from "@/lib/response-types/registry";
+import { isResponseAnswered } from "@/lib/response-types/answers";
 import { postExamTabLeave } from "@/lib/exam-tab-leave";
 import { useLatestRef } from "@/lib/use-latest-ref";
 import type { Form, Question, QuestionType, StudentAnswers } from "@/lib/forms";
@@ -67,6 +77,16 @@ import { hasLiveTeacherFeedbackContent } from "@/lib/live-teacher-feedback";
 import { requestJson } from "@/lib/request-json";
 import { stableStringifyStudentAnswers } from "@/lib/student-answers-json";
 import { usePollingRefresh } from "@/lib/use-polling-refresh";
+import { loadLocalAnswers, mergeAnswersLastWrite } from "@/lib/offline/answer-store";
+import { fetchAirAlertState } from "@/lib/offline/air-alert";
+import { isAirAlertEnabled } from "@/lib/offline/config";
+import type { DeliveryMode } from "@/lib/offline/config";
+import { sessionAllowsAnswerSync } from "@/lib/offline/delivery-mode";
+import { heartbeatSyncMeta } from "@/lib/offline/heartbeat-meta";
+import { cacheExamSession, loadCachedExamSession } from "@/lib/offline/session-cache";
+import type { ConnectionSnapshot } from "@/lib/offline/types";
+import { useOfflineExamSync } from "@/lib/offline/use-offline-exam-sync";
+import { useStudentExamRealtime } from "@/lib/use-student-exam-realtime";
 import { useStudentExamStatePoll } from "@/lib/use-student-exam-state-poll";
 import { focusRing, ui } from "@/lib/ui";
 
@@ -81,6 +101,7 @@ type JoinApiResponse = {
   formId: string;
   opensAt: string;
   closesAt: string;
+  deliveryMode?: DeliveryMode;
   form: Form;
 };
 
@@ -93,6 +114,7 @@ type ResumeApiResponse = {
   resumeCode: string;
   opensAt: string;
   closesAt: string;
+  deliveryMode?: DeliveryMode;
   form: Form;
 };
 
@@ -109,6 +131,7 @@ type JoinedLiveSession = {
   form: Form;
   opensAt: string;
   closesAt: string;
+  deliveryMode: DeliveryMode;
 };
 
 function formatCountdown(ms: number): string {
@@ -165,21 +188,26 @@ function serializeBuilderQuestion(question: Question): string {
     options: question.options,
     correctAnswer: question.type === "multipleChoice" ? question.correctAnswer : null,
     points: question.points,
+    responseConfig: question.responseConfig,
   });
 }
-
-/** Why a logged-in teacher should remain on `/` instead of the dashboard. */
-type TeacherHomeIntent = "builder" | "join" | "none";
 
 function HomeChrome({
   children,
   guestHeader,
+  hideLanguageToggle,
 }: {
   children: React.ReactNode;
   /** Guest landing: Sign in + language toggle in one aligned row. */
   guestHeader?: boolean;
+  /** Focus surfaces (live exam, join) hide persistent chrome. */
+  hideLanguageToggle?: boolean;
 }) {
   const t = useTranslations();
+
+  if (hideLanguageToggle) {
+    return <>{children}</>;
+  }
 
   if (guestHeader) {
     return (
@@ -209,31 +237,6 @@ function HomeChrome({
   );
 }
 
-function readTeacherHomeIntent(): TeacherHomeIntent {
-  if (typeof window === "undefined") {
-    return "none";
-  }
-  const params = new URLSearchParams(window.location.search);
-  if (params.get("form")?.trim()) {
-    return "builder";
-  }
-  if (params.has("code") || params.has("join") || params.has("resume")) {
-    return "join";
-  }
-  const hash = window.location.hash;
-  if (hash === "#join-session" || hash.startsWith("#join-session")) {
-    return "join";
-  }
-  return "none";
-}
-
-function readFormIdFromUrl(): string {
-  if (typeof window === "undefined") {
-    return "";
-  }
-  return new URLSearchParams(window.location.search).get("form")?.trim() ?? "";
-}
-
 type HomeClientProps = {
   /**
    * Session resolved server-side and passed in. `null` for guests. Removing
@@ -253,6 +256,37 @@ export default function HomeClient({
   const t = useTranslations();
   const { formatPointsScore, scoreTierMessage } = useScoreCopy();
   useAutoUkrainianHome();
+  const responseTypeLabel = (type: QuestionType): string => {
+    switch (type) {
+      case "multipleChoice":
+        return t("responseTypes.multipleChoice.label");
+      case "shortAnswer":
+        return t("responseTypes.shortAnswer.label");
+      case "extendedWritten":
+      case "text":
+        return t("responseTypes.extendedWritten.label");
+      case "structuredMultiPart":
+        return t("responseTypes.structuredMultiPart.label");
+      case "annotateSource":
+        return t("responseTypes.annotateSource.label");
+      case "drawDiagram":
+        return t("responseTypes.drawDiagram.label");
+      case "photoHandwritten":
+        return t("responseTypes.photoHandwritten.label");
+      case "trueFalse":
+        return t("responseTypes.trueFalse.label");
+      case "matching":
+        return t("responseTypes.matching.label");
+      case "ordering":
+        return t("responseTypes.ordering.label");
+      case "labelling":
+        return t("responseTypes.labelling.label");
+      case "mathInput":
+        return t("responseTypes.mathInput.label");
+      default:
+        return t("responseTypes.extendedWritten.label");
+    }
+  };
   /** False until client has read `window.location` (SSR/hydration safe). */
   const [urlSynced, setUrlSynced] = useState(false);
   const [homePageIntent, setHomePageIntent] = useState<TeacherHomeIntent>("none");
@@ -273,12 +307,11 @@ export default function HomeClient({
   /** Teacher builder student-preview answers (never persisted). */
   const [previewAnswers, setPreviewAnswers] = useState<StudentAnswers>({});
   const [examSuspended, setExamSuspended] = useState(false);
+  const [airAlertPaused, setAirAlertPaused] = useState(false);
   const [examFinished, setExamFinished] = useState(false);
   const [examGraded, setExamGraded] = useState(false);
   const [pointsEarned, setPointsEarned] = useState<number | null>(null);
   const [pointsPossible, setPointsPossible] = useState<number | null>(null);
-  const [showStudentConfetti, setShowStudentConfetti] = useState(false);
-  const studentConfettiFiredRef = useRef(false);
   const [liveTeacherFeedback, setLiveTeacherFeedback] = useState<Record<string, string>>({});
   const [liveTeacherFeedbackEnabledLive, setLiveTeacherFeedbackEnabledLive] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
@@ -298,6 +331,12 @@ export default function HomeClient({
   const pendingDirtySinceRef = useRef<number | null>(null);
   const autosaveStatusElRef = useRef<HTMLParagraphElement>(null);
   const autosaveBannerClearRef = useRef<number | undefined>(undefined);
+  const connSnapshotRef = useRef<ConnectionSnapshot>({
+    state: "synced",
+    pendingCount: 0,
+    lastSyncedAt: null,
+    idbAvailable: true,
+  });
   const setAutosaveStatus = useCallback((message: string) => {
     const el = autosaveStatusElRef.current;
     if (!el) {
@@ -324,6 +363,11 @@ export default function HomeClient({
   const builderSavedClearRef = useRef<number | undefined>(undefined);
   const [isLoadingForms, setIsLoadingForms] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
+  const [saveTemplateTarget, setSaveTemplateTarget] = useState<
+    | { kind: "form"; title: string }
+    | { kind: "question"; questionId: string; title: string }
+    | null
+  >(null);
   /** Join / rejoin in flight — separate from teacher builder and exam save mutations. */
   const [isJoiningSession, setIsJoiningSession] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -331,6 +375,7 @@ export default function HomeClient({
   const [nowTick, setNowTick] = useState(() => Date.now());
   const tabLeaveReportedRef = useRef(false);
   const studentResponseLoadKeyRef = useRef<string | null>(null);
+  const teacherDashboardRedirectedRef = useRef(false);
   const [studentAnswersHydrated, setStudentAnswersHydrated] = useState(false);
   /** False on guest `/` until we know the URL is not a student join deep link. */
   const [guestLandingReady, setGuestLandingReady] = useState(guestView !== "landing");
@@ -407,6 +452,7 @@ export default function HomeClient({
       typingHeartbeatTimerRef.current = undefined;
       void (async () => {
         try {
+          const syncMeta = heartbeatSyncMeta(connSnapshotRef.current);
           await fetch(`/api/public/live-sessions/${liveSessionId}/heartbeat`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -415,6 +461,7 @@ export default function HomeClient({
               displayName,
               isTyping: true,
               interaction: true,
+              ...syncMeta,
             }),
           });
         } catch {
@@ -452,6 +499,7 @@ export default function HomeClient({
     const displayName = activeExamDisplayName;
     void (async () => {
       try {
+        const syncMeta = heartbeatSyncMeta(connSnapshotRef.current);
         await fetch(`/api/public/live-sessions/${liveSessionId}/heartbeat`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -460,6 +508,7 @@ export default function HomeClient({
             displayName,
             isTyping: false,
             interaction: true,
+            ...syncMeta,
           }),
         });
       } catch {
@@ -672,9 +721,10 @@ export default function HomeClient({
 
   /**
    * Teachers opening `/` without builder/join intent go straight to the dashboard.
+   * `/join` stays available for teachers who want to preview the student flow.
    */
   useEffect(() => {
-    if (!urlSynced || session === null) {
+    if (!urlSynced || session === null || guestView === "join") {
       return;
     }
     if (session.profile?.role !== "teacher") {
@@ -683,8 +733,19 @@ export default function HomeClient({
     if (homePageIntent !== "none" || joinedSession) {
       return;
     }
+    if (teacherDashboardRedirectedRef.current) {
+      return;
+    }
+    if (typeof window !== "undefined") {
+      const path = window.location.pathname;
+      const onLocalizedHome = path === "/" || /^\/(en|uk)\/?$/.test(path);
+      if (!onLocalizedHome) {
+        return;
+      }
+    }
+    teacherDashboardRedirectedRef.current = true;
     router.replace("/dashboard");
-  }, [session, router, homePageIntent, joinedSession, urlSynced]);
+  }, [session, router, homePageIntent, joinedSession, urlSynced, guestView]);
 
   /** Non-teachers must not open the form builder via `?form=`. */
   useEffect(() => {
@@ -713,6 +774,82 @@ export default function HomeClient({
   const joinedLiveSessionId = joinedSession?.liveSessionId ?? "";
   const isLiveTeacherFeedbackEnabled =
     liveTeacherFeedbackEnabledLive || joinedSession?.form.liveTeacherFeedbackEnabled === true;
+  const deliveryMode = joinedSession?.deliveryMode ?? "live";
+  const examWritable =
+    sessionAllowsAnswerSync(sessionOpen, deliveryMode) && !airAlertPaused && !examSuspended;
+
+  const getAnswersForSync = useCallback(() => {
+    if (!joinedSession) {
+      return latestStudentAnswersRef.current;
+    }
+    const textQuestions = joinedSession.form.questions.filter((q) =>
+      questionSupportsLiveFeedback(q.type),
+    );
+    const merged = mergeStudentAnswersForSave(
+      latestStudentAnswersRef.current,
+      examFormRef.current,
+      textQuestions,
+    );
+    latestStudentAnswersRef.current = merged;
+    return merged;
+  }, [joinedSession]);
+
+  const answerSyncEnabled = Boolean(
+    joinedSession &&
+      anonymousSessionId &&
+      activeExamDisplayName &&
+      !examSuspended &&
+      !examFinished &&
+      !airAlertPaused &&
+      !suspendAutosaveRef.current &&
+      sessionAllowsAnswerSync(sessionOpen, deliveryMode),
+  );
+
+  const offlineSync = useOfflineExamSync({
+    liveSessionId: joinedLiveSessionId || null,
+    deviceId: anonymousSessionId || null,
+    displayName: activeExamDisplayName,
+    enabled: answerSyncEnabled,
+    getAnswers: getAnswersForSync,
+    onSynced: (json) => {
+      lastPersistedAnswersJsonRef.current = json;
+      pendingDirtySinceRef.current = null;
+      if (autosaveBannerClearRef.current !== undefined) {
+        window.clearTimeout(autosaveBannerClearRef.current);
+      }
+      setAutosaveStatus(t("home.autosave.saved"));
+      autosaveBannerClearRef.current = window.setTimeout(() => {
+        autosaveBannerClearRef.current = undefined;
+        setAutosaveStatus("");
+      }, 2600);
+    },
+    onStatusChange: (snap) => {
+      connSnapshotRef.current = snap;
+      if (!snap.idbAvailable) {
+        setAutosaveStatus(t("offline.idbCleared"));
+      }
+    },
+  });
+
+  useEffect(() => {
+    if (!isAirAlertEnabled() || !joinedSession || examFinished) {
+      setAirAlertPaused(false);
+      return;
+    }
+    let cancelled = false;
+    const poll = async () => {
+      const state = await fetchAirAlertState(process.env.NEXT_PUBLIC_AIR_ALERT_REGION);
+      if (!cancelled) {
+        setAirAlertPaused(state.active);
+      }
+    };
+    void poll();
+    const id = window.setInterval(() => void poll(), 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [joinedSession, examFinished]);
 
   useEffect(() => {
     if (!joinedLiveSessionId || !anonymousSessionId) {
@@ -721,21 +858,44 @@ export default function HomeClient({
 
     const loadStudentResponse = async () => {
       try {
+        const localRecord = await loadLocalAnswers(joinedLiveSessionId, anonymousSessionId);
         const params = new URLSearchParams({ deviceId: anonymousSessionId });
-        const response = await fetch(
-          `/api/public/live-sessions/${joinedLiveSessionId}/responses?${params.toString()}`,
-        );
-        const raw = (await response.json()) as unknown;
-        if (!response.ok) {
-          const err = raw as { error?: string };
-          throw new Error(err.error ?? t("home.errors.requestFailed"));
+        let parsed = null as ReturnType<typeof parseLiveSessionStudentGet> | null;
+        let fetchFailed = false;
+
+        try {
+          const response = await fetch(
+            `/api/public/live-sessions/${joinedLiveSessionId}/responses?${params.toString()}`,
+          );
+          const raw = (await response.json()) as unknown;
+          if (!response.ok) {
+            const err = raw as { error?: string };
+            throw new Error(err.error ?? t("home.errors.requestFailed"));
+          }
+          parsed = parseLiveSessionStudentGet(raw);
+        } catch {
+          fetchFailed = true;
+          if (!localRecord) {
+            const cached = await loadCachedExamSession(joinedLiveSessionId, anonymousSessionId);
+            if (cached) {
+              setJoinedSession((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      form: cached.form,
+                      deliveryMode: cached.deliveryMode,
+                    }
+                  : prev,
+              );
+            }
+          }
         }
-        const parsed = parseLiveSessionStudentGet(raw);
+
         const loadKey = `${joinedLiveSessionId}:${anonymousSessionId}`;
         const isFirstLoadForKey = studentResponseLoadKeyRef.current !== loadKey;
         studentResponseLoadKeyRef.current = loadKey;
 
-        if (isFirstLoadForKey) {
+        if (parsed && isFirstLoadForKey) {
           if (parsed.finished) {
             setStudentAnswersHydrated(true);
             setStatusMessage(t("home.status.alreadySubmitted"));
@@ -750,37 +910,60 @@ export default function HomeClient({
             setExamSuspended(false);
             return;
           }
-          const hasLocalEdits = pendingDirtySinceRef.current !== null;
-          if (shouldApplyServerAnswersOnLoad(isFirstLoadForKey, hasLocalEdits)) {
-            latestStudentAnswersRef.current = parsed.answers;
-            lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(parsed.answers);
-            setExamAnswers(parsed.answers);
-            pendingDirtySinceRef.current = null;
+        }
+
+        const hasLocalEdits = pendingDirtySinceRef.current !== null;
+        if (isFirstLoadForKey && shouldApplyServerAnswersOnLoad(isFirstLoadForKey, hasLocalEdits)) {
+          const serverAnswers = parsed?.answers ?? {};
+          const merged = localRecord
+            ? mergeAnswersLastWrite(
+                localRecord.answers,
+                localRecord.revisions,
+                serverAnswers,
+                {},
+              )
+            : serverAnswers;
+          latestStudentAnswersRef.current = merged;
+          lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(merged);
+          setExamAnswers(merged);
+          pendingDirtySinceRef.current = null;
+        } else if (fetchFailed && localRecord && isFirstLoadForKey) {
+          latestStudentAnswersRef.current = localRecord.answers;
+          setExamAnswers(localRecord.answers);
+        }
+
+        if (parsed) {
+          setExamSuspended(parsed.suspended);
+          setExamFinished(parsed.finished);
+          setExamGraded(parsed.graded);
+          setPointsEarned(parsed.pointsEarned);
+          setPointsPossible(parsed.pointsPossible);
+          setLiveTeacherFeedback((prev) => ({ ...prev, ...parsed.liveTeacherFeedback }));
+          if (parsed.liveTeacherFeedbackEnabled) {
+            setLiveTeacherFeedbackEnabledLive(true);
           }
+          if (parsed.graded && parsed.pointsEarned != null && parsed.pointsPossible != null) {
+            setStatusMessage(
+              t("home.status.graded", {
+                score: formatPointsScore(parsed.pointsEarned, parsed.pointsPossible),
+              }),
+            );
+          } else if (parsed.finished) {
+            setStatusMessage(t("home.status.submitted"));
+          } else if (parsed.suspended) {
+            setStatusMessage(t("home.status.paused"));
+          }
+        } else if (fetchFailed && localRecord) {
+          setStatusMessage(t("offline.status.offline"));
         }
+
         setStudentAnswersHydrated(true);
-        setExamSuspended(parsed.suspended);
-        setExamFinished(parsed.finished);
-        setExamGraded(parsed.graded);
-        setPointsEarned(parsed.pointsEarned);
-        setPointsPossible(parsed.pointsPossible);
-        setLiveTeacherFeedback((prev) => ({ ...prev, ...parsed.liveTeacherFeedback }));
-        if (parsed.liveTeacherFeedbackEnabled) {
-          setLiveTeacherFeedbackEnabledLive(true);
-        }
-        if (parsed.graded && parsed.pointsEarned != null && parsed.pointsPossible != null) {
-          setStatusMessage(
-            t("home.status.graded", {
-              score: formatPointsScore(parsed.pointsEarned, parsed.pointsPossible),
-            }),
-          );
-        } else if (parsed.finished) {
-          setStatusMessage(t("home.status.submitted"));
-        } else if (parsed.suspended) {
-          setStatusMessage(t("home.status.paused"));
+        if (!fetchFailed && answerSyncEnabled) {
+          void offlineSync.flushNow();
         }
       } catch (error) {
         setStatusMessage(error instanceof Error ? error.message : t("home.errors.loadAnswers"));
+        setStudentAnswersHydrated(true);
       }
     };
 
@@ -790,25 +973,6 @@ export default function HomeClient({
 
     return () => clearTimeout(timeoutId);
   }, [joinedLiveSessionId, anonymousSessionId, t]);
-
-  useEffect(() => {
-    if (!examGraded || studentConfettiFiredRef.current) {
-      return;
-    }
-    if (pointsEarned == null || pointsPossible == null) {
-      return;
-    }
-    const tier = scoreTier(pointsEarned, pointsPossible);
-    if (tier !== "perfect" && tier !== "great") {
-      return;
-    }
-    studentConfettiFiredRef.current = true;
-    deferEffect(() => setShowStudentConfetti(true));
-    const id = window.setTimeout(() => {
-      deferEffect(() => setShowStudentConfetti(false));
-    }, 2200);
-    return () => window.clearTimeout(id);
-  }, [examGraded, pointsEarned, pointsPossible]);
 
   useEffect(() => {
     if (!joinedLiveSessionId || !anonymousSessionId || !examFinished || examGraded) {
@@ -894,6 +1058,15 @@ export default function HomeClient({
     onPatch: applyStudentExamRemotePatch,
   });
 
+  useStudentExamRealtime({
+    liveSessionId: joinedLiveSessionId,
+    deviceId: anonymousSessionId,
+    enabled:
+      Boolean(joinedLiveSessionId && anonymousSessionId && studentAnswersHydrated) &&
+      !examFinished,
+    onPatch: applyStudentExamRemotePatch,
+  });
+
   useEffect(() => {
     if (!studentAnswersHydrated || !joinedLiveSessionId || !anonymousSessionId) {
       return;
@@ -929,131 +1102,13 @@ export default function HomeClient({
     onRefresh: () => void refreshLiveTeacherFeedback(),
   });
 
-  const persistStudentAnswers = useCallback(async () => {
-    if (
-      !joinedSession ||
-      !anonymousSessionId ||
-      !activeExamDisplayName ||
-      !sessionOpen ||
-      examSuspended ||
-      examFinished ||
-      suspendAutosaveRef.current
-    ) {
-      return;
-    }
-    const textQuestions = joinedSession.form.questions.filter((q) => q.type === "text");
-    const currentAnswers = mergeStudentAnswersForSave(
-      latestStudentAnswersRef.current,
-      examFormRef.current,
-      textQuestions,
-    );
-    latestStudentAnswersRef.current = currentAnswers;
-    const currentJson = stableStringifyStudentAnswers(currentAnswers);
-    if (currentJson === lastPersistedAnswersJsonRef.current) {
-      pendingDirtySinceRef.current = null;
-      setAutosaveStatus("");
-      return;
-    }
-
-    try {
-      setAutosaveStatus(t("home.autosave.saving"));
-      await requestJson<{ ok: true }>(
-        `/api/public/live-sessions/${joinedSession.liveSessionId}/responses`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            deviceId: anonymousSessionId,
-            displayName: activeExamDisplayName,
-            answers: currentAnswers,
-          }),
-        },
-      );
-      lastPersistedAnswersJsonRef.current = currentJson;
-      pendingDirtySinceRef.current = null;
-      if (autosaveBannerClearRef.current !== undefined) {
-        window.clearTimeout(autosaveBannerClearRef.current);
-      }
-      setAutosaveStatus(t("home.autosave.saved"));
-      autosaveBannerClearRef.current = window.setTimeout(() => {
-        autosaveBannerClearRef.current = undefined;
-        setAutosaveStatus("");
-      }, 2600);
-    } catch {
-      setAutosaveStatus(t("home.autosave.failed"));
-    }
-  }, [
-    joinedSession,
-    anonymousSessionId,
-    activeExamDisplayName,
-    sessionOpen,
-    examSuspended,
-    examFinished,
-    setAutosaveStatus,
-    t,
-  ]);
-
   const scheduleStudentAutosave = useCallback(() => {
-    if (
-      !joinedSession ||
-      !anonymousSessionId ||
-      !activeExamDisplayName ||
-      !sessionOpen ||
-      examSuspended ||
-      examFinished ||
-      suspendAutosaveRef.current
-    ) {
+    if (!answerSyncEnabled) {
       return;
     }
-
-    const textQuestions = joinedSession.form.questions.filter((q) => q.type === "text");
-    const mergedForDirtyCheck = mergeStudentAnswersForSave(
-      latestStudentAnswersRef.current,
-      examFormRef.current,
-      textQuestions,
-    );
-    latestStudentAnswersRef.current = mergedForDirtyCheck;
-    const nextJson = stableStringifyStudentAnswers(mergedForDirtyCheck);
-    if (nextJson === lastPersistedAnswersJsonRef.current) {
-      pendingDirtySinceRef.current = null;
-      return;
-    }
-
-    if (pendingDirtySinceRef.current === null) {
-      pendingDirtySinceRef.current = Date.now();
-    }
-
     setAutosaveStatus(t("home.autosave.saving"));
-
-    const now = Date.now();
-    const dirtyFor = now - (pendingDirtySinceRef.current ?? now);
-    const sinceLastSent = now - lastAutosaveSentAtRef.current;
-
-    if (autosaveTimerRef.current !== undefined) {
-      window.clearTimeout(autosaveTimerRef.current);
-    }
-
-    const run = () => {
-      lastAutosaveSentAtRef.current = Date.now();
-      void persistStudentAnswers();
-    };
-
-    if (dirtyFor >= AUTOSAVE_MAX_WAIT_MS || sinceLastSent >= AUTOSAVE_MAX_WAIT_MS) {
-      run();
-    } else {
-      autosaveTimerRef.current = window.setTimeout(run, AUTOSAVE_DEBOUNCE_MS);
-    }
-  }, [
-    joinedSession,
-    anonymousSessionId,
-    activeExamDisplayName,
-    sessionOpen,
-    examSuspended,
-    examFinished,
-    persistStudentAnswers,
-    setAutosaveStatus,
-    t,
-  ]);
+    offlineSync.scheduleSync();
+  }, [answerSyncEnabled, offlineSync, setAutosaveStatus, t]);
 
   const patchTextAnswer = useCallback(
     (questionId: string, next: string) => {
@@ -1424,6 +1479,7 @@ export default function HomeClient({
             options: question.options,
             correctAnswer: question.type === "multipleChoice" ? question.correctAnswer : null,
             points: question.points,
+            responseConfig: question.responseConfig,
           }),
         });
         nextPersistedQuestions[question.id] = serializeBuilderQuestion(question);
@@ -1580,8 +1636,17 @@ export default function HomeClient({
         form: data.form,
         opensAt: data.opensAt,
         closesAt: data.closesAt,
+        deliveryMode: data.deliveryMode ?? "live",
       });
       setLiveTeacherFeedbackEnabledLive(data.form.liveTeacherFeedbackEnabled);
+      void cacheExamSession({
+        liveSessionId: data.liveSessionId,
+        deviceId: data.deviceId,
+        joinCode: data.joinCode,
+        displayName: isValidLiveSessionDisplayName(displayName) ? displayName : data.displayName,
+        form: data.form,
+        deliveryMode: data.deliveryMode ?? "live",
+      });
       latestStudentAnswersRef.current = {};
       lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers({});
       pendingDirtySinceRef.current = null;
@@ -1634,8 +1699,19 @@ export default function HomeClient({
         form: data.form,
         opensAt: data.opensAt,
         closesAt: data.closesAt,
+        deliveryMode: data.deliveryMode ?? "live",
       });
       setLiveTeacherFeedbackEnabledLive(data.form.liveTeacherFeedbackEnabled);
+      if (deviceIdForJoin) {
+        void cacheExamSession({
+          liveSessionId: data.liveSessionId,
+          deviceId: deviceIdForJoin,
+          joinCode: code,
+          displayName,
+          form: data.form,
+          deliveryMode: data.deliveryMode ?? "live",
+        });
+      }
       setJoinCodeInput(code);
       setActiveExamDisplayName(displayName);
       try {
@@ -1711,7 +1787,7 @@ export default function HomeClient({
 
     setIsMutating(true);
     setStatusMessage("");
-    const textQuestions = joinedSession.form.questions.filter((q) => q.type === "text");
+    const textQuestions = joinedSession.form.questions.filter((q) => questionSupportsLiveFeedback(q.type));
     const answers = mergeStudentAnswersForSave(
       latestStudentAnswersRef.current,
       examFormRef.current,
@@ -1751,7 +1827,7 @@ export default function HomeClient({
 
     setIsMutating(true);
     setStatusMessage("");
-    const textQuestions = joinedSession.form.questions.filter((q) => q.type === "text");
+    const textQuestions = joinedSession.form.questions.filter((q) => questionSupportsLiveFeedback(q.type));
     const answers = mergeStudentAnswersForSave(
       latestStudentAnswersRef.current,
       examFormRef.current,
@@ -1764,6 +1840,7 @@ export default function HomeClient({
       autosaveTimerRef.current = undefined;
     }
     try {
+      await offlineSync.flushNow();
       await requestJson<{ ok: true }>(
         `/api/public/live-sessions/${joinedSession.liveSessionId}/responses`,
         {
@@ -1834,11 +1911,7 @@ export default function HomeClient({
   /** Whether a student has supplied a non-empty answer to a question. */
   const isQuestionAnswered = useCallback(
     (question: Question): boolean => {
-      const value = effectiveExamAnswers[question.id];
-      if (typeof value !== "string") {
-        return false;
-      }
-      return value.trim().length > 0;
+      return isResponseAnswered(question.type, effectiveExamAnswers[question.id]);
     },
     [effectiveExamAnswers],
   );
@@ -1863,58 +1936,14 @@ export default function HomeClient({
         ? "mid"
         : "";
 
-  const examProgressCheer = (() => {
-    if (examTotalQuestions === 0) return "";
-    if (examAllAnswered) return t("home.exam.cheer.ready");
-    if (examProgressPct >= 80) return t("home.exam.cheer.almost");
-    if (examProgressPct >= 50) return t("home.exam.cheer.half");
-    if (examProgressPct >= 25) return t("home.exam.cheer.start");
-    if (examAnsweredCount > 0) return t("home.exam.cheer.keepGoing");
-    return t("home.exam.cheer.letsGo");
-  })();
-
-  /** One-shot celebration when the student finishes their last question. */
-  const [showAllAnsweredCelebrate, setShowAllAnsweredCelebrate] = useState(false);
-  const lastAllAnsweredKeyRef = useRef<string>("");
-
-  useEffect(() => {
-    if (
-      !joinedSession ||
-      examFinished ||
-      examSuspended ||
-      !examTotalQuestions ||
-      examAnswersLoading
-    ) {
-      return;
-    }
-    const key = `${joinedSession.liveSessionId}:${anonymousSessionId}`;
-    if (examAllAnswered) {
-      if (lastAllAnsweredKeyRef.current === key) {
-        return;
-      }
-      lastAllAnsweredKeyRef.current = key;
-      deferEffect(() => setShowAllAnsweredCelebrate(true));
-      const t = window.setTimeout(
-        () => deferEffect(() => setShowAllAnsweredCelebrate(false)),
-        1800,
-      );
-      return () => window.clearTimeout(t);
-    }
-    if (lastAllAnsweredKeyRef.current === key) {
-      lastAllAnsweredKeyRef.current = "";
-    }
-  }, [
-    examAllAnswered,
-    joinedSession,
-    examFinished,
-    examSuspended,
-    examTotalQuestions,
-    examAnswersLoading,
-    anonymousSessionId,
-  ]);
+  const isJoinRoute = guestView === "join";
+  const inStudentExam =
+    Boolean(joinedSession) && !examFinished && !isBuilderStudentPreview;
+  useBodyFocusMode(inStudentExam || isJoinRoute);
 
   const teacherPendingDashboardRedirect =
     urlSynced &&
+    !isJoinRoute &&
     session?.profile?.role === "teacher" &&
     homePageIntent === "none" &&
     !joinedSession;
@@ -1942,7 +1971,9 @@ export default function HomeClient({
   const showTeacherTools = mode === "teacher" && isTeacher;
   /** Join UI for logged-in users only; guests render it once in the landing block below. */
   const showJoinSection =
+    !isJoinRoute &&
     Boolean(session) &&
+    !joinedSession &&
     !isBuilderStudentPreview &&
     ((!isTeacher) || (isTeacher && mode === "student"));
   const teacherBannerMsLeft = teacherLiveBanner
@@ -2111,13 +2142,15 @@ export default function HomeClient({
   );
 
   const isGuestMarketing = !session && guestView === "landing" && guestLandingReady;
-  const isGuestJoinPage = !session && guestView === "join";
   const mainClassName = isGuestMarketing
     ? "tp-guest-landing-main"
     : `${ui.pageMain} tp-card p-6 sm:p-8`;
 
   return (
-    <HomeChrome guestHeader={isGuestMarketing}>
+    <HomeChrome
+      guestHeader={isGuestMarketing}
+      hideLanguageToggle={inStudentExam || isJoinRoute}
+    >
       <div className={ui.page}>
         <main className={mainClassName}>
         {urlAuthNotice ? (
@@ -2138,11 +2171,11 @@ export default function HomeClient({
         {isGuestMarketing ? (
           <LandingHero teacherCtaHref="/register" joinHref="/join" />
         ) : null}
-        {isGuestJoinPage ? (
+        {isJoinRoute ? (
           <div className="tp-guest-join mx-auto max-w-lg">
-            <div className="mb-6">
+            <div className="mb-6 flex items-center justify-between gap-3">
               <Link
-                href="/"
+                href={session && isTeacher ? "/dashboard" : "/"}
                 className={`inline-flex items-center gap-1.5 text-sm font-medium text-[var(--tp-text-secondary)] hover:text-[var(--tp-text)] ${focusRing}`}
               >
                 <svg
@@ -2157,13 +2190,14 @@ export default function HomeClient({
                 >
                   <path d="M19 12H5M12 5l-7 7 7 7" />
                 </svg>
-                TruePaper
+                {session && isTeacher ? t("home.teacher.dashboardLink") : "TruePaper"}
               </Link>
+              <LanguageToggle />
             </div>
             {joinSessionSection}
           </div>
         ) : null}
-        {session && isTeacher ? (
+        {session && isTeacher && !isJoinRoute ? (
           <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
             <div className="min-w-0 flex-1">
               <Link
@@ -2385,6 +2419,20 @@ export default function HomeClient({
                   ? t("home.builder.saving")
                   : t("home.builder.saveForm")}
               </button>
+              {activeForm ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSaveTemplateTarget({
+                      kind: "form",
+                      title: activeForm.title || t("common.untitledForm"),
+                    })
+                  }
+                  className={ui.btnSecondary}
+                >
+                  {t("templateLibrary.save.action")}
+                </button>
+              ) : null}
             </div>
             <div className="space-y-3">
               <label className="block text-sm font-medium">
@@ -2433,22 +2481,17 @@ export default function HomeClient({
             </div>
 
             <div className="flex flex-wrap gap-2 border-t border-[var(--tp-border)] pt-6">
-              <button
-                type="button"
-                onClick={() => void addQuestion("multipleChoice")}
-                disabled={isMutating}
-                className="tp-btn-primary"
-              >
-                {t("home.builder.addMc")}
-              </button>
-              <button
-                type="button"
-                onClick={() => void addQuestion("text")}
-                disabled={isMutating}
-                className={ui.btnSecondary}
-              >
-                {t("home.builder.addText")}
-              </button>
+              {listAuthorableResponseTypes().map((typeMeta) => (
+                <button
+                  key={typeMeta.id}
+                  type="button"
+                  onClick={() => void addQuestion(typeMeta.id)}
+                  disabled={isMutating}
+                  className={typeMeta.id === "extendedWritten" ? "tp-btn-primary" : ui.btnSecondary}
+                >
+                  {responseTypeLabel(typeMeta.id)}
+                </button>
+              ))}
             </div>
 
             <div className={`${ui.questionList} border-t border-[var(--tp-border)] pt-8`}>
@@ -2461,14 +2504,29 @@ export default function HomeClient({
                       <h3 className="text-sm font-semibold text-[var(--tp-text-secondary)]">
                         {t("home.builder.questionN", { n: index + 1 })}
                       </h3>
-                      <button
-                        type="button"
-                        onClick={() => void removeQuestion(question.id)}
-                        disabled={isMutating}
-                        className="text-sm font-medium text-red-600"
-                      >
-                        {t("home.builder.remove")}
-                      </button>
+                      <div className="flex flex-wrap gap-3">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSaveTemplateTarget({
+                              kind: "question",
+                              questionId: question.id,
+                              title: question.prompt || t("common.untitledQuestion"),
+                            })
+                          }
+                          className="text-sm font-medium text-[var(--tp-accent)]"
+                        >
+                          {t("templateLibrary.save.action")}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void removeQuestion(question.id)}
+                          disabled={isMutating}
+                          className="text-sm font-medium text-red-600"
+                        >
+                          {t("home.builder.remove")}
+                        </button>
+                      </div>
                     </div>
 
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-6">
@@ -2625,6 +2683,177 @@ export default function HomeClient({
                         </label>
                           </div>
                         ) : null}
+                        {(question.type === "extendedWritten" || question.type === "text" || question.type === "shortAnswer") ? (
+                          <div className="space-y-2 rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] p-3">
+                            <p className={ui.sectionTitle}>{t("responseTypes.builder.answerSettings")}</p>
+                            {question.type !== "shortAnswer" ? (
+                              <div className="grid gap-2 sm:grid-cols-2">
+                                <label className="text-sm">
+                                  {t("responseTypes.builder.minWords")}
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={Number((question.responseConfig as { minWords?: number }).minWords ?? 0)}
+                                    onChange={(event) =>
+                                      updateActiveForm((form) => ({
+                                        ...form,
+                                        questions: form.questions.map((formQuestion) =>
+                                          formQuestion.id === question.id
+                                            ? {
+                                                ...formQuestion,
+                                                responseConfig: {
+                                                  ...parseResponseConfig(formQuestion.type, formQuestion.responseConfig),
+                                                  minWords: Math.max(0, Number(event.target.value) || 0),
+                                                },
+                                              }
+                                            : formQuestion,
+                                        ),
+                                      }))
+                                    }
+                                    className="tp-input"
+                                  />
+                                </label>
+                                <label className="text-sm">
+                                  {t("responseTypes.builder.targetWords")}
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    value={Number((question.responseConfig as { targetWords?: number }).targetWords ?? 0)}
+                                    onChange={(event) =>
+                                      updateActiveForm((form) => ({
+                                        ...form,
+                                        questions: form.questions.map((formQuestion) =>
+                                          formQuestion.id === question.id
+                                            ? {
+                                                ...formQuestion,
+                                                responseConfig: {
+                                                  ...parseResponseConfig(formQuestion.type, formQuestion.responseConfig),
+                                                  targetWords: Math.max(0, Number(event.target.value) || 0),
+                                                },
+                                              }
+                                            : formQuestion,
+                                        ),
+                                      }))
+                                    }
+                                    className="tp-input"
+                                  />
+                                </label>
+                              </div>
+                            ) : (
+                              <label className="text-sm">
+                                {t("responseTypes.builder.acceptedAnswers")}
+                                <input
+                                  type="text"
+                                  value={((question.responseConfig as { acceptedAnswers?: string[] }).acceptedAnswers ?? []).join(", ")}
+                                  onChange={(event) =>
+                                    updateActiveForm((form) => ({
+                                      ...form,
+                                      questions: form.questions.map((formQuestion) =>
+                                        formQuestion.id === question.id
+                                          ? {
+                                              ...formQuestion,
+                                              responseConfig: {
+                                                ...parseResponseConfig(formQuestion.type, formQuestion.responseConfig),
+                                                acceptedAnswers: event.target.value
+                                                  .split(",")
+                                                  .map((v) => v.trim())
+                                                  .filter(Boolean),
+                                              },
+                                            }
+                                          : formQuestion,
+                                      ),
+                                    }))
+                                  }
+                                  className="tp-input"
+                                  placeholder={t("responseTypes.builder.acceptedAnswersPlaceholder")}
+                                />
+                              </label>
+                            )}
+                          </div>
+                        ) : null}
+                        {question.type === "structuredMultiPart" ? (
+                          <div className="space-y-2 rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] p-3">
+                            <p className={ui.sectionTitle}>{t("responseTypes.builder.parts")}</p>
+                            {(question.responseConfig as { parts?: Array<{ id: string; label: string; prompt?: string }> }).parts?.map((part, partIndex) => (
+                              <div key={`${question.id}-part-${part.id}`} className="grid gap-2 sm:grid-cols-2">
+                                <input
+                                  type="text"
+                                  value={part.label}
+                                  onChange={(event) =>
+                                    updateActiveForm((form) => ({
+                                      ...form,
+                                      questions: form.questions.map((formQuestion) =>
+                                        formQuestion.id === question.id
+                                          ? {
+                                              ...formQuestion,
+                                              responseConfig: {
+                                                ...parseResponseConfig(formQuestion.type, formQuestion.responseConfig),
+                                                parts: ((parseResponseConfig(formQuestion.type, formQuestion.responseConfig) as { parts: Array<{ id: string; label: string; prompt?: string }> }).parts ?? []).map((p, i) =>
+                                                  i === partIndex ? { ...p, label: event.target.value } : p,
+                                                ),
+                                              },
+                                            }
+                                          : formQuestion,
+                                      ),
+                                    }))
+                                  }
+                                  className="tp-input"
+                                />
+                                <input
+                                  type="text"
+                                  value={part.prompt ?? ""}
+                                  onChange={(event) =>
+                                    updateActiveForm((form) => ({
+                                      ...form,
+                                      questions: form.questions.map((formQuestion) =>
+                                        formQuestion.id === question.id
+                                          ? {
+                                              ...formQuestion,
+                                              responseConfig: {
+                                                ...parseResponseConfig(formQuestion.type, formQuestion.responseConfig),
+                                                parts: ((parseResponseConfig(formQuestion.type, formQuestion.responseConfig) as { parts: Array<{ id: string; label: string; prompt?: string }> }).parts ?? []).map((p, i) =>
+                                                  i === partIndex ? { ...p, prompt: event.target.value } : p,
+                                                ),
+                                              },
+                                            }
+                                          : formQuestion,
+                                      ),
+                                    }))
+                                  }
+                                  className="tp-input"
+                                  placeholder={t("responseTypes.builder.partPrompt")}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                        {question.type === "annotateSource" ? (
+                          <label className={ui.label}>
+                            {t("responseTypes.builder.sourcePassage")}
+                            <textarea
+                              rows={5}
+                              value={String((question.responseConfig as { passageText?: string }).passageText ?? "")}
+                              onChange={(event) =>
+                                updateActiveForm((form) => ({
+                                  ...form,
+                                  questions: form.questions.map((formQuestion) =>
+                                    formQuestion.id === question.id
+                                      ? {
+                                          ...formQuestion,
+                                          responseConfig: {
+                                            ...parseResponseConfig(formQuestion.type, formQuestion.responseConfig),
+                                            passageText: event.target.value,
+                                          },
+                                        }
+                                      : formQuestion,
+                                  ),
+                                }))
+                              }
+                              className="tp-input"
+                            />
+                          </label>
+                        ) : null}
+                        <BuilderResponseConfig question={question} updateActiveForm={updateActiveForm} />
                       </div>
                     </div>
                   </article>
@@ -2655,7 +2884,6 @@ export default function HomeClient({
                 role="status"
                 aria-live="polite"
               >
-                {showStudentConfetti ? <Confetti /> : null}
                 {examGraded && pointsEarned != null && pointsPossible != null ? (
                   <>
                     <div className="tp-anim-pop">
@@ -2730,9 +2958,7 @@ export default function HomeClient({
               </div>
             ) : null}
             {isBuilderStudentPreview && examTotalQuestions > 0 ? (
-              <div
-                className="sticky top-2 z-10 flex flex-wrap items-center justify-between gap-3 rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-[var(--tp-surface)]/95 px-4 py-2.5 text-sm shadow-sm backdrop-blur-sm"
-              >
+              <div className="tp-exam-strip">
                 <span className="font-medium text-[var(--tp-text)]">{t("common.noTimeLimit")}</span>
                 <div
                   className="tp-exam-progress"
@@ -2756,28 +2982,17 @@ export default function HomeClient({
                     <span className="tp-exam-progress__count">
                       {examAnsweredCount} / {examTotalQuestions}
                     </span>
-                    <span className="text-[var(--tp-text-muted)]">{t("home.exam.answeredLabel")}</span>
-                    <span
-                      className={`tp-exam-progress__cheer${
-                        examAllAnswered ? " tp-exam-progress__cheer--ready" : ""
-                      }`}
-                      aria-live="polite"
-                    >
-                      · {examProgressCheer}
-                    </span>
                   </div>
                 </div>
               </div>
             ) : null}
             {joinedSession ? (
               <div
-                className={`sticky top-2 z-10 flex flex-wrap items-center justify-between gap-3 rounded-[var(--tp-radius-sm)] border px-4 py-2.5 text-sm shadow-sm ${
-                  sessionOpen
-                    ? "border-[var(--tp-border)] bg-[var(--tp-surface)]/95 backdrop-blur-sm text-[var(--tp-text)]"
-                    : "border-[var(--tp-warning-border)] bg-[var(--tp-warning-soft)] text-[var(--tp-warning-text)]"
+                className={`tp-exam-strip${
+                  sessionOpen ? "" : " tp-exam-strip--closed"
                 }`}
               >
-                <span className="inline-flex items-center gap-2">
+                <span className="tp-exam-strip__timer">
                   {sessionOpen && !joinedSessionNoTimeLimit && !examFinished ? (
                     <>
                       <svg
@@ -2793,13 +3008,12 @@ export default function HomeClient({
                         <circle cx="12" cy="12" r="9" />
                         <path d="M12 7v5l3 2" />
                       </svg>
-                      <span className="font-mono tabular-nums text-base font-semibold">
+                      <span className="font-mono text-base">
                         {formatCountdown(studentMsLeft)}
                       </span>
-                      <span className="text-xs text-[var(--tp-text-secondary)]">{t("home.exam.left")}</span>
                     </>
                   ) : (
-                    <span className="font-medium">
+                    <span>
                       {examFinished
                         ? t("home.exam.submitted")
                         : sessionOpen
@@ -2833,22 +3047,8 @@ export default function HomeClient({
                       <span className="tp-exam-progress__count">
                         {examAnsweredCount} / {examTotalQuestions}
                       </span>
-                      <span className="text-[var(--tp-text-muted)]">{t("home.exam.answeredLabel")}</span>
-                      <span
-                        className={`tp-exam-progress__cheer${
-                          examAllAnswered ? " tp-exam-progress__cheer--ready" : ""
-                        }`}
-                        aria-live="polite"
-                      >
-                        · {examProgressCheer}
-                      </span>
                     </div>
                   </div>
-                ) : null}
-                {activeExamDisplayName ? (
-                  <span className="text-xs text-[var(--tp-text-secondary)]">
-                    {activeExamDisplayName}
-                  </span>
                 ) : null}
               </div>
             ) : null}
@@ -2870,13 +3070,15 @@ export default function HomeClient({
                   const answered = isQuestionAnswered(question);
                   const examActive = Boolean(
                     isBuilderStudentPreview ||
-                      (joinedSession && sessionOpen && !examSuspended && !examFinished),
+                      (joinedSession && examWritable && !examFinished),
                   );
                   const inputsDisabled =
                     !isBuilderStudentPreview &&
                     (examAnswersLoading ||
-                      (Boolean(joinedSession) && !sessionOpen) ||
+                      (Boolean(joinedSession) &&
+                        !sessionAllowsAnswerSync(sessionOpen, deliveryMode)) ||
                       Boolean(examSuspended) ||
+                      Boolean(airAlertPaused) ||
                       Boolean(examFinished));
                   return (
                     <StudentExamQuestion
@@ -2891,13 +3093,11 @@ export default function HomeClient({
                         !isBuilderStudentPreview &&
                           joinedSession &&
                           studentAnswersHydrated &&
-                          sessionOpen &&
-                          !examSuspended &&
+                          examWritable &&
                           !examFinished,
                       )}
                       showLiveFeedbackFeature={showLiveTeacherFeedback}
-                      showLiveTeacherFeedbackCard={showLiveTeacherFeedback}
-                      liveTeacherFeedbackMessage={liveTeacherFeedback[question.id] ?? ""}
+                      feedbackStore={liveTeacherFeedback}
                       onChoiceChange={(value) => {
                         if (isBuilderStudentPreview) {
                           setPreviewAnswers((prev) => ({
@@ -2926,81 +3126,59 @@ export default function HomeClient({
               </form>
             )}
 
-            {!isBuilderStudentPreview ? (
-            <div className="flex flex-col-reverse items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p
-                ref={autosaveStatusElRef}
-                data-testid="student-autosave-status"
-                aria-live="polite"
-                className="text-xs text-[var(--tp-text-secondary)]"
-              >
-                {"\u00a0"}
+            {airAlertPaused && joinedSession ? (
+              <p className="rounded-lg border border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] px-3 py-2 text-sm text-[var(--tp-text-secondary)]">
+                {t("offline.airAlertPaused")}
               </p>
-              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+            ) : null}
+
+            {!isBuilderStudentPreview ? (
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-3">
+                {joinedSession ? (
+                  <ConnectionIndicator
+                    state={offlineSync.snapshot.state}
+                    pendingCount={offlineSync.snapshot.pendingCount}
+                  />
+                ) : null}
+                <p
+                  ref={autosaveStatusElRef}
+                  data-testid="student-autosave-status"
+                  aria-live="polite"
+                  className="text-xs text-[var(--tp-text-secondary)]"
+                >
+                  {"\u00a0"}
+                </p>
+              </div>
+              {joinedSession && examWritable && !examFinished ? (
                 <button
                   type="button"
-                  onClick={() => void saveStudentAnswers()}
-                  disabled={
-                    isMutating ||
-                    !anonymousSessionId ||
-                    !joinedSession ||
-                    !sessionOpen ||
-                    examSuspended ||
-                    examFinished
+                  onClick={() => void submitExam()}
+                  disabled={isMutating || !anonymousSessionId}
+                  className={`${
+                    examAllAnswered
+                      ? `tp-submit-ready ${focusRing}`
+                      : `${ui.btnPrimary} min-h-11 disabled:opacity-50`
+                  }`}
+                  aria-label={
+                    examAllAnswered ? t("home.exam.submitReadyAria") : t("home.exam.submitAria")
                   }
-                  className={`${ui.btnSecondary} disabled:opacity-50`}
                 >
-                  {t("home.exam.saveNow")}
+                  <svg
+                    aria-hidden
+                    className="h-4 w-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M5 12l5 5L20 7" />
+                  </svg>
+                  {examAllAnswered ? t("home.exam.submitReady") : t("home.exam.submitExam")}
                 </button>
-                {joinedSession && sessionOpen && !examSuspended && !examFinished ? (
-                  <div className="relative">
-                    {showAllAnsweredCelebrate ? (
-                      <Confetti pieces={22} durationMs={1500} />
-                    ) : null}
-                    <button
-                      type="button"
-                      onClick={() => void submitExam()}
-                      disabled={isMutating || !anonymousSessionId}
-                      className={`${
-                        examAllAnswered
-                          ? `tp-submit-ready ${focusRing}`
-                          : `${ui.btnPrimary} disabled:opacity-50`
-                      }`}
-                      aria-label={
-                        examAllAnswered ? t("home.exam.submitReadyAria") : t("home.exam.submitAria")
-                      }
-                    >
-                      <svg
-                        aria-hidden
-                        className="h-4 w-4"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2.2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <path d="M5 12l5 5L20 7" />
-                      </svg>
-                      {examAllAnswered ? t("home.exam.submitReady") : t("home.exam.submitExam")}
-                      {examAllAnswered ? (
-                        <svg
-                          aria-hidden
-                          className="h-4 w-4 tp-submit-ready__arrow"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="2.2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        >
-                          <path d="M5 12h14M13 5l7 7-7 7" />
-                        </svg>
-                      ) : null}
-                    </button>
-                  </div>
-                ) : null}
-              </div>
+              ) : null}
             </div>
             ) : null}
           </section>
@@ -3025,6 +3203,18 @@ export default function HomeClient({
         ) : null}
       </main>
       </div>
+      {activeForm && saveTemplateTarget ? (
+        <SaveTemplateModal
+          open
+          onClose={() => setSaveTemplateTarget(null)}
+          sourceKind={saveTemplateTarget.kind === "form" ? "form" : "question"}
+          formId={saveTemplateTarget.kind === "form" ? activeForm.id : undefined}
+          questionId={
+            saveTemplateTarget.kind === "question" ? saveTemplateTarget.questionId : undefined
+          }
+          defaultTitle={saveTemplateTarget.title}
+        />
+      ) : null}
     </HomeChrome>
   );
 }

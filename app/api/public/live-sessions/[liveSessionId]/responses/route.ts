@@ -15,7 +15,11 @@ type SaveBody = {
   deviceId?: string;
   answers?: StudentAnswers;
   displayName?: string;
+  submissionId?: string;
 };
+
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export async function GET(request: Request, { params }: Params) {
   const { liveSessionId } = await params;
@@ -90,6 +94,7 @@ export async function PUT(request: Request, { params }: Params) {
   const deviceId = body.deviceId?.trim() ?? "";
   const answers = body.answers ?? {};
   const displayName = normalizeLiveSessionDisplayName(body.displayName ?? "");
+  const submissionId = body.submissionId?.trim() ?? "";
 
   if (!isValidAnonymousSessionId(deviceId)) {
     return NextResponse.json({ error: "A valid deviceId is required." }, { status: 400 });
@@ -102,8 +107,38 @@ export async function PUT(request: Request, { params }: Params) {
     );
   }
 
+  if (submissionId && !UUID_RE.test(submissionId)) {
+    return NextResponse.json({ error: "submissionId must be a valid UUID." }, { status: 400 });
+  }
+
   try {
     const supabase = createSupabaseAnonServiceClient();
+    if (submissionId) {
+      const { data, error } = await supabase.rpc("save_live_session_student_response", {
+        p_live_session_id: liveSessionId,
+        p_device_id: deviceId,
+        p_answers: answers,
+        p_display_name: displayName,
+        p_submission_id: submissionId,
+      });
+
+      if (error) {
+        if (error.message.includes("save_live_session_student_response") || error.code === "42883") {
+          return NextResponse.json(
+            {
+              error:
+                "Database is missing save_live_session_student_response (5-arg). Run migration 20260605150000_offline_sync.sql.",
+            },
+            { status: 503 },
+          );
+        }
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
+
+      const payload = (data ?? {}) as { deduped?: boolean };
+      return NextResponse.json({ ok: true, deduped: payload.deduped === true });
+    }
+
     const { error } = await supabase.rpc("save_live_session_student_response", {
       p_live_session_id: liveSessionId,
       p_device_id: deviceId,

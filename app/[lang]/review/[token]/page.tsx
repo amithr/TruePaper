@@ -1,9 +1,8 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import { Confetti } from "@/components/Confetti";
 import { LoadingBar } from "@/components/LoadingBar";
 import { ScoreRing } from "@/components/ScoreMeter";
 import { StudentTeacherFeedbackCard } from "@/components/StudentTeacherFeedbackCard";
@@ -18,8 +17,6 @@ import type { StudentReviewPayload } from "@/lib/parse-student-review";
 import { hasLiveTeacherFeedbackContent } from "@/lib/live-teacher-feedback";
 import { ui } from "@/lib/ui";
 
-const CONFETTI_KEY = "truepaper_review_confetti_seen";
-
 export default function StudentReviewPage() {
   const t = useTranslations();
   const { scoreTierMessage } = useScoreCopy();
@@ -28,9 +25,6 @@ export default function StudentReviewPage() {
   const [review, setReview] = useState<StudentReviewPayload | null>(null);
   const [loadError, setLoadError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [showConfetti, setShowConfetti] = useState(false);
-  const confettiFiredRef = useRef(false);
-
   useEffect(() => {
     if (!rawToken.trim()) {
       deferEffect(() => {
@@ -67,38 +61,6 @@ export default function StudentReviewPage() {
     };
   }, [rawToken, t]);
 
-  // Fire a single confetti burst the first time a graded result is revealed
-  // (per token, per browser). Skipped for partial/zero scores and replays.
-  useEffect(() => {
-    if (!review || confettiFiredRef.current) {
-      return;
-    }
-    if (!review.graded || review.pointsEarned == null || review.pointsPossible == null) {
-      return;
-    }
-    const tier = scoreTier(review.pointsEarned, review.pointsPossible);
-    if (tier !== "perfect" && tier !== "great") {
-      return;
-    }
-    try {
-      const key = `${CONFETTI_KEY}:${rawToken.trim().toUpperCase()}`;
-      if (typeof window !== "undefined" && window.sessionStorage.getItem(key) === "1") {
-        return;
-      }
-      if (typeof window !== "undefined") {
-        window.sessionStorage.setItem(key, "1");
-      }
-    } catch {
-      /* ignore storage failures */
-    }
-    confettiFiredRef.current = true;
-    deferEffect(() => setShowConfetti(true));
-    const id = window.setTimeout(() => {
-      deferEffect(() => setShowConfetti(false));
-    }, 2200);
-    return () => window.clearTimeout(id);
-  }, [review, rawToken]);
-
   const showFeedback = useMemo(
     () => review !== null && hasLiveTeacherFeedbackContent(review.liveTeacherFeedback),
     [review],
@@ -131,8 +93,7 @@ export default function StudentReviewPage() {
     : null;
 
   return (
-    <div className="relative min-h-screen bg-[var(--tp-bg)] py-8 text-[var(--tp-text)] sm:py-10">
-      {showConfetti ? <Confetti /> : null}
+    <div className="min-h-screen bg-[var(--tp-bg)] py-8 text-[var(--tp-text)] sm:py-10">
       <main className="mx-auto w-full max-w-3xl space-y-6 px-4 sm:px-6">
         <header className="tp-card-accent p-6 sm:p-8 tp-anim-fade-up">
           <div className="flex flex-wrap items-start justify-between gap-5">

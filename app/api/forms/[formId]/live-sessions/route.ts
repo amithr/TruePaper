@@ -12,6 +12,7 @@ type Params = {
 type Body = {
   durationMinutes?: number;
   noTimeLimit?: boolean;
+  deliveryMode?: "live" | "self_paced" | "hybrid";
 };
 
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
@@ -31,6 +32,10 @@ export async function POST(request: Request, { params }: Params) {
   const { formId } = await params;
   const body = (await request.json()) as Body;
   const noTimeLimit = body.noTimeLimit === true;
+  const deliveryMode =
+    body.deliveryMode === "self_paced" || body.deliveryMode === "hybrid"
+      ? body.deliveryMode
+      : "live";
   const durationMinutes = noTimeLimit ? null : clamp(Math.round(Number(body.durationMinutes) || 45), 5, 480);
   const opensAt = new Date();
   const closesAt = noTimeLimit
@@ -39,17 +44,28 @@ export async function POST(request: Request, { params }: Params) {
 
   for (let attempt = 0; attempt < 24; attempt += 1) {
     const joinCode = generateJoinCode();
-    const { data, error } = await supabase
+    const baseRow = {
+      join_code: joinCode,
+      form_id: formId,
+      created_by: authSession.user.id,
+      opens_at: opensAt.toISOString(),
+      closes_at: closesAt.toISOString(),
+    };
+    let result = await supabase
       .from("form_sessions")
-      .insert({
-        join_code: joinCode,
-        form_id: formId,
-        created_by: authSession.user.id,
-        opens_at: opensAt.toISOString(),
-        closes_at: closesAt.toISOString(),
-      })
-      .select("id, join_code, opens_at, closes_at")
+      .insert({ ...baseRow, delivery_mode: deliveryMode })
+      .select("id, join_code, opens_at, closes_at, delivery_mode")
       .single();
+
+    if (result.error?.message?.includes("delivery_mode")) {
+      result = await supabase
+        .from("form_sessions")
+        .insert(baseRow)
+        .select("id, join_code, opens_at, closes_at")
+        .single();
+    }
+
+    const { data, error } = result;
 
     if (!error && data) {
       return NextResponse.json({
@@ -59,6 +75,7 @@ export async function POST(request: Request, { params }: Params) {
         closesAt: data.closes_at,
         durationMinutes,
         noTimeLimit,
+        deliveryMode: (data.delivery_mode as string | null) ?? deliveryMode,
       });
     }
 

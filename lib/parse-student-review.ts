@@ -1,5 +1,7 @@
 import type { Question, QuestionType, StudentAnswers } from "@/lib/forms";
 import { parseLiveTeacherFeedback } from "@/lib/live-teacher-feedback";
+import { parseResponseConfig } from "@/lib/response-types/registry";
+import { normalizeResponseType } from "@/lib/response-types/types";
 import { parseStudentAnswersJson } from "@/lib/student-answers-json";
 
 export type StudentReviewQuestion = Question & {
@@ -30,9 +32,8 @@ function parseQuestions(raw: unknown): StudentReviewQuestion[] {
         return null;
       }
       const o = row as Record<string, unknown>;
-      const typeRaw = o.type;
-      const type: QuestionType =
-        typeRaw === "multipleChoice" || typeRaw === "text" ? typeRaw : "text";
+      const typeRaw = typeof o.type === "string" ? o.type : "text";
+      const type: QuestionType = normalizeResponseType(typeRaw);
       const options = Array.isArray(o.options)
         ? o.options.filter((opt): opt is string => typeof opt === "string")
         : [];
@@ -44,6 +45,7 @@ function parseQuestions(raw: unknown): StudentReviewQuestion[] {
         correctAnswer: null,
         points: Math.max(1, Number(o.points) || 1),
         displayOrder: Number(o.displayOrder) || 0,
+        responseConfig: parseResponseConfig(type, o.responseConfig),
         earnedPoints:
           typeof o.earnedPoints === "number" && Number.isFinite(o.earnedPoints)
             ? Math.max(0, Math.floor(o.earnedPoints))

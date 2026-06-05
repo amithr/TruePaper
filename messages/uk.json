@@ -59,6 +59,7 @@
   "nav": {
     "teacherNavLabel": "Навігація вчителя",
     "formLibrary": "Бібліотека форм",
+    "templateLibrary": "Бібліотека шаблонів",
     "studentJoin": "Приєднання учня",
     "dashboard": "Панель керування",
     "studentJoinAria": "Сторінка приєднання учня"
@@ -66,6 +67,31 @@
   "language": {
     "toggleAria": "Мова",
     "chooseLanguage": "Оберіть мову"
+  },
+  "legal": {
+    "privacy": "Політика конфіденційності",
+    "terms": "Умови використання",
+    "cookies": "Політика cookies",
+    "footerNavLabel": "Правові документи",
+    "summaryHeading": "Короткий виклад",
+    "copyright": "© {year} {company}. Усі права захищені."
+  },
+  "cookieConsent": {
+    "title": "Cookies на TruePaper",
+    "description": "Ми використовуємо необхідні cookies для входу та мови. Ви можете прийняти або відхилити необов’язкову аналітику та маркетинг.",
+    "acceptAll": "Прийняти все",
+    "rejectNonEssential": "Відхилити необов’язкові",
+    "manage": "Керувати налаштуваннями",
+    "prefsTitle": "Налаштування cookies",
+    "prefsDescription": "Оберіть необов’язкові cookies. Необхідні cookies завжди потрібні для роботи сайту.",
+    "categoryEssential": "Необхідні",
+    "categoryEssentialDesc": "Вхід, безпека та мова інтерфейсу.",
+    "alwaysOn": "Завжди увімкнено",
+    "categoryAnalytics": "Аналітика",
+    "categoryAnalyticsDesc": "Допомагає зрозуміти використання продукту (зараз не завантажується без вашої згоди).",
+    "categoryMarketing": "Маркетинг",
+    "categoryMarketingDesc": "Реклама та вимірювання кампаній (зараз не використовується).",
+    "savePreferences": "Зберегти налаштування"
   },
   "auth": {
     "eyebrowTeacher": "Вчитель",
@@ -105,7 +131,12 @@
       "confirmMeetRequirements": "Спочатку виконайте всі вимоги до пароля вище, потім повторіть його.",
       "checkEmail": "Перевірте свою електронну пошту, щоб підтвердити обліковий запис, потім увійдіть.",
       "failed": "Не вдалося зареєструватися.",
-      "needsEmailConfirmation": "Перевірте свою електронну пошту, щоб підтвердити обліковий запис, потім увійдіть."
+      "needsEmailConfirmation": "Перевірте свою електронну пошту, щоб підтвердити обліковий запис, потім увійдіть.",
+      "consentPrefix": "Я погоджуюся з",
+      "consentTermsLink": "Умовами використання",
+      "consentAnd": "та",
+      "consentPrivacyLink": "Політикою конфіденційності",
+      "consentRequired": "Потрібно погодитися з Умовами використання та Політикою конфіденційності."
     },
     "google": {
       "connecting": "З’єднання…",
@@ -356,7 +387,9 @@
       "typingLive": "друкує…",
       "submittedPill": "надіслано",
       "gradedPill": "оцінено",
-      "idle": "Бездіяльність"
+      "idle": "Бездіяльність",
+      "syncPending": "{n} очікує",
+      "syncOffline": "Офлайн"
     },
     "backDashboard": "← Панель керування",
     "backSessionBoard": "← Дошка сесії",
@@ -366,6 +399,7 @@
     "windowClosed": "Вікно цієї сесії закрито.",
     "lastUpdated": "Останнє оновлення {time}",
     "refreshAria": "Оновити",
+    "moreActions": "Більше дій із сесією",
     "loadingSession": "Завантаження сесії",
     "openClassDisplay": "Відкрити дисплей класу для проектора (нова вкладка)",
     "downloadAllPdf": "Завантажити всі іспити (PDF)",
@@ -451,6 +485,10 @@
       "markGraded": "Позначити як оцінений",
       "markGradedTitle": "Позначити цей іспит як повністю оцінений",
       "markGradedDisabledTitle": "Введіть бали за кожне питання, щоб увімкнути",
+      "moreActions": "Більше дій",
+      "adjustPoints": "Змінити бали питання",
+      "customScore": "Довільний бал",
+      "addFeedback": "Додати відгук",
       "noQuestions": "У цій формі ще немає питань.",
       "needsGradingPill": "Потребує оцінювання",
       "autoPill": "Авто · {earned} / {possible}",
@@ -517,6 +555,80 @@
       "loadFailed": "Не вдалося завантажити ваші результати."
     }
   },
+  "templateLibrary": {
+    "title": "Бібліотека шаблонів",
+    "subtitle": "Зберігайте, переглядайте та адаптуйте форми, питання та сесії в межах відділу.",
+    "loading": "Завантаження шаблонів…",
+    "loadingPreview": "Завантаження попереднього перегляду…",
+    "search": "Пошук шаблонів",
+    "searchPlaceholder": "Пошук за назвою, предметом, описом…",
+    "empty": "Немає шаблонів за вашими фільтрами.",
+    "noDescription": "Без опису",
+    "preview": "Перегляд",
+    "clone": "Клонувати",
+    "cloneToDraft": "Клонувати в чернетку",
+    "offlineCache": "Показано кешовані шаблони — підключіться для оновлення.",
+    "updateAvailable": "Доступне оновлення",
+    "updatesAvailable": "{n} клонованих шаблонів мають оновлення",
+    "page": "Сторінка {current} з {total}",
+    "scope": {
+      "private": "Приватний",
+      "department": "Відділ",
+      "school": "Школа",
+      "public": "Публічний"
+    },
+    "collections": {
+      "mine": "Мої шаблони",
+      "department": "Відділ",
+      "school": "Школа",
+      "public": "Публічний",
+      "shared": "Спільні зі мною"
+    },
+    "filters": {
+      "subject": "Предмет",
+      "subjectPlaceholder": "напр. Математика",
+      "grade": "Клас",
+      "gradePlaceholder": "напр. 9, 10",
+      "language": "Мова",
+      "allLanguages": "Усі мови",
+      "nmtDpa": "НМТ / ДПА"
+    },
+    "meta": {
+      "questions": "Питання",
+      "author": "Автор"
+    },
+    "save": {
+      "title": "Зберегти як шаблон",
+      "name": "Назва шаблону",
+      "description": "Опис",
+      "scope": "Доступ",
+      "curriculumTags": "Теги навчальної програми",
+      "submit": "Зберегти в бібліотеку",
+      "titleRequired": "Введіть назву шаблону.",
+      "failed": "Не вдалося зберегти шаблон.",
+      "joinDeptHint": "Вкажіть школу та відділ у бібліотеці шаблонів, щоб ділитися з колегами.",
+      "source": {
+        "form": "Зберігаємо цю форму та всі її питання.",
+        "question": "Зберігаємо це питання як шаблон.",
+        "session": "Зберігаємо форму, питання та налаштування часу сесії."
+      },
+      "action": "Зберегти як шаблон"
+    },
+    "org": {
+      "title": "Школа та відділ",
+      "school": "Школа",
+      "department": "Відділ",
+      "none": "Не вказано",
+      "save": "Зберегти",
+      "saved": "Членство оновлено.",
+      "failed": "Не вдалося оновити."
+    },
+    "errors": {
+      "load": "Не вдалося завантажити шаблони.",
+      "preview": "Не вдалося завантажити перегляд.",
+      "clone": "Не вдалося клонувати шаблон."
+    }
+  },
   "formLibrary": {
     "newForm": "Нова форма",
     "searchSrOnly": "Пошук форм",
@@ -527,6 +639,10 @@
     "questionCountOther": "{n} питань",
     "minutesSrOnly": "Хвилини",
     "minutesAria": "Хвилини сесії",
+    "deliveryMode": "Режим",
+    "deliveryLive": "Наживо",
+    "deliverySelfPaced": "Самостійно (офлайн)",
+    "deliveryHybrid": "Наживо + самостійно",
     "page": "Сторінка {current} з {total} · {count} форм(и)",
     "errors": {
       "load": "Не вдалося завантажити форми.",
@@ -605,5 +721,119 @@
   "feedback": {
     "title": "Коментар вчителя",
     "placeholder": "Ваш вчитель може залишати коментарі тут під час вашої роботи. Загляньте знову через мить."
+  },
+  "responseTypes": {
+    "multipleChoice": {
+      "label": "Множинний вибір"
+    },
+    "shortAnswer": {
+      "label": "Коротка відповідь",
+      "placeholder": "Напишіть коротку відповідь"
+    },
+    "extendedWritten": {
+      "label": "Розгорнута письмова відповідь",
+      "placeholder": "Напишіть відповідь…",
+      "wordCount": "{count} слів",
+      "charCount": "{count} символів",
+      "belowMin": "Мінімум {min} слів",
+      "belowTarget": "Ціль {target} слів"
+    },
+    "structuredMultiPart": {
+      "label": "Структурована багаточастинна"
+    },
+    "annotateSource": {
+      "label": "Анотувати джерело",
+      "emptyPassage": "Тут з’явиться текст джерела.",
+      "highlightTool": "Виділити",
+      "noteTool": "Нотатка",
+      "noteLabel": "Нотатка"
+    },
+    "drawDiagram": {
+      "label": "Малюнок / діаграма",
+      "undo": "Скасувати",
+      "clear": "Очистити"
+    },
+    "photoHandwritten": {
+      "label": "Фото рукописної роботи",
+      "upload": "Зробити фото або завантажити",
+      "remove": "Видалити фото",
+      "empty": "Завантажте фото вашої рукописної роботи.",
+      "previewAlt": "Завантажене рукописне завдання",
+      "uploadError": "Не вдалося обробити зображення. Спробуйте інше фото.",
+      "dimensions": "{width} × {height} пкс"
+    },
+    "trueFalse": {
+      "label": "Правда / неправда",
+      "true": "Правда",
+      "false": "Неправда"
+    },
+    "matching": {
+      "label": "Відповідність",
+      "leftColumn": "Терміни",
+      "rightColumn": "Визначення",
+      "tapRight": "Торкніться визначення для пари.",
+      "clear": "Очистити"
+    },
+    "ordering": {
+      "label": "Упорядкування",
+      "moveUp": "Вгору",
+      "moveDown": "Вниз"
+    },
+    "labelling": {
+      "label": "Позначення",
+      "choose": "Оберіть мітку"
+    },
+    "mathInput": {
+      "label": "Математика / рівняння",
+      "placeholder": "Введіть рівняння…",
+      "insertSymbol": "Вставити {symbol}"
+    },
+    "watch": {
+      "annotate": "Анотація вчителя"
+    },
+    "structured": {
+      "progress": "{answered}/{total} частин",
+      "progressAria": "Заповнено {answered} з {total} частин",
+      "partsAria": "Частини питання",
+      "placeholder": "Напишіть відповідь для {part}"
+    },
+    "feedback": {
+      "partLabel": "Коментар до {part}",
+      "annotation": "Вчитель позначив вашу роботу"
+    },
+    "builder": {
+      "answerSettings": "Налаштування відповіді",
+      "minWords": "Мінімум слів",
+      "targetWords": "Ціль слів",
+      "acceptedAnswers": "Прийнятні відповіді",
+      "acceptedAnswersPlaceholder": "Через кому",
+      "parts": "Частини",
+      "partPrompt": "Підказка частини",
+      "sourcePassage": "Текст джерела",
+      "correctAnswer": "Правильна відповідь",
+      "canvasWidth": "Ширина полотна",
+      "canvasHeight": "Висота полотна",
+      "mathPlaceholder": "Текст-підказка",
+      "matchingPairs": "Пари відповідності",
+      "matchLeft": "Лівий елемент",
+      "matchRight": "Правий елемент",
+      "autoMatched": "Пара за рядком",
+      "orderItems": "Елементи в правильному порядку",
+      "labelZones": "Зони та правильні мітки",
+      "zonePrompt": "Підказка зони",
+      "correctTerm": "Правильна мітка"
+    }
+  },
+  "offline": {
+    "status": {
+      "online": "Онлайн",
+      "offline": "Збережено локально — синхронізується після підключення",
+      "syncing": "Синхронізація…",
+      "synced": "Синхронізовано",
+      "localOnly": "Збережено на цьому пристрої",
+      "pending": "{n} змін(и) очікують синхронізації"
+    },
+    "airAlertPaused": "Сесію призупинено з міркувань безпеки. Відповіді збережено — продовжіть після відбою тривоги.",
+    "idbCleared": "Локальне сховище очищено. Прогрес може не відновитися після оновлення."
   }
 }

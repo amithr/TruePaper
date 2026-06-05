@@ -62,7 +62,7 @@ export async function GET(request: Request) {
   const formIds = forms.map((form) => form.id);
   const { data: questions, error: questionsError } = await supabase
     .from("questions")
-    .select("id, form_id, prompt, question_type, options, correct_answer, points, display_order")
+    .select("id, form_id, prompt, question_type, options, correct_answer, points, display_order, response_config")
     .in("form_id", formIds)
     .order("display_order", { ascending: true });
 

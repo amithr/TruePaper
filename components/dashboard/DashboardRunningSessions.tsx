@@ -15,20 +15,7 @@ import { usePollingRefresh } from "@/lib/use-polling-refresh";
 import { focusRing, ui } from "@/lib/ui";
 import { messageForBackgroundRefreshError } from "@/lib/background-network-error";
 import { requestJson } from "@/lib/request-json";
-
-function formatCountdown(ms: number): string {
-  if (ms <= 0) {
-    return "0:00";
-  }
-  const totalSeconds = Math.floor(ms / 1000);
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
-}
-
-function maskDeviceId(id: string): string {
-  return `…${id.slice(-8)}`;
-}
+import { formatSessionCountdown, maskDashboardDeviceId } from "@/lib/session-countdown";
 
 type Props = {
   initialSessions: TeacherSessionSummary[];
@@ -238,7 +225,7 @@ export function DashboardRunningSessions({
                             <path d="M12 7v5l3 2" />
                           </svg>
                           <span className="font-mono font-semibold tabular-nums text-[var(--tp-text)]">
-                            {formatCountdown(msLeft)}
+                            {formatSessionCountdown(msLeft)}
                           </span>
                         </span>
                       )}
@@ -281,7 +268,7 @@ export function DashboardRunningSessions({
                               {row.displayName ? row.displayName : t("common.student")}
                             </span>
                             <span className="mx-1.5 text-[var(--tp-warning-text)] opacity-60">·</span>
-                            <span className="font-mono">{maskDeviceId(row.anonymousSessionId)}</span>
+                            <span className="font-mono">{maskDashboardDeviceId(row.anonymousSessionId)}</span>
                           </span>
                           <button
                             type="button"

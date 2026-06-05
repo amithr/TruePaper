@@ -125,3 +125,31 @@ export const longStudentAnswer =
 
 export const teacherFeedbackMessage =
   "E2E feedback: Strong start — add more detail in your second paragraph.";
+
+export async function sendStudentHeartbeat(
+  page: Page,
+  input: {
+    liveSessionId: string;
+    deviceId: string;
+    displayName: string;
+    pendingSyncCount?: number;
+    syncState?: "synced" | "pending" | "offline";
+  },
+): Promise<void> {
+  const res = await page.request.post(
+    `/api/public/live-sessions/${input.liveSessionId}/heartbeat`,
+    {
+      data: {
+        deviceId: input.deviceId,
+        displayName: input.displayName,
+        isTyping: false,
+        interaction: true,
+        pendingSyncCount: input.pendingSyncCount ?? 0,
+        syncState: input.syncState ?? "synced",
+      },
+    },
+  );
+  expect(res.ok()).toBeTruthy();
+}
+
+export const offlineTailText = " Offline tail saved locally.";

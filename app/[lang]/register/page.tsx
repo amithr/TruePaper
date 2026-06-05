@@ -37,6 +37,7 @@ export default function RegisterPage() {
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [pending, setPending] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
 
   const requirementStatus = useMemo(() => getPasswordRequirementStatus(password), [password]);
   const passwordRequirementsMet = useMemo(() => isPasswordStrong(password), [password]);
@@ -68,6 +69,11 @@ export default function RegisterPage() {
       return;
     }
 
+    if (!agreedToTerms) {
+      setError(t("auth.register.consentRequired"));
+      return;
+    }
+
     setPending(true);
     try {
       const response = await fetch("/api/auth/register", {
@@ -78,6 +84,7 @@ export default function RegisterPage() {
           password,
           confirmPassword,
           displayName: name,
+          agreedToTerms: true,
         }),
       });
       const data = (await response.json()) as { error?: string; needsEmailConfirmation?: boolean };
@@ -116,10 +123,28 @@ export default function RegisterPage() {
       }
     >
       <div className="space-y-5">
+        <label className="flex cursor-pointer items-start gap-3 text-sm leading-relaxed text-[var(--tp-text-secondary)]">
+          <input
+            type="checkbox"
+            className="mt-1 h-4 w-4 shrink-0 rounded border-[var(--tp-border)]"
+            checked={agreedToTerms}
+            onChange={(e) => setAgreedToTerms(e.target.checked)}
+          />
+          <span>
+            {t("auth.register.consentPrefix")}{" "}
+            <LocaleLink href="/terms" className={ui.link}>
+              {t("auth.register.consentTermsLink")}
+            </LocaleLink>{" "}
+            {t("auth.register.consentAnd")}{" "}
+            <LocaleLink href="/privacy" className={ui.link}>
+              {t("auth.register.consentPrivacyLink")}
+            </LocaleLink>
+          </span>
+        </label>
         <GoogleSignInButton
           nextPath="/dashboard"
           label={t("auth.register.googleLabel")}
-          disabled={pending}
+          disabled={pending || !agreedToTerms}
           onError={(message) => setError(message)}
         />
         <div
@@ -214,7 +239,11 @@ export default function RegisterPage() {
           </label>
           {error ? <p className={ui.alertError}>{error}</p> : null}
           {info ? <p className={ui.alertSuccess}>{info}</p> : null}
-          <button type="submit" disabled={pending} className={`w-full ${ui.btnPrimary}`}>
+          <button
+            type="submit"
+            disabled={pending || !agreedToTerms}
+            className={`w-full ${ui.btnPrimary}`}
+          >
             {pending ? t("auth.register.submitting") : t("auth.register.submit")}
           </button>
         </form>

@@ -1,6 +1,5 @@
 "use client";
 
-import { StudentReviewShare } from "@/components/StudentReviewShare";
 import { scoreTier } from "@/lib/exam-grades";
 import type { StudentAnswers } from "@/lib/forms";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
@@ -15,11 +14,12 @@ import type { LiveParticipantUiStatus } from "@/lib/participant-status";
 import { focusRing } from "@/lib/ui";
 
 type Props = {
-  liveSessionId: string;
   textQuestionIds: string[];
   participants: LiveSessionOverviewParticipant[];
   liveDraftsByDevice: Record<string, StudentAnswers>;
   onOpenExam: (deviceId: string) => void;
+  onResumeStudent?: (deviceId: string) => void;
+  resumeBusyDeviceId?: string | null;
 };
 
 function statusBadgeClass(status: LiveParticipantUiStatus): string {
@@ -37,6 +37,39 @@ function statusBadgeClass(status: LiveParticipantUiStatus): string {
     default:
       return "tp-status tp-status-neutral";
   }
+}
+
+function SyncStatusBadge({
+  participant: p,
+  t,
+}: {
+  participant: LiveSessionOverviewParticipant;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  if (p.finishedAt || p.gradedAt) {
+    return null;
+  }
+  if (p.syncState === "offline") {
+    return (
+      <span className="tp-status tp-status-sync-offline" data-testid="roster-sync-badge" data-sync-state="offline">
+        <span className="tp-status-dot" aria-hidden />
+        {t("session.status.syncOffline")}
+      </span>
+    );
+  }
+  if (p.syncState === "pending" || p.pendingSyncCount > 0) {
+    return (
+      <span
+        className="tp-status tp-status-sync-pending"
+        data-testid="roster-sync-badge"
+        data-sync-state="pending"
+      >
+        <span className="tp-status-dot" aria-hidden />
+        {t("session.status.syncPending", { n: p.pendingSyncCount || 1 })}
+      </span>
+    );
+  }
+  return null;
 }
 
 function RosterStatusBadge({
@@ -131,17 +164,19 @@ function rosterSubtitle(
 }
 
 function RosterRow({
-  liveSessionId,
   textQuestionIds,
   participant: p,
   liveDraftsByDevice,
   onOpenExam,
+  onResumeStudent,
+  resumeBusyDeviceId,
 }: {
-  liveSessionId: string;
   textQuestionIds: string[];
   participant: LiveSessionOverviewParticipant;
   liveDraftsByDevice: Record<string, StudentAnswers>;
   onOpenExam: (deviceId: string) => void;
+  onResumeStudent?: (deviceId: string) => void;
+  resumeBusyDeviceId?: string | null;
 }) {
   const t = useTranslations();
   const { scoreTierMessage } = useScoreCopy();
@@ -154,7 +189,46 @@ function RosterRow({
     p.status === "typing" ||
     Boolean(liveDraft && liveTypingPreview(liveDraft, textQuestionIds));
 
+  const isResumeBusy = resumeBusyDeviceId === deviceNorm;
+  const isBlocked = p.status === "blocked";
   const open = () => onOpenExam(p.anonymousSessionId);
+
+  if (isBlocked && onResumeStudent) {
+    return (
+      <div className="tp-roster-row tp-roster-row--card">
+        <span
+          className="tp-roster-avatar"
+          style={{ background: gradient }}
+          aria-hidden
+        >
+          {initials}
+        </span>
+        <div className="tp-roster-row__body">
+          <div className="tp-roster-row__top">
+            <div className="tp-roster-row__identity">
+              <span className="tp-roster-row__name">
+                {p.displayName || (
+                  <span className="text-[var(--tp-text-muted)] italic">{t("session.roster.noName")}</span>
+                )}
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-1.5">
+              <SyncStatusBadge participant={p} t={t} />
+              <RosterStatusBadge participant={p} t={t} />
+            </div>
+          </div>
+          <button
+            type="button"
+            disabled={Boolean(resumeBusyDeviceId) && !isResumeBusy}
+            onClick={() => onResumeStudent(p.anonymousSessionId)}
+            className={`tp-btn-primary mt-3 min-h-11 w-full sm:w-auto ${focusRing}`}
+          >
+            {isResumeBusy ? t("common.lettingIn") : t("session.actions.letIn")}
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -196,25 +270,10 @@ function RosterRow({
               </p>
             ) : null}
           </div>
-          <RosterStatusBadge participant={p} t={t} />
-        </div>
-        <div
-          className="tp-roster-row__actions"
-          onClick={(event) => event.stopPropagation()}
-        >
-          <StudentReviewShare
-            liveSessionId={liveSessionId}
-            deviceId={p.anonymousSessionId}
-            disabled={!p.displayName && p.status !== "finished" && p.status !== "graded"}
-          />
-          <a
-            href={`/api/forms/live-sessions/${liveSessionId}/participants/${encodeURIComponent(p.anonymousSessionId)}/exam-pdf`}
-            download
-            className={`tp-roster-action ${focusRing}`}
-            title={t("session.downloadStudentPdfTitleShort")}
-          >
-            {t("session.pdf")}
-          </a>
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
+            <SyncStatusBadge participant={p} t={t} />
+            <RosterStatusBadge participant={p} t={t} />
+          </div>
         </div>
       </div>
     </div>
@@ -222,22 +281,24 @@ function RosterRow({
 }
 
 export function SessionExamRoster({
-  liveSessionId,
   textQuestionIds,
   participants,
   liveDraftsByDevice,
   onOpenExam,
+  onResumeStudent,
+  resumeBusyDeviceId,
 }: Props) {
   return (
     <div className="tp-roster-list tp-roster-list--cards">
       {participants.map((p) => (
         <RosterRow
           key={p.anonymousSessionId}
-          liveSessionId={liveSessionId}
           textQuestionIds={textQuestionIds}
           participant={p}
           liveDraftsByDevice={liveDraftsByDevice}
           onOpenExam={onOpenExam}
+          onResumeStudent={onResumeStudent}
+          resumeBusyDeviceId={resumeBusyDeviceId}
         />
       ))}
     </div>

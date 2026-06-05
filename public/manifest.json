@@ -1,0 +1,18 @@
+{
+  "name": "Truepaper",
+  "short_name": "Truepaper",
+  "description": "Classroom forms and live sessions — works offline when you need it.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0b",
+  "theme_color": "#0a0a0b",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/file.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

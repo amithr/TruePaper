@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
 import type { QuestionType } from "@/lib/forms";
+import { parseResponseConfig } from "@/lib/response-types/registry";
+import { isValidQuestionType } from "@/lib/response-types/valid-types";
 import { getSessionUser } from "@/lib/request-auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -14,6 +16,7 @@ type UpdateQuestionBody = {
   options?: string[];
   correctAnswer?: string | null;
   points?: number;
+  responseConfig?: unknown;
 };
 
 export async function PATCH(request: Request, { params }: Params) {
@@ -38,7 +41,7 @@ export async function PATCH(request: Request, { params }: Params) {
   }
 
   const type = body.type;
-  if (type !== "multipleChoice" && type !== "text") {
+  if (!type || !isValidQuestionType(type)) {
     return NextResponse.json({ error: "Invalid question type." }, { status: 400 });
   }
 
@@ -65,6 +68,7 @@ export async function PATCH(request: Request, { params }: Params) {
       options,
       correct_answer: type === "multipleChoice" ? correctAnswer : null,
       points,
+      response_config: parseResponseConfig(type, body.responseConfig),
     })
     .eq("id", questionId)
     .select("id");

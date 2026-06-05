@@ -1,4 +1,7 @@
-export type QuestionType = "multipleChoice" | "text";
+import type { ResponseConfig, ResponseTypeId } from "@/lib/response-types/types";
+
+/** @deprecated Use ResponseTypeId — kept for API backward compatibility */
+export type QuestionType = ResponseTypeId;
 
 export type Question = {
   id: string;
@@ -10,6 +13,8 @@ export type Question = {
   /** Teacher-defined points awarded for this question. */
   points: number;
   displayOrder: number;
+  /** Type-specific authoring config (parts, passage, rubric, word targets, etc.) */
+  responseConfig: ResponseConfig;
 };
 
 export type Form = {

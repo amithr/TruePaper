@@ -28,6 +28,9 @@ export type LiveSessionOverviewParticipant = {
   textWordCount: number;
   lastActivityAt: string | null;
   lastTypingAt: string | null;
+  /** Whether saved answers are synced to the server. */
+  syncState: "synced" | "pending" | "offline";
+  pendingSyncCount: number;
   updatedAt: string;
 };
 

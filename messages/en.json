@@ -59,6 +59,7 @@
   "nav": {
     "teacherNavLabel": "Teacher navigation",
     "formLibrary": "Form library",
+    "templateLibrary": "Template library",
     "studentJoin": "Student join",
     "dashboard": "Dashboard",
     "studentJoinAria": "Student join page"
@@ -66,6 +67,31 @@
   "language": {
     "toggleAria": "Language",
     "chooseLanguage": "Choose language"
+  },
+  "legal": {
+    "privacy": "Privacy Policy",
+    "terms": "Terms of Service",
+    "cookies": "Cookie Policy",
+    "footerNavLabel": "Legal",
+    "summaryHeading": "Plain-English summary",
+    "copyright": "© {year} {company}. All rights reserved."
+  },
+  "cookieConsent": {
+    "title": "Cookies on TruePaper",
+    "description": "We use essential cookies to sign you in and remember your language. You can accept or reject optional analytics and marketing cookies.",
+    "acceptAll": "Accept All",
+    "rejectNonEssential": "Reject Non-Essential",
+    "manage": "Manage Preferences",
+    "prefsTitle": "Cookie preferences",
+    "prefsDescription": "Choose which optional cookies we may use. Essential cookies are always required for the site to work.",
+    "categoryEssential": "Essential",
+    "categoryEssentialDesc": "Sign-in, security, and language preference.",
+    "alwaysOn": "Always on",
+    "categoryAnalytics": "Analytics",
+    "categoryAnalyticsDesc": "Help us understand how the product is used (not loaded today unless you opt in).",
+    "categoryMarketing": "Marketing",
+    "categoryMarketingDesc": "Advertising and campaign measurement (not used today).",
+    "savePreferences": "Save preferences"
   },
   "auth": {
     "eyebrowTeacher": "Teacher",
@@ -105,7 +131,12 @@
       "confirmMeetRequirements": "Meet all password requirements above first, then match that password.",
       "checkEmail": "Check your email to confirm your account, then log in.",
       "failed": "Registration failed.",
-      "needsEmailConfirmation": "Check your email to confirm your account, then log in."
+      "needsEmailConfirmation": "Check your email to confirm your account, then log in.",
+      "consentPrefix": "I agree to the",
+      "consentTermsLink": "Terms of Service",
+      "consentAnd": "and",
+      "consentPrivacyLink": "Privacy Policy",
+      "consentRequired": "You must agree to the Terms of Service and Privacy Policy."
     },
     "google": {
       "connecting": "Connecting…",
@@ -356,7 +387,9 @@
       "typingLive": "typing…",
       "submittedPill": "submitted",
       "gradedPill": "graded",
-      "idle": "Idle"
+      "idle": "Idle",
+      "syncPending": "{n} pending",
+      "syncOffline": "Offline"
     },
     "backDashboard": "← Dashboard",
     "backSessionBoard": "← Session board",
@@ -366,6 +399,7 @@
     "windowClosed": "This session window is closed.",
     "lastUpdated": "Last updated {time}",
     "refreshAria": "Refresh",
+    "moreActions": "More session actions",
     "loadingSession": "Loading session",
     "openClassDisplay": "Open class display for projector (new tab)",
     "downloadAllPdf": "Download all exams (PDF)",
@@ -451,6 +485,10 @@
       "markGraded": "Mark as graded",
       "markGradedTitle": "Mark this exam as fully graded",
       "markGradedDisabledTitle": "Enter points for every question to enable",
+      "moreActions": "More actions",
+      "adjustPoints": "Adjust question points",
+      "customScore": "Custom score",
+      "addFeedback": "Add feedback",
       "noQuestions": "This form has no questions yet.",
       "needsGradingPill": "Needs grading",
       "autoPill": "Auto · {earned} / {possible}",
@@ -517,6 +555,80 @@
       "loadFailed": "Could not load your results."
     }
   },
+  "templateLibrary": {
+    "title": "Template library",
+    "subtitle": "Save, browse, and remix forms, questions, and sessions across your department.",
+    "loading": "Loading templates…",
+    "loadingPreview": "Loading preview…",
+    "search": "Search templates",
+    "searchPlaceholder": "Search by title, subject, description…",
+    "empty": "No templates match your filters.",
+    "noDescription": "No description",
+    "preview": "Preview",
+    "clone": "Clone",
+    "cloneToDraft": "Clone to editable draft",
+    "offlineCache": "Showing cached templates — connect to refresh.",
+    "updateAvailable": "Update available",
+    "updatesAvailable": "{n} cloned template(s) have updates",
+    "page": "Page {current} of {total}",
+    "scope": {
+      "private": "Private",
+      "department": "Department",
+      "school": "School",
+      "public": "Public"
+    },
+    "collections": {
+      "mine": "My templates",
+      "department": "Department",
+      "school": "School",
+      "public": "Public",
+      "shared": "Shared with me"
+    },
+    "filters": {
+      "subject": "Subject",
+      "subjectPlaceholder": "e.g. Mathematics",
+      "grade": "Grade / class",
+      "gradePlaceholder": "e.g. 9, 10",
+      "language": "Language",
+      "allLanguages": "All languages",
+      "nmtDpa": "NMT / DPA relevant"
+    },
+    "meta": {
+      "questions": "Questions",
+      "author": "Author"
+    },
+    "save": {
+      "title": "Save as template",
+      "name": "Template name",
+      "description": "Description",
+      "scope": "Sharing",
+      "curriculumTags": "Curriculum tags",
+      "submit": "Save to library",
+      "titleRequired": "Enter a template name.",
+      "failed": "Could not save template.",
+      "joinDeptHint": "Set your school and department in the template library to share with colleagues.",
+      "source": {
+        "form": "Saving this form and all its questions.",
+        "question": "Saving this question as a reusable template.",
+        "session": "Saving this session's form, questions, and timing defaults."
+      },
+      "action": "Save as template"
+    },
+    "org": {
+      "title": "School & department",
+      "school": "School",
+      "department": "Department",
+      "none": "Not set",
+      "save": "Save membership",
+      "saved": "School membership updated.",
+      "failed": "Could not update membership."
+    },
+    "errors": {
+      "load": "Failed to load templates.",
+      "preview": "Could not load preview.",
+      "clone": "Could not clone template."
+    }
+  },
   "formLibrary": {
     "newForm": "New form",
     "searchSrOnly": "Search forms",
@@ -527,6 +639,10 @@
     "questionCountOther": "{n} questions",
     "minutesSrOnly": "Minutes",
     "minutesAria": "Session minutes",
+    "deliveryMode": "Delivery",
+    "deliveryLive": "Live only",
+    "deliverySelfPaced": "Self-paced (offline OK)",
+    "deliveryHybrid": "Live + self-paced",
     "page": "Page {current} of {total} · {count} form(s)",
     "errors": {
       "load": "Failed to load forms.",
@@ -605,5 +721,119 @@
   "feedback": {
     "title": "Teacher feedback",
     "placeholder": "Your teacher can leave comments here as you work. Check back in a moment."
+  },
+  "responseTypes": {
+    "multipleChoice": {
+      "label": "Multiple choice"
+    },
+    "shortAnswer": {
+      "label": "Short answer",
+      "placeholder": "Write a short answer"
+    },
+    "extendedWritten": {
+      "label": "Extended written response",
+      "placeholder": "Write your response…",
+      "wordCount": "{count} words",
+      "charCount": "{count} characters",
+      "belowMin": "Minimum {min} words",
+      "belowTarget": "Target {target} words"
+    },
+    "structuredMultiPart": {
+      "label": "Structured multi-part"
+    },
+    "annotateSource": {
+      "label": "Annotate source",
+      "emptyPassage": "Source passage will appear here.",
+      "highlightTool": "Highlight",
+      "noteTool": "Note",
+      "noteLabel": "Note"
+    },
+    "drawDiagram": {
+      "label": "Draw / diagram",
+      "undo": "Undo",
+      "clear": "Clear"
+    },
+    "photoHandwritten": {
+      "label": "Photo handwritten work",
+      "upload": "Take photo or upload",
+      "remove": "Remove photo",
+      "empty": "Upload a photo of your handwritten work.",
+      "previewAlt": "Uploaded handwritten work",
+      "uploadError": "Could not process that image. Try another photo.",
+      "dimensions": "{width} × {height} px"
+    },
+    "trueFalse": {
+      "label": "True / false",
+      "true": "True",
+      "false": "False"
+    },
+    "matching": {
+      "label": "Matching",
+      "leftColumn": "Terms",
+      "rightColumn": "Definitions",
+      "tapRight": "Tap a definition to match.",
+      "clear": "Clear"
+    },
+    "ordering": {
+      "label": "Ordering",
+      "moveUp": "Move up",
+      "moveDown": "Move down"
+    },
+    "labelling": {
+      "label": "Labelling",
+      "choose": "Choose a label"
+    },
+    "mathInput": {
+      "label": "Math / equation",
+      "placeholder": "Enter your equation…",
+      "insertSymbol": "Insert {symbol}"
+    },
+    "watch": {
+      "annotate": "Teacher annotation"
+    },
+    "structured": {
+      "progress": "{answered}/{total} parts",
+      "progressAria": "{answered} of {total} parts answered",
+      "partsAria": "Question parts",
+      "placeholder": "Write your response for {part}"
+    },
+    "feedback": {
+      "partLabel": "Feedback for {part}",
+      "annotation": "Teacher marked up your work"
+    },
+    "builder": {
+      "answerSettings": "Response settings",
+      "minWords": "Minimum words",
+      "targetWords": "Target words",
+      "acceptedAnswers": "Accepted answers",
+      "acceptedAnswersPlaceholder": "Comma separated",
+      "parts": "Parts",
+      "partPrompt": "Part prompt",
+      "sourcePassage": "Source passage",
+      "correctAnswer": "Correct answer",
+      "canvasWidth": "Canvas width",
+      "canvasHeight": "Canvas height",
+      "mathPlaceholder": "Placeholder text",
+      "matchingPairs": "Matching pairs",
+      "matchLeft": "Left item",
+      "matchRight": "Right item",
+      "autoMatched": "Paired by row",
+      "orderItems": "Items in correct order",
+      "labelZones": "Zones and correct labels",
+      "zonePrompt": "Zone prompt",
+      "correctTerm": "Correct label"
+    }
+  },
+  "offline": {
+    "status": {
+      "online": "Online",
+      "offline": "Saved locally — will sync when back online",
+      "syncing": "Syncing…",
+      "synced": "Synced",
+      "localOnly": "Saved on this device",
+      "pending": "{n} change(s) waiting to sync"
+    },
+    "airAlertPaused": "Session paused for safety. Your answers are saved — continue when the alert ends.",
+    "idbCleared": "Local save storage was cleared. Your progress may not restore after refresh."
   }
 }

@@ -1,4 +1,5 @@
 import type { Question } from "@/lib/forms";
+import { hasAutogradeKey } from "@/lib/response-types/autograde";
 
 /** Per-question earned points stored on form_responses.text_grades. */
 export function parseQuestionGrades(raw: unknown): Record<string, number> {
@@ -91,13 +92,13 @@ export function questionScoreTone(earned: number, possible: number): QuestionSco
 export type GradingState = "needs-grading" | "auto" | "graded";
 
 export function gradingStateFor(
-  question: Pick<Question, "id" | "type" | "correctAnswer">,
+  question: Pick<Question, "id" | "type" | "correctAnswer" | "responseConfig">,
   earnedPoints: number | null | undefined,
 ): GradingState {
   if (typeof earnedPoints !== "number") {
     return "needs-grading";
   }
-  return question.type === "multipleChoice" && question.correctAnswer ? "auto" : "graded";
+  return hasAutogradeKey(question) ? "auto" : "graded";
 }
 
 /**

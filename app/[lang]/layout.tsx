@@ -4,6 +4,8 @@ import { notFound } from "next/navigation";
 
 import "../globals.css";
 
+import { ConditionalSiteChrome } from "@/components/ConditionalSiteChrome";
+import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
 import { TruepaperToaster } from "@/components/TruepaperToaster";
 import { LOCALES, isLocale } from "@/lib/i18n/config";
 import { getDictionary } from "@/lib/i18n/dictionaries";
@@ -27,6 +29,7 @@ export const metadata: Metadata = {
   title: "Truepaper — Classroom forms & live sessions",
   description:
     "Teachers create forms and run live sessions; students join with a code—no account required.",
+  manifest: "/manifest.json",
 };
 
 export function generateStaticParams() {
@@ -52,8 +55,12 @@ export default async function LocaleRootLayout({ children, params }: Props) {
     >
       <body className="min-h-full flex flex-col font-sans">
         <I18nProvider locale={lang} dict={dict}>
-          {children}
+          <div className="flex min-h-full flex-1 flex-col">
+            {children}
+            <ConditionalSiteChrome />
+          </div>
           <TruepaperToaster />
+          <ServiceWorkerRegistration />
         </I18nProvider>
       </body>
     </html>

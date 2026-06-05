@@ -2,7 +2,7 @@
 
 import NextLink, { type LinkProps } from "next/link";
 import { useRouter as useNextRouter } from "next/navigation";
-import { forwardRef, type AnchorHTMLAttributes, type ReactNode } from "react";
+import { forwardRef, useMemo, type AnchorHTMLAttributes, type ReactNode } from "react";
 
 import { useLocale } from "@/lib/i18n/I18nProvider";
 import { localizeHref } from "@/lib/i18n/navigation";
@@ -40,12 +40,15 @@ export const LocaleLink = forwardRef<HTMLAnchorElement, LocaleLinkProps>(functio
 export function useLocaleRouter() {
   const locale = useLocale();
   const router = useNextRouter();
-  return {
-    push: (href: string) => router.push(localizeHref(href, locale)),
-    replace: (href: string) => router.replace(localizeHref(href, locale)),
-    refresh: () => router.refresh(),
-    back: () => router.back(),
-    forward: () => router.forward(),
-    prefetch: (href: string) => router.prefetch(localizeHref(href, locale)),
-  };
+  return useMemo(
+    () => ({
+      push: (href: string) => router.push(localizeHref(href, locale)),
+      replace: (href: string) => router.replace(localizeHref(href, locale)),
+      refresh: () => router.refresh(),
+      back: () => router.back(),
+      forward: () => router.forward(),
+      prefetch: (href: string) => router.prefetch(localizeHref(href, locale)),
+    }),
+    [locale, router],
+  );
 }

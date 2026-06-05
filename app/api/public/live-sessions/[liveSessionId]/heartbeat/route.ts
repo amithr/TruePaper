@@ -14,6 +14,8 @@ type Body = {
   /** When false, keepalive only — does not refresh last_activity_at (pointer/typing engagement). */
   interaction?: boolean;
   displayName?: string;
+  pendingSyncCount?: number;
+  syncState?: "synced" | "pending" | "offline";
 };
 
 export async function POST(request: Request, { params }: Params) {
@@ -37,12 +39,20 @@ export async function POST(request: Request, { params }: Params) {
 
   try {
     const supabase = createSupabaseAnonServiceClient();
+    const pendingSyncCount = Math.max(0, Math.floor(Number(body.pendingSyncCount) || 0));
+    const syncState =
+      body.syncState === "offline" || body.syncState === "pending" || body.syncState === "synced"
+        ? body.syncState
+        : "synced";
+
     const { error } = await supabase.rpc("heartbeat_live_session_student", {
       p_live_session_id: liveSessionId,
       p_device_id: deviceId,
       p_is_typing: isTyping,
       p_interaction: interaction,
       p_display_name: displayName,
+      p_pending_sync_count: pendingSyncCount,
+      p_sync_state: syncState,
     });
 
     if (error) {
@@ -50,7 +60,7 @@ export async function POST(request: Request, { params }: Params) {
         return NextResponse.json(
           {
             error:
-              "Database is missing heartbeat_live_session_student (5-arg) or it is outdated. Run migrations through 20260424130000_live_student_display_name.sql.",
+              "Database is missing heartbeat_live_session_student (7-arg). Run migration 20260605150000_offline_sync.sql.",
           },
           { status: 503 },
         );

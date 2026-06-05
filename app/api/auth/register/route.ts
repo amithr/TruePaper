@@ -12,6 +12,7 @@ type Body = {
   password?: string;
   confirmPassword?: string;
   displayName?: string;
+  agreedToTerms?: boolean;
 };
 
 export async function POST(request: Request) {
@@ -23,6 +24,13 @@ export async function POST(request: Request) {
 
   if (!email || !password) {
     return NextResponse.json({ error: "Email and password are required." }, { status: 400 });
+  }
+
+  if (body.agreedToTerms !== true) {
+    return NextResponse.json(
+      { error: "You must agree to the Terms of Service and Privacy Policy." },
+      { status: 400 },
+    );
   }
 
   if (!isValidLiveSessionDisplayName(displayName)) {

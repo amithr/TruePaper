@@ -16,6 +16,7 @@ const textQuestion: Question = {
   correctAnswer: null,
   points: 1,
   displayOrder: 0,
+  responseConfig: {},
 };
 
 /** Minimal harness mirroring controlled exam state + autosave without wiping the field. */

@@ -1,4 +1,5 @@
 import type { Form, Question, QuestionType } from "@/lib/forms";
+import { parseResponseConfig } from "@/lib/response-types/registry";
 
 type FormRow = {
   id: string;
@@ -17,6 +18,7 @@ type QuestionRow = {
   correct_answer: string | null;
   points: number | null;
   display_order: number;
+  response_config?: unknown;
 };
 
 export const mapQuestionRow = (row: QuestionRow): Question => ({
@@ -29,6 +31,7 @@ export const mapQuestionRow = (row: QuestionRow): Question => ({
   correctAnswer: row.question_type === "multipleChoice" ? row.correct_answer : null,
   points: Math.max(1, Math.floor(Number(row.points) || 1)),
   displayOrder: row.display_order,
+  responseConfig: parseResponseConfig(row.question_type, row.response_config),
 });
 
 export const buildForms = (forms: FormRow[], questions: QuestionRow[]): Form[] => {

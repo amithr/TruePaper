@@ -116,18 +116,47 @@ export async function GET(_request: Request, { params }: Params) {
   // Activity/typing live in the narrow presence table (heartbeats no longer
   // rewrite form_responses). Fall back to the row columns if presence is empty
   // (e.g. before the scale migration backfill ran).
-  const presenceByDevice = new Map<string, { lastActivityAt: string | null; lastTypingAt: string | null }>();
-  const presence = await supabase
+  const presenceByDevice = new Map<
+    string,
+    {
+      lastActivityAt: string | null;
+      lastTypingAt: string | null;
+      syncState: "synced" | "pending" | "offline";
+      pendingSyncCount: number;
+    }
+  >();
+  const presencePrimary = await supabase
     .from("live_session_presence")
-    .select("anonymous_session_id, last_activity_at, last_typing_at")
+    .select("anonymous_session_id, last_activity_at, last_typing_at, sync_state, pending_sync_count")
     .eq("live_session_id", liveSessionId);
-  if (!presence.error) {
-    for (const p of presence.data ?? []) {
+
+  const presenceRows =
+    presencePrimary.error && isMissingColumnError(presencePrimary.error, "sync_state")
+      ? (
+          await supabase
+            .from("live_session_presence")
+            .select("anonymous_session_id, last_activity_at, last_typing_at")
+            .eq("live_session_id", liveSessionId)
+        ).data
+      : presencePrimary.data;
+
+  if (!presencePrimary.error || isMissingColumnError(presencePrimary.error, "sync_state")) {
+    for (const p of presenceRows ?? []) {
       const device = (p.anonymous_session_id as string | null)?.toLowerCase();
       if (device) {
+        const rawState = (p as { sync_state?: string | null }).sync_state;
+        const syncState =
+          rawState === "pending" || rawState === "offline" || rawState === "synced"
+            ? rawState
+            : "synced";
         presenceByDevice.set(device, {
           lastActivityAt: (p.last_activity_at as string | null) ?? null,
           lastTypingAt: (p.last_typing_at as string | null) ?? null,
+          syncState,
+          pendingSyncCount: Math.max(
+            0,
+            Number((p as { pending_sync_count?: number | null }).pending_sync_count) || 0,
+          ),
         });
       }
     }
@@ -160,6 +189,8 @@ export async function GET(_request: Request, { params }: Params) {
     const pres = presenceByDevice.get(deviceKey);
     const lastActivityAt = pres?.lastActivityAt ?? (r.last_activity_at as string | null);
     const lastTypingAt = pres?.lastTypingAt ?? (r.last_typing_at as string | null);
+    const syncState = pres?.syncState ?? "synced";
+    const pendingSyncCount = pres?.pendingSyncCount ?? 0;
     const grades = parseQuestionGrades(r.text_grades);
     const pointsEarned = gradedAt ? sumEarnedPoints(grades, questions) : null;
     const answers = parseStudentAnswersJson(r.answers);
@@ -183,6 +214,8 @@ export async function GET(_request: Request, { params }: Params) {
       textWordCount,
       lastActivityAt,
       lastTypingAt,
+      syncState,
+      pendingSyncCount,
       updatedAt: r.updated_at as string,
     };
   });

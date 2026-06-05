@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 
 import type { Form, QuestionType } from "@/lib/forms";
+import { parseResponseConfig } from "@/lib/response-types/registry";
+import { normalizeResponseType } from "@/lib/response-types/types";
 import { isValidResumeCodeFormat, normalizeResumeCode } from "@/lib/resume-code";
+import { fetchSessionDeliveryMode } from "@/lib/offline/delivery-mode";
 import { createSupabaseAnonServiceClient } from "@/lib/supabase/anon-service";
 
 type LookupPayload = {
@@ -24,6 +27,7 @@ type LookupPayload = {
     type: QuestionType;
     options: unknown;
     displayOrder: number;
+    responseConfig?: unknown;
   }>;
 };
 
@@ -32,13 +36,14 @@ function mapQuestions(rows: NonNullable<LookupPayload["questions"]>): Form["ques
     .map((row) => ({
       id: row.id,
       prompt: row.prompt,
-      type: row.type === "multipleChoice" || row.type === "text" ? row.type : "text",
+      type: normalizeResponseType(row.type),
       options: Array.isArray(row.options)
         ? row.options.filter((o): o is string => typeof o === "string")
         : [],
       correctAnswer: null,
       points: 1,
       displayOrder: Number(row.displayOrder) || 0,
+      responseConfig: parseResponseConfig(row.type, row.responseConfig),
     }))
     .sort((a, b) => a.displayOrder - b.displayOrder);
 }
@@ -106,6 +111,10 @@ export async function GET(request: Request) {
       questions: mapQuestions(payload.questions ?? []),
     };
 
+    const deliveryMode = payload.liveSessionId
+      ? await fetchSessionDeliveryMode(supabase, payload.liveSessionId)
+      : "live";
+
     return NextResponse.json({
       liveSessionId: payload.liveSessionId,
       formId: payload.formId,
@@ -115,6 +124,7 @@ export async function GET(request: Request) {
       resumeCode: payload.resumeCode ?? code,
       opensAt: payload.opensAt,
       closesAt: payload.closesAt,
+      deliveryMode,
       form,
     });
   } catch (e) {

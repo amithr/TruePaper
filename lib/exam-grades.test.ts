@@ -23,6 +23,7 @@ const mcQuestion: Question = {
   correctAnswer: "B",
   points: 5,
   displayOrder: 0,
+  responseConfig: {},
 };
 
 describe("parseQuestionGrades", () => {

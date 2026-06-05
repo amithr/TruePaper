@@ -48,6 +48,7 @@ export default function SessionExamListPage() {
   const [loadError, setLoadError] = useState("");
   const [lastOverviewSyncAt, setLastOverviewSyncAt] = useState<number | null>(null);
   const [rosterFilter, setRosterFilter] = useState<GradingRosterFilter>("all");
+  const [filterInitialized, setFilterInitialized] = useState(false);
 
   const liveDraftsByDevice = EMPTY_LIVE_DRAFTS;
 
@@ -62,13 +63,20 @@ export default function SessionExamListPage() {
       );
       setOverview(data);
       setLastOverviewSyncAt(Date.now());
+      if (!filterInitialized) {
+        const needs = countNeedsGrading(data.participants);
+        if (needs > 0) {
+          setRosterFilter("needs-grading");
+        }
+        setFilterInitialized(true);
+      }
     } catch (e) {
       const message = messageForBackgroundRefreshError(e, t("session.errors.loadExamList"));
       if (message) {
         setLoadError(message);
       }
     }
-  }, [liveSessionId, t]);
+  }, [filterInitialized, liveSessionId, t]);
 
   useEffect(() => {
     if (!liveSessionId) {
@@ -251,7 +259,6 @@ export default function SessionExamListPage() {
           ) : (
             <div className="mt-4">
               <SessionExamRoster
-                liveSessionId={liveSessionId}
                 textQuestionIds={s.textQuestionIds}
                 liveDraftsByDevice={liveDraftsByDevice}
                 participants={displayedParticipants}
