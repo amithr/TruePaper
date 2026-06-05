@@ -68,8 +68,12 @@ test.describe("Live exam E2E", () => {
     await teacherPage.goto(
       `/dashboard/sessions/${fixture!.liveSessionId}/watch/${encodeURIComponent(deviceId)}`,
     );
+    const watchAnswer = teacherPage.getByTestId("teacher-watch-answer");
+    await expect(watchAnswer).toBeVisible({ timeout: 30_000 });
+    // Focusing the answer opens the live feedback editor when feedback is enabled.
+    await watchAnswer.click();
     const feedbackInput = teacherPage.getByTestId("teacher-live-feedback-input");
-    await expect(feedbackInput).toBeVisible({ timeout: 30_000 });
+    await expect(feedbackInput).toBeVisible({ timeout: 10_000 });
 
     const feedbackSaved = teacherPage.waitForResponse(
       (res) =>

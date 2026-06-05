@@ -1103,8 +1103,10 @@ export default function HomeClient({
       return;
     }
     setAutosaveStatus(t("home.autosave.saving"));
-    offlineSync.scheduleSync();
-  }, [answerSyncEnabled, offlineSync, setAutosaveStatus, t]);
+    offlineSyncRef.current.scheduleSync();
+  }, [answerSyncEnabled, setAutosaveStatus, t]);
+
+  const scheduleStudentAutosaveRef = useLatestRef(scheduleStudentAutosave);
 
   const patchTextAnswer = useCallback(
     (questionId: string, next: string) => {
@@ -1136,7 +1138,7 @@ export default function HomeClient({
     if (!studentAnswersHydrated || !joinedSession || !sessionOpen || examSuspended || examFinished) {
       return;
     }
-    scheduleStudentAutosave();
+    scheduleStudentAutosaveRef.current();
   }, [
     examAnswers,
     studentAnswersHydrated,
@@ -1144,7 +1146,7 @@ export default function HomeClient({
     sessionOpen,
     examSuspended,
     examFinished,
-    scheduleStudentAutosave,
+    scheduleStudentAutosaveRef,
   ]);
 
   useEffect(() => {

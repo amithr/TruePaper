@@ -1208,6 +1208,7 @@ begin
   set
     pending_sync_count = greatest(0, coalesce(p_pending_sync_count, 0)),
     sync_state = case
+      when p_sync_state = 'offline' then 'offline'
       when coalesce(p_pending_sync_count, 0) > 0 then 'pending'
       when p_sync_state in ('offline', 'pending', 'synced') then p_sync_state
       else 'synced'

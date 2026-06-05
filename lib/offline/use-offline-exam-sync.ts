@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { StudentAnswers } from "@/lib/forms";
 import { saveLocalAnswers } from "@/lib/offline/answer-store";
@@ -19,6 +19,32 @@ import { drainSyncQueue } from "@/lib/offline/sync-engine";
 import { putStudentAnswersSync } from "@/lib/offline/sync-transport";
 import type { ConnectionSnapshot } from "@/lib/offline/types";
 import { stableStringifyStudentAnswers } from "@/lib/student-answers-json";
+
+function snapshotsEqual(a: ConnectionSnapshot, b: ConnectionSnapshot): boolean {
+  return (
+    a.state === b.state &&
+    a.pendingCount === b.pendingCount &&
+    a.lastSyncedAt === b.lastSyncedAt &&
+    a.idbAvailable === b.idbAvailable
+  );
+}
+
+function deriveSyncState(input: {
+  pending: number;
+  synced: number;
+  failed: number;
+}): ClientSyncState {
+  const navOnline = typeof navigator !== "undefined" && navigator.onLine;
+  // Transport failures with pending work mean we cannot reach the server — even when
+  // navigator.onLine is still true (Playwright offline, captive portals, etc.).
+  const transportUnreachable = input.failed > 0 && input.synced === 0 && input.pending > 0;
+  const reachable = input.synced > 0 || (navOnline && !transportUnreachable);
+
+  if (input.pending > 0) {
+    return reachable ? "syncing" : "offline";
+  }
+  return reachable ? "synced" : "local_only";
+}
 
 type Options = {
   liveSessionId: string | null;
@@ -52,6 +78,7 @@ export function useOfflineExamSync({
   const lastSentAtRef = useRef(0);
   const lastSyncedAtRef = useRef<number | null>(null);
   const drainInFlightRef = useRef<Promise<void> | null>(null);
+  const runDrainRef = useRef<() => Promise<void>>(async () => {});
   const onStatusChangeRef = useRef(onStatusChange);
   const onSyncedRef = useRef(onSynced);
   const getAnswersRef = useRef(getAnswers);
@@ -68,6 +95,9 @@ export function useOfflineExamSync({
         const merged = { ...prev, ...next };
         if (merged.lastSyncedAt != null) {
           lastSyncedAtRef.current = merged.lastSyncedAt;
+        }
+        if (snapshotsEqual(prev, merged)) {
+          return prev;
         }
         onStatusChangeRef.current?.(merged);
         return merged;
@@ -108,7 +138,10 @@ export function useOfflineExamSync({
     }
 
     const drain = (async () => {
-      publish({ state: "syncing" });
+      const browserOffline = typeof navigator !== "undefined" && !navigator.onLine;
+      if (!browserOffline) {
+        publish({ state: "syncing" });
+      }
       try {
         const result = await drainSyncQueue(liveSessionId, deviceId, (item) =>
           putStudentAnswersSync({
@@ -119,21 +152,10 @@ export function useOfflineExamSync({
             submissionId: item.submissionId,
           }),
         );
-        // Trust the actual transport result over navigator.onLine (false negatives).
-        // A successful sync proves we're online even if the browser flag disagrees.
-        const navOnline = typeof navigator !== "undefined" && navigator.onLine;
-        const online = navOnline || result.synced > 0;
         const syncedAt = result.synced > 0 ? Date.now() : lastSyncedAtRef.current;
         publish({
           pendingCount: result.pending,
-          state:
-            result.pending > 0
-              ? online
-                ? "syncing"
-                : "offline"
-              : online
-                ? "synced"
-                : "local_only",
+          state: deriveSyncState(result),
           lastSyncedAt: syncedAt,
         });
         if (result.pending === 0) {
@@ -148,6 +170,10 @@ export function useOfflineExamSync({
     await drain;
   }, [liveSessionId, deviceId, displayName, markFullySynced, publish]);
 
+  useEffect(() => {
+    runDrainRef.current = runDrain;
+  }, [runDrain]);
+
   const scheduleSync = useCallback(() => {
     if (!enabled || !liveSessionId || !deviceId || !displayName) {
       return;
@@ -157,11 +183,17 @@ export function useOfflineExamSync({
     if (json === lastSentJsonRef.current) {
       void (async () => {
         const pending = await refreshPending();
-        const online = typeof navigator !== "undefined" && navigator.onLine;
+        const navOnline = typeof navigator !== "undefined" && navigator.onLine;
         publish({
           pendingCount: pending,
           state:
-            pending > 0 ? (online ? "syncing" : "offline") : online ? "synced" : "local_only",
+            pending > 0
+              ? navOnline
+                ? "syncing"
+                : "offline"
+              : navOnline
+                ? "synced"
+                : "local_only",
         });
         if (pending === 0) {
           markFullySynced();
@@ -172,9 +204,8 @@ export function useOfflineExamSync({
     if (dirtySinceRef.current === null) {
       dirtySinceRef.current = Date.now();
     }
-    // Optimistically show "syncing"; the drain reports real offline status if the
-    // request actually fails (navigator.onLine is unreliable, so don't trust it here).
-    publish({ state: "syncing" });
+    const browserOffline = typeof navigator !== "undefined" && !navigator.onLine;
+    publish({ state: browserOffline ? "offline" : "syncing" });
 
     const flush = async () => {
       const current = getAnswersRef.current();
@@ -260,19 +291,18 @@ export function useOfflineExamSync({
   useEffect(() => {
     const onOnline = () => {
       publish({ state: "syncing" });
-      void runDrain();
+      void runDrainRef.current();
     };
     const onOffline = () => publish({ state: "offline" });
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
     // Optimistic on load: assume reachable and let a failed request prove otherwise.
-    // The "offline" event still flips us if the connection genuinely drops.
     publish({ state: "synced" });
     return () => {
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
     };
-  }, [publish, runDrain]);
+  }, [publish]);
 
   useEffect(() => {
     if (!enabled) {
@@ -293,11 +323,14 @@ export function useOfflineExamSync({
     return () => window.removeEventListener("pagehide", onPageHide);
   }, [enabled, liveSessionId, deviceId, displayName, runDrain]);
 
-  return {
-    snapshot,
-    scheduleSync,
-    flushNow,
-    acknowledgeSynced,
-    refreshPending,
-  };
+  return useMemo(
+    () => ({
+      snapshot,
+      scheduleSync,
+      flushNow,
+      acknowledgeSynced,
+      refreshPending,
+    }),
+    [snapshot, scheduleSync, flushNow, acknowledgeSynced, refreshPending],
+  );
 }

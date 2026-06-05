@@ -187,6 +187,56 @@ describe("useOfflineExamSync", () => {
     expect(result.current.snapshot.state).toBe("synced");
   });
 
+  it("returns stable scheduleSync identity across rerenders", async () => {
+    const getAnswers = vi.fn(() => ({}));
+    const { result, rerender } = renderHook(
+      (props: { enabled: boolean }) =>
+        useOfflineExamSync({
+          enabled: props.enabled,
+          liveSessionId: TEST_LIVE_SESSION_ID,
+          deviceId: TEST_DEVICE_ID,
+          displayName: TEST_DISPLAY_NAME,
+          getAnswers,
+        }),
+      { initialProps: { enabled: true } },
+    );
+
+    await waitFor(() => expect(result.current.snapshot.idbAvailable).toBe(true));
+    const firstScheduleSync = result.current.scheduleSync;
+
+    rerender({ enabled: true });
+    expect(result.current.scheduleSync).toBe(firstScheduleSync);
+  });
+
+  it("reports offline after transport failure while browser claims online", async () => {
+    Object.defineProperty(navigator, "onLine", { value: true, configurable: true });
+    drainSyncQueue.mockResolvedValue({ synced: 0, failed: 1, pending: 1 });
+
+    const { result } = renderHook(() =>
+      useOfflineExamSync({
+        enabled: true,
+        liveSessionId: TEST_LIVE_SESSION_ID,
+        deviceId: TEST_DEVICE_ID,
+        displayName: TEST_DISPLAY_NAME,
+        getAnswers: () => ({ q1: "answer" }),
+      }),
+    );
+
+    await waitFor(() => expect(result.current.snapshot.idbAvailable).toBe(true));
+
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        result.current.scheduleSync();
+        await vi.advanceTimersByTimeAsync(SYNC_DEBOUNCE_MS + 50);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    await waitFor(() => expect(result.current.snapshot.state).toBe("offline"));
+  });
+
   it("acknowledgeSynced clears pending queue and marks synced", async () => {
     const answers = { q1: "done" };
     const onSynced = vi.fn();
