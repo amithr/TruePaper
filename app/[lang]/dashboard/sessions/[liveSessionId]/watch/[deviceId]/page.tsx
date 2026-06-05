@@ -562,8 +562,9 @@ export default function WatchStudentExamPage() {
     }, 500);
   }, []);
 
-  const flushAllGradeSaves = useCallback(() => {
+  const flushAllGradeSaves = useCallback(async () => {
     const ids = Object.keys(gradeSaveTimerRef.current);
+    const pending: Promise<void>[] = [];
     for (const qid of ids) {
       const timer = gradeSaveTimerRef.current[qid];
       if (timer !== undefined) {
@@ -571,14 +572,15 @@ export default function WatchStudentExamPage() {
         delete gradeSaveTimerRef.current[qid];
         const question = snapshot?.form.questions.find((q) => q.id === qid);
         if (question) {
-          void persistGradeRef.current(question);
+          pending.push(persistGradeRef.current(question));
         }
       }
     }
+    await Promise.all(pending);
   }, [snapshot]);
 
   useEffect(() => {
-    const onHide = () => flushAllGradeSaves();
+    const onHide = () => void flushAllGradeSaves();
     window.addEventListener("pagehide", onHide);
     // Snapshot ref maps at effect setup so cleanup acts on the same instances
     // even if the refs are reassigned later.
@@ -598,8 +600,8 @@ export default function WatchStudentExamPage() {
   const markExamGraded = async () => {
     setMarkingGraded(true);
     setLoadError("");
-    flushAllGradeSaves();
     try {
+      await flushAllGradeSaves();
       await requestJson<{ ok: true }>(
         `/api/forms/live-sessions/${liveSessionId}/participants/${encodeURIComponent(deviceIdNorm)}/mark-graded`,
         { method: "POST" },
@@ -759,7 +761,7 @@ export default function WatchStudentExamPage() {
               possible={st.graded ? (snapshot.pointsPossible ?? possibleTotal) : possibleTotal}
               size={84}
               stroke={9}
-              animate
+              animate={st.graded}
             />
             <div className="tp-grade-strip__progress">
               <div className="flex flex-wrap items-baseline justify-between gap-2">

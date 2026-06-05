@@ -133,7 +133,9 @@ export function TeacherResponseWatch({
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    deferEffect(() => setAnnotationDraft(canvasStrokes));
+    deferEffect(() => {
+      setAnnotationDraft((prev) => (prev === canvasStrokes ? prev : canvasStrokes));
+    });
   }, [canvasStrokes]);
 
   const scheduleCanvasSave = useCallback(

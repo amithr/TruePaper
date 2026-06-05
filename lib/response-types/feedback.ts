@@ -1,5 +1,10 @@
 import type { DrawingStroke } from "@/lib/response-types/drawing";
-import type { RubricScoreEntry, TeacherFeedbackPayload } from "@/lib/response-types/types";
+import type { InlineComment, RubricScoreEntry, TeacherFeedbackPayload } from "@/lib/response-types/types";
+
+/** Stable empty collections — avoid new [] references that retrigger effects. */
+const EMPTY_RUBRIC_SCORES: RubricScoreEntry[] = [];
+const EMPTY_INLINE_COMMENTS: InlineComment[] = [];
+const EMPTY_CANVAS_STROKES: DrawingStroke[] = [];
 
 /** Wire keys in live_teacher_feedback jsonb. */
 export type FeedbackKey = string;
@@ -122,7 +127,7 @@ export function getRubricScores(
   if (payload?.kind === "rubric") {
     return payload.scores;
   }
-  return [];
+  return EMPTY_RUBRIC_SCORES;
 }
 
 export function getInlineComments(store: TeacherFeedbackStore, questionId: string) {
@@ -130,7 +135,7 @@ export function getInlineComments(store: TeacherFeedbackStore, questionId: strin
   if (payload?.kind === "inline") {
     return payload.comments;
   }
-  return [];
+  return EMPTY_INLINE_COMMENTS;
 }
 
 export function getCanvasAnnotation(
@@ -141,7 +146,7 @@ export function getCanvasAnnotation(
   if (payload?.kind === "canvas" && Array.isArray(payload.strokes)) {
     return payload.strokes;
   }
-  return [];
+  return EMPTY_CANVAS_STROKES;
 }
 
 /** Whole-message text for student card (legacy + message kind). */

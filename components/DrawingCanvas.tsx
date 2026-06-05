@@ -46,7 +46,9 @@ export function DrawingCanvas({
   const [localStrokes, setLocalStrokes] = useState(strokes);
 
   useEffect(() => {
-    deferEffect(() => setLocalStrokes(strokes));
+    deferEffect(() => {
+      setLocalStrokes((prev) => (prev === strokes ? prev : strokes));
+    });
   }, [strokes]);
 
   const paint = useCallback(() => {

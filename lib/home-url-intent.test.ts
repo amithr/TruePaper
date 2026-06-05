@@ -15,6 +15,10 @@ describe("home-url-intent", () => {
     expect(readTeacherHomeIntent({ search: "?resume=ABCDEFGH", hash: "" })).toBe("join");
   });
 
+  it("detects join intent from fresh device query", () => {
+    expect(readTeacherHomeIntent({ search: "?new=1", hash: "" })).toBe("join");
+  });
+
   it("detects join intent from hash", () => {
     expect(readTeacherHomeIntent({ search: "", hash: "#join-session" })).toBe("join");
   });

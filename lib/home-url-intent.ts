@@ -28,6 +28,9 @@ export function readTeacherHomeIntent(parts?: UrlParts): TeacherHomeIntent {
   if (params.has("code") || params.has("join") || params.has("resume")) {
     return "join";
   }
+  if (params.get("new") === "1" || params.has("student")) {
+    return "join";
+  }
   if (url.hash === "#join-session" || url.hash.startsWith("#join-session")) {
     return "join";
   }

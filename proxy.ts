@@ -67,7 +67,11 @@ function isLocalizedHome(pathname: string): Locale | null {
 function hasStudentJoinQuery(request: NextRequest): boolean {
   const { searchParams } = request.nextUrl;
   return (
-    searchParams.has("code") || searchParams.has("join") || searchParams.has("resume")
+    searchParams.has("code") ||
+    searchParams.has("join") ||
+    searchParams.has("resume") ||
+    searchParams.get("new") === "1" ||
+    searchParams.has("student")
   );
 }
 
