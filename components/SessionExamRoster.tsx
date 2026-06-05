@@ -34,9 +34,26 @@ function statusBadgeClass(status: LiveParticipantUiStatus): string {
       return "tp-status tp-status-typing";
     case "idle":
       return "tp-status tp-status-idle";
+    case "started":
+      return "tp-status tp-status-started";
     default:
       return "tp-status tp-status-neutral";
   }
+}
+
+function StatusChip({
+  status,
+  label,
+}: {
+  status: LiveParticipantUiStatus;
+  label: string;
+}) {
+  return (
+    <span className={statusBadgeClass(status)} data-testid="roster-status-badge" data-status={status}>
+      <span className="tp-status-dot" aria-hidden />
+      {label}
+    </span>
+  );
 }
 
 function SyncStatusBadge({
@@ -58,6 +75,11 @@ function SyncStatusBadge({
     );
   }
   if (p.syncState === "pending" || p.pendingSyncCount > 0) {
+    const pendingCount = Math.max(1, p.pendingSyncCount);
+    const pendingLabel =
+      pendingCount === 1
+        ? t("session.status.syncPendingOne")
+        : t("session.status.syncPendingOther", { n: pendingCount });
     return (
       <span
         className="tp-status tp-status-sync-pending"
@@ -65,7 +87,7 @@ function SyncStatusBadge({
         data-sync-state="pending"
       >
         <span className="tp-status-dot" aria-hidden />
-        {t("session.status.syncPending", { n: p.pendingSyncCount || 1 })}
+        {pendingLabel}
       </span>
     );
   }
@@ -79,47 +101,27 @@ function RosterStatusBadge({
   participant: LiveSessionOverviewParticipant;
   t: ReturnType<typeof useTranslations>;
 }) {
-  if (p.status === "typing") {
-    return (
-      <span className={statusBadgeClass("typing")}>
-        <span className="tp-status-dot" aria-hidden />
-        {t("session.status.typingLive")}
-      </span>
-    );
-  }
   if (p.finishedAt && !p.gradedAt) {
-    return (
-      <span className={statusBadgeClass("finished")}>
-        <span className="tp-status-dot" aria-hidden />
-        {t("session.status.submittedPill")}
-      </span>
-    );
+    return <StatusChip status="finished" label={t("session.status.submittedPill")} />;
   }
-  if (p.status === "graded") {
-    return (
-      <span className={statusBadgeClass("graded")}>
-        <span className="tp-status-dot" aria-hidden />
-        {t("session.status.gradedPill")}
-      </span>
-    );
+  if (p.gradedAt || p.status === "graded") {
+    return <StatusChip status="graded" label={t("session.status.gradedPill")} />;
   }
-  if (p.status === "blocked") {
-    return (
-      <span className={statusBadgeClass("blocked")}>
-        <span className="tp-status-dot" aria-hidden />
-        {t("session.status.paused")}
-      </span>
-    );
+
+  switch (p.status) {
+    case "typing":
+      return <StatusChip status="typing" label={t("session.status.typingLive")} />;
+    case "blocked":
+      return <StatusChip status="blocked" label={t("session.status.paused")} />;
+    case "idle":
+      return <StatusChip status="idle" label={t("session.status.idle")} />;
+    case "started":
+      return <StatusChip status="started" label={t("session.status.workingPill")} />;
+    case "finished":
+      return <StatusChip status="finished" label={t("session.status.submittedPill")} />;
+    default:
+      return <StatusChip status="idle" label={t("session.status.idle")} />;
   }
-  if (p.status === "idle") {
-    return (
-      <span className={statusBadgeClass("idle")}>
-        <span className="tp-status-dot" aria-hidden />
-        {t("session.status.idle")}
-      </span>
-    );
-  }
-  return null;
 }
 
 function rosterSubtitle(
@@ -212,7 +214,7 @@ function RosterRow({
                 )}
               </span>
             </div>
-            <div className="flex flex-wrap items-center justify-end gap-1.5">
+            <div className="tp-roster-row__statuses">
               <SyncStatusBadge participant={p} t={t} />
               <RosterStatusBadge participant={p} t={t} />
             </div>
@@ -270,7 +272,7 @@ function RosterRow({
               </p>
             ) : null}
           </div>
-          <div className="flex flex-wrap items-center justify-end gap-1.5">
+          <div className="tp-roster-row__statuses">
             <SyncStatusBadge participant={p} t={t} />
             <RosterStatusBadge participant={p} t={t} />
           </div>

@@ -740,6 +740,16 @@ body {
   background: var(--tp-text-muted);
 }
 
+.tp-status-started {
+  background: var(--tp-sky-soft);
+  color: var(--tp-sky-text);
+  border-color: var(--tp-sky-border);
+}
+
+.tp-status-started .tp-status-dot {
+  background: var(--tp-sky);
+}
+
 .tp-status-finished {
   background: var(--tp-mint-soft);
   color: var(--tp-success-text);
@@ -1712,6 +1722,16 @@ body {
 .tp-roster-row__identity {
   min-width: 0;
   flex: 1;
+}
+
+.tp-roster-row__statuses {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.375rem;
+  flex-shrink: 0;
+  max-width: 100%;
 }
 
 .tp-roster-row__name {

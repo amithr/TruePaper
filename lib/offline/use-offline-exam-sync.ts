@@ -47,7 +47,7 @@ export function useOfflineExamSync({
   const lastSentJsonRef = useRef<string>("");
   const lastSentAtRef = useRef(0);
   const lastSyncedAtRef = useRef<number | null>(null);
-  const drainingRef = useRef(false);
+  const drainInFlightRef = useRef<Promise<void> | null>(null);
   const onStatusChangeRef = useRef(onStatusChange);
   const onSyncedRef = useRef(onSynced);
   const getAnswersRef = useRef(getAnswers);
@@ -81,45 +81,65 @@ export function useOfflineExamSync({
     return count;
   }, [liveSessionId, deviceId, publish]);
 
-  const runDrain = useCallback(async () => {
-    if (!liveSessionId || !deviceId || !displayName || drainingRef.current) {
+  const markFullySynced = useCallback(() => {
+    const json = stableStringifyStudentAnswers(getAnswersRef.current());
+    lastSentJsonRef.current = json;
+    onSyncedRef.current?.(json);
+  }, []);
+
+  const cancelScheduledFlush = useCallback(() => {
+    if (debounceRef.current !== undefined) {
+      window.clearTimeout(debounceRef.current);
+      debounceRef.current = undefined;
+    }
+  }, []);
+
+  const runDrain = useCallback(async (): Promise<void> => {
+    if (!liveSessionId || !deviceId || !displayName) {
       return;
     }
-    drainingRef.current = true;
-    publish({ state: "syncing" });
-    try {
-      const result = await drainSyncQueue(liveSessionId, deviceId, (item) =>
-        putStudentAnswersSync({
-          liveSessionId: item.liveSessionId,
-          deviceId: item.deviceId,
-          displayName: item.displayName,
-          answers: item.answers,
-          submissionId: item.submissionId,
-        }),
-      );
-      const online = typeof navigator !== "undefined" && navigator.onLine;
-      const syncedAt = result.synced > 0 ? Date.now() : lastSyncedAtRef.current;
-      publish({
-        pendingCount: result.pending,
-        state:
-          result.pending > 0
-            ? online
-              ? "syncing"
-              : "offline"
-            : online
-              ? "synced"
-              : "local_only",
-        lastSyncedAt: syncedAt,
-      });
-      if (result.synced > 0) {
-        const json = stableStringifyStudentAnswers(getAnswersRef.current());
-        lastSentJsonRef.current = json;
-        onSyncedRef.current?.(json);
-      }
-    } finally {
-      drainingRef.current = false;
+    if (drainInFlightRef.current) {
+      await drainInFlightRef.current;
+      return;
     }
-  }, [liveSessionId, deviceId, displayName, publish]);
+
+    const drain = (async () => {
+      publish({ state: "syncing" });
+      try {
+        const result = await drainSyncQueue(liveSessionId, deviceId, (item) =>
+          putStudentAnswersSync({
+            liveSessionId: item.liveSessionId,
+            deviceId: item.deviceId,
+            displayName: item.displayName,
+            answers: item.answers,
+            submissionId: item.submissionId,
+          }),
+        );
+        const online = typeof navigator !== "undefined" && navigator.onLine;
+        const syncedAt = result.synced > 0 ? Date.now() : lastSyncedAtRef.current;
+        publish({
+          pendingCount: result.pending,
+          state:
+            result.pending > 0
+              ? online
+                ? "syncing"
+                : "offline"
+              : online
+                ? "synced"
+                : "local_only",
+          lastSyncedAt: syncedAt,
+        });
+        if (result.pending === 0) {
+          markFullySynced();
+        }
+      } finally {
+        drainInFlightRef.current = null;
+      }
+    })();
+
+    drainInFlightRef.current = drain;
+    await drain;
+  }, [liveSessionId, deviceId, displayName, markFullySynced, publish]);
 
   const scheduleSync = useCallback(() => {
     if (!enabled || !liveSessionId || !deviceId || !displayName) {
@@ -128,6 +148,18 @@ export function useOfflineExamSync({
     const answers = getAnswersRef.current();
     const json = stableStringifyStudentAnswers(answers);
     if (json === lastSentJsonRef.current) {
+      void (async () => {
+        const pending = await refreshPending();
+        const online = typeof navigator !== "undefined" && navigator.onLine;
+        publish({
+          pendingCount: pending,
+          state:
+            pending > 0 ? (online ? "syncing" : "offline") : online ? "synced" : "local_only",
+        });
+        if (pending === 0) {
+          markFullySynced();
+        }
+      })();
       return;
     }
     if (dirtySinceRef.current === null) {
@@ -149,12 +181,10 @@ export function useOfflineExamSync({
       await refreshPending();
       dirtySinceRef.current = null;
       lastSentAtRef.current = Date.now();
-      void runDrain();
+      await runDrain();
     };
 
-    if (debounceRef.current !== undefined) {
-      window.clearTimeout(debounceRef.current);
-    }
+    cancelScheduledFlush();
 
     const dirtyFor = Date.now() - (dirtySinceRef.current ?? Date.now());
     const sinceLast = Date.now() - lastSentAtRef.current;
@@ -163,7 +193,39 @@ export function useOfflineExamSync({
     } else {
       debounceRef.current = window.setTimeout(() => void flush(), SYNC_DEBOUNCE_MS);
     }
-  }, [enabled, liveSessionId, deviceId, displayName, publish, refreshPending, runDrain]);
+  }, [
+    enabled,
+    liveSessionId,
+    deviceId,
+    displayName,
+    cancelScheduledFlush,
+    markFullySynced,
+    publish,
+    refreshPending,
+    runDrain,
+  ]);
+
+  const flushNow = useCallback(async (): Promise<{ pending: number }> => {
+    if (!liveSessionId || !deviceId || !displayName) {
+      return { pending: 0 };
+    }
+
+    cancelScheduledFlush();
+    const current = getAnswersRef.current();
+    await saveLocalAnswers(liveSessionId, deviceId, current);
+    await enqueueSyncItem({
+      liveSessionId,
+      deviceId,
+      displayName,
+      answers: current,
+    });
+    dirtySinceRef.current = null;
+    lastSentAtRef.current = Date.now();
+    await refreshPending();
+    await runDrain();
+    const pending = await refreshPending();
+    return { pending };
+  }, [liveSessionId, deviceId, displayName, cancelScheduledFlush, refreshPending, runDrain]);
 
   useEffect(() => {
     void isIdbAvailable().then((ok) => publish({ idbAvailable: ok }));
@@ -206,7 +268,7 @@ export function useOfflineExamSync({
   return {
     snapshot,
     scheduleSync,
-    flushNow: runDrain,
+    flushNow,
     refreshPending,
   };
 }

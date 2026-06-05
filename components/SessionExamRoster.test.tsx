@@ -55,7 +55,7 @@ describe("SessionExamRoster", () => {
     );
     const badge = screen.getByTestId("roster-sync-badge");
     expect(badge).toHaveAttribute("data-sync-state", "pending");
-    expect(badge.textContent).toMatch(/4/);
+    expect(badge.textContent).toMatch(/4 pending syncs/);
   });
 
   it("hides sync badge after submission", () => {
@@ -74,5 +74,34 @@ describe("SessionExamRoster", () => {
       />,
     );
     expect(screen.queryByTestId("roster-sync-badge")).not.toBeInTheDocument();
+  });
+
+  it("shows status chips for working, idle, and submitted students", () => {
+    renderWithI18n(
+      <SessionExamRoster
+        textQuestionIds={[]}
+        participants={[
+          participant({ status: "started", displayName: "Working Student" }),
+          participant({
+            anonymousSessionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            status: "idle",
+            displayName: "Idle Student",
+          }),
+          participant({
+            anonymousSessionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            finishedAt: "2026-06-05T12:05:00.000Z",
+            status: "finished",
+            displayName: "Done Student",
+          }),
+        ]}
+        liveDraftsByDevice={{}}
+        onOpenExam={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Working")).toBeInTheDocument();
+    expect(screen.getByText("Idle")).toBeInTheDocument();
+    expect(screen.getByText("Submitted")).toBeInTheDocument();
+    expect(screen.getAllByTestId("roster-status-badge")).toHaveLength(3);
   });
 });

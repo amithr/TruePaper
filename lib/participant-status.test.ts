@@ -69,4 +69,19 @@ describe("computeLiveParticipantUiStatus", () => {
       ),
     ).toBe("finished");
   });
+
+  it("returns started when recently active", () => {
+    expect(
+      computeLiveParticipantUiStatus(
+        {
+          suspendedAt: null,
+          finishedAt: null,
+          lastActivityAt: new Date(now - 5000).toISOString(),
+          lastTypingAt: null,
+        },
+        true,
+        now,
+      ),
+    ).toBe("started");
+  });
 });

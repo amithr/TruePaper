@@ -1840,19 +1840,23 @@ export default function HomeClient({
       autosaveTimerRef.current = undefined;
     }
     try {
-      await offlineSync.flushNow();
-      await requestJson<{ ok: true }>(
-        `/api/public/live-sessions/${joinedSession.liveSessionId}/responses`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            deviceId: anonymousSessionId,
-            displayName: activeExamDisplayName,
-            answers,
-          }),
-        },
-      );
+      setAutosaveStatus(t("home.autosave.saving"));
+      const { pending } = await offlineSync.flushNow();
+      if (pending > 0) {
+        await requestJson<{ ok: true }>(
+          `/api/public/live-sessions/${joinedSession.liveSessionId}/responses`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              deviceId: anonymousSessionId,
+              displayName: activeExamDisplayName,
+              answers,
+            }),
+          },
+        );
+        lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(answers);
+      }
       await requestJson<{ ok: true }>(
         `/api/public/live-sessions/${joinedSession.liveSessionId}/finish`,
         {
@@ -1864,11 +1868,13 @@ export default function HomeClient({
           }),
         },
       );
+      setAutosaveStatus(t("home.autosave.saved"));
       clearJoinFormFields();
       leaveJoinedSession();
       router.replace("/");
       router.refresh();
     } catch (error) {
+      setAutosaveStatus(t("home.autosave.failed"));
       setStatusMessage(error instanceof Error ? error.message : t("home.errors.submitExam"));
     } finally {
       suspendAutosaveRef.current = false;

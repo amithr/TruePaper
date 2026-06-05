@@ -109,6 +109,7 @@ describe("useOfflineExamSync", () => {
   it("does not reschedule when answers are unchanged", async () => {
     const answers = { q1: "same" };
     const getAnswers = vi.fn(() => answers);
+    const onSynced = vi.fn();
 
     const { result } = renderHook(() =>
       useOfflineExamSync({
@@ -117,6 +118,7 @@ describe("useOfflineExamSync", () => {
         deviceId: TEST_DEVICE_ID,
         displayName: TEST_DISPLAY_NAME,
         getAnswers,
+        onSynced,
       }),
     );
 
@@ -129,6 +131,7 @@ describe("useOfflineExamSync", () => {
         await vi.advanceTimersByTimeAsync(SYNC_DEBOUNCE_MS + 50);
       });
       enqueueSyncItem.mockClear();
+      onSynced.mockClear();
 
       await act(async () => {
         result.current.scheduleSync();
@@ -139,5 +142,40 @@ describe("useOfflineExamSync", () => {
     }
 
     expect(enqueueSyncItem).not.toHaveBeenCalled();
+    await waitFor(() => expect(onSynced).toHaveBeenCalled());
+  });
+
+  it("flushNow enqueues latest answers and waits for drain", async () => {
+    const answers = { q1: "final" };
+    drainSyncQueue.mockResolvedValue({ synced: 1, pending: 0 });
+    const onSynced = vi.fn();
+
+    const { result } = renderHook(() =>
+      useOfflineExamSync({
+        enabled: true,
+        liveSessionId: TEST_LIVE_SESSION_ID,
+        deviceId: TEST_DEVICE_ID,
+        displayName: TEST_DISPLAY_NAME,
+        getAnswers: () => answers,
+        onSynced,
+      }),
+    );
+
+    await waitFor(() => expect(result.current.snapshot.idbAvailable).toBe(true));
+
+    await act(async () => {
+      const flushResult = await result.current.flushNow();
+      expect(flushResult).toEqual({ pending: 0 });
+    });
+
+    expect(enqueueSyncItem).toHaveBeenCalledWith({
+      liveSessionId: TEST_LIVE_SESSION_ID,
+      deviceId: TEST_DEVICE_ID,
+      displayName: TEST_DISPLAY_NAME,
+      answers,
+    });
+    expect(drainSyncQueue).toHaveBeenCalled();
+    expect(onSynced).toHaveBeenCalled();
+    expect(result.current.snapshot.state).toBe("synced");
   });
 });

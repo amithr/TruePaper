@@ -70,4 +70,37 @@ describe("POST /api/public/live-sessions/[id]/heartbeat", () => {
     );
     expect(res.status).toBe(200);
   });
+
+  it("falls back to 5-arg RPC when 7-arg heartbeat is unavailable", async () => {
+    const calls: Array<Record<string, unknown>> = [];
+    const supabase = createMockSupabase({
+      rpc: (_name, args) => {
+        calls.push(args);
+        if (calls.length === 1) {
+          return {
+            data: null,
+            error: { message: "function heartbeat_live_session_student does not exist", code: "42883" },
+          };
+        }
+        expect(args.p_pending_sync_count).toBeUndefined();
+        expect(args.p_sync_state).toBeUndefined();
+        return { data: null, error: null };
+      },
+    });
+    createSupabaseAnonServiceClient.mockReturnValue(supabase);
+
+    const res = await POST(
+      heartbeatRequest({
+        deviceId: TEST_DEVICE_ID,
+        displayName: TEST_DISPLAY_NAME,
+        isTyping: true,
+        interaction: true,
+        pendingSyncCount: 1,
+        syncState: "pending",
+      }),
+      { params: Promise.resolve({ liveSessionId: TEST_LIVE_SESSION_ID }) },
+    );
+    expect(res.status).toBe(200);
+    expect(calls).toHaveLength(2);
+  });
 });

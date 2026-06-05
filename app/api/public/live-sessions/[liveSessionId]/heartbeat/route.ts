@@ -45,22 +45,36 @@ export async function POST(request: Request, { params }: Params) {
         ? body.syncState
         : "synced";
 
-    const { error } = await supabase.rpc("heartbeat_live_session_student", {
+    const legacyArgs = {
       p_live_session_id: liveSessionId,
       p_device_id: deviceId,
       p_is_typing: isTyping,
       p_interaction: interaction,
       p_display_name: displayName,
+    };
+
+    const { error: modernError } = await supabase.rpc("heartbeat_live_session_student", {
+      ...legacyArgs,
       p_pending_sync_count: pendingSyncCount,
       p_sync_state: syncState,
     });
+
+    let error = modernError;
+    if (
+      error &&
+      (error.message.includes("heartbeat_live_session_student") || error.code === "42883")
+    ) {
+      // Backward-compatible path before offline_sync (5-arg RPC, no sync metadata).
+      const legacy = await supabase.rpc("heartbeat_live_session_student", legacyArgs);
+      error = legacy.error;
+    }
 
     if (error) {
       if (error.message.includes("heartbeat_live_session_student") || error.code === "42883") {
         return NextResponse.json(
           {
             error:
-              "Database is missing heartbeat_live_session_student (7-arg). Run migration 20260605150000_offline_sync.sql.",
+              "Database is missing heartbeat_live_session_student. Run migrations through 20260605150000_offline_sync.sql (or re-run supabase/schema.sql).",
           },
           { status: 503 },
         );

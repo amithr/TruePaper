@@ -127,7 +127,7 @@ export async function PUT(request: Request, { params }: Params) {
           return NextResponse.json(
             {
               error:
-                "Database is missing save_live_session_student_response (5-arg). Run migration 20260605150000_offline_sync.sql.",
+                "Database is missing save_live_session_student_response (5-arg). Run migrations through 20260605150000_offline_sync.sql.",
             },
             { status: 503 },
           );
@@ -151,7 +151,7 @@ export async function PUT(request: Request, { params }: Params) {
         return NextResponse.json(
           {
             error:
-              "Database is missing save_live_session_student_response (4-arg) or it is outdated. Run migration 20260424130000_live_student_display_name.sql.",
+              "Database is missing save_live_session_student_response (4-arg). Run migrations through 20260605150000_offline_sync.sql (includes display-name save RPCs from 20260424130000_live_student_display_name.sql).",
           },
           { status: 503 },
         );
