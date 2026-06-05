@@ -248,6 +248,12 @@ export function useOfflineExamSync({
     void isIdbAvailable().then((ok) => publish({ idbAvailable: ok }));
   }, [publish]);
 
+  // Heal any stale/orphaned queue rows on load so the pending count can't show a
+  // runaway value before the first autosave fires.
+  useEffect(() => {
+    void refreshPending();
+  }, [refreshPending]);
+
   useEffect(() => {
     const onOnline = () => {
       publish({ state: "syncing" });
