@@ -29,6 +29,8 @@ function snapshotsEqual(a: ConnectionSnapshot, b: ConnectionSnapshot): boolean {
   );
 }
 
+type DrainResult = { synced: number; failed: number; pending: number };
+
 function deriveSyncState(input: {
   pending: number;
   synced: number;
@@ -77,7 +79,7 @@ export function useOfflineExamSync({
   const lastSentJsonRef = useRef<string>("");
   const lastSentAtRef = useRef(0);
   const lastSyncedAtRef = useRef<number | null>(null);
-  const drainInFlightRef = useRef<Promise<void> | null>(null);
+  const drainInFlightRef = useRef<Promise<DrainResult> | null>(null);
   const runDrainRef = useRef<() => Promise<void>>(async () => {});
   const onStatusChangeRef = useRef(onStatusChange);
   const onSyncedRef = useRef(onSynced);
