@@ -122,6 +122,16 @@ export default function WatchStudentExamPage() {
   const [markingGraded, setMarkingGraded] = useState(false);
   const [gradeAriaMessage, setGradeAriaMessage] = useState("");
   const [feedbackFocusQuestionId, setFeedbackFocusQuestionId] = useState<string | null>(null);
+  const urlFeedbackFocusQuestionId = useMemo(() => {
+    if (
+      !focusQuestionFromUrl ||
+      !snapshot?.form.questions.some((q) => q.id === focusQuestionFromUrl)
+    ) {
+      return null;
+    }
+    return focusQuestionFromUrl;
+  }, [focusQuestionFromUrl, snapshot?.form.questions]);
+  const activeFeedbackFocusQuestionId = feedbackFocusQuestionId ?? urlFeedbackFocusQuestionId;
   const [liveFeedbackDraftsByQuestionId, setLiveFeedbackDraftsByQuestionId] = useState<
     Record<string, string>
   >({});
@@ -466,17 +476,16 @@ export default function WatchStudentExamPage() {
   }, [flushAllLiveFeedbackSaves]);
 
   useEffect(() => {
-    if (!focusQuestionFromUrl || !snapshot?.form.questions.some((q) => q.id === focusQuestionFromUrl)) {
+    if (!urlFeedbackFocusQuestionId) {
       return;
     }
-    setFeedbackFocusQuestionId(focusQuestionFromUrl);
     deferEffect(() => {
-      document.getElementById(`watch-q-${focusQuestionFromUrl}`)?.scrollIntoView({
+      document.getElementById(`watch-q-${urlFeedbackFocusQuestionId}`)?.scrollIntoView({
         behavior: "smooth",
         block: "center",
       });
     });
-  }, [focusQuestionFromUrl, snapshot?.form.questions]);
+  }, [urlFeedbackFocusQuestionId]);
 
   const saveQuestionPoints = async (question: Form["questions"][number]) => {
     const nextPoints = Math.max(1, Math.min(1000, pointsDraftsByQuestionId[question.id] ?? question.points));
@@ -1165,7 +1174,7 @@ export default function WatchStudentExamPage() {
                     rawAnswer={displayAnswers[question.id]}
                     feedbackStore={snapshot.liveTeacherFeedback}
                     liveFeedbackEnabled={snapshot.form.liveTeacherFeedbackEnabled}
-                    feedbackFocusQuestionId={feedbackFocusQuestionId}
+                    feedbackFocusQuestionId={activeFeedbackFocusQuestionId}
                     liveFeedbackDraftsByQuestionId={liveFeedbackDraftsByQuestionId}
                     liveFeedbackSavingQuestionIds={liveFeedbackSavingQuestionIds}
                     onFeedbackFocus={setFeedbackFocusQuestionId}

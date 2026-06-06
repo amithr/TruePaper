@@ -32,6 +32,16 @@ type FormResponseOverviewRow = {
   updated_at: string;
 };
 
+type PresenceOverviewRow = {
+  anonymous_session_id: string | null;
+  last_activity_at: string | null;
+  last_typing_at: string | null;
+  sync_state?: string | null;
+  pending_sync_count?: number | null;
+  hand_raise_question_id?: string | null;
+  hand_raised_at?: string | null;
+};
+
 type Params = {
   params: Promise<{ liveSessionId: string }>;
 };
@@ -145,7 +155,7 @@ export async function GET(_request: Request, { params }: Params) {
   const presenceMissingSync =
     presencePrimary.error && isMissingColumnError(presencePrimary.error, "sync_state");
 
-  const presenceRows =
+  const presenceRows = (
     presenceMissingSync || presenceMissingHand
       ? (
           await supabase
@@ -157,34 +167,26 @@ export async function GET(_request: Request, { params }: Params) {
             )
             .eq("live_session_id", liveSessionId)
         ).data
-      : presencePrimary.data;
+      : presencePrimary.data
+  ) as PresenceOverviewRow[] | null;
 
   if (!presencePrimary.error || presenceMissingSync || presenceMissingHand) {
     for (const p of presenceRows ?? []) {
-      const device = (p.anonymous_session_id as string | null)?.toLowerCase();
+      const device = p.anonymous_session_id?.toLowerCase();
       if (device) {
-        const rawState = (p as { sync_state?: string | null }).sync_state;
+        const rawState = p.sync_state;
         const syncState =
           rawState === "pending" || rawState === "offline" || rawState === "synced"
             ? rawState
             : "synced";
         presenceByDevice.set(device, {
-          lastActivityAt: (p.last_activity_at as string | null) ?? null,
-          lastTypingAt: (p.last_typing_at as string | null) ?? null,
+          lastActivityAt: p.last_activity_at ?? null,
+          lastTypingAt: p.last_typing_at ?? null,
           syncState,
-          pendingSyncCount: Math.max(
-            0,
-            Number((p as { pending_sync_count?: number | null }).pending_sync_count) || 0,
-          ),
+          pendingSyncCount: Math.max(0, Number(p.pending_sync_count) || 0),
           handRaiseQuestionId:
-            typeof (p as { hand_raise_question_id?: string | null }).hand_raise_question_id ===
-            "string"
-              ? (p as { hand_raise_question_id: string }).hand_raise_question_id
-              : null,
-          handRaisedAt:
-            typeof (p as { hand_raised_at?: string | null }).hand_raised_at === "string"
-              ? (p as { hand_raised_at: string }).hand_raised_at
-              : null,
+            typeof p.hand_raise_question_id === "string" ? p.hand_raise_question_id : null,
+          handRaisedAt: typeof p.hand_raised_at === "string" ? p.hand_raised_at : null,
         });
       }
     }

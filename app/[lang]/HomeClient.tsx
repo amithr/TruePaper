@@ -304,9 +304,6 @@ export default function HomeClient({
   const [examFinished, setExamFinished] = useState(false);
   const [handRaiseQuestionId, setHandRaiseQuestionId] = useState<string | null>(null);
   const [raiseHandBusyQuestionId, setRaiseHandBusyQuestionId] = useState<string | null>(null);
-  const [examGraded, setExamGraded] = useState(false);
-  const [pointsEarned, setPointsEarned] = useState<number | null>(null);
-  const [pointsPossible, setPointsPossible] = useState<number | null>(null);
   const [liveTeacherFeedback, setLiveTeacherFeedback] = useState<Record<string, string>>({});
   const [liveTeacherFeedbackEnabledLive, setLiveTeacherFeedbackEnabledLive] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
@@ -827,6 +824,7 @@ export default function HomeClient({
       }
     },
   });
+  const scheduleOfflineAnswerSync = offlineSync.scheduleSync;
 
   const offlineSyncRef = useLatestRef(offlineSync);
   const answerSyncEnabledRef = useLatestRef(answerSyncEnabled);
@@ -923,9 +921,6 @@ export default function HomeClient({
         if (parsed) {
           setExamSuspended(parsed.suspended);
           setExamFinished(parsed.finished);
-          setExamGraded(parsed.graded);
-          setPointsEarned(parsed.pointsEarned);
-          setPointsPossible(parsed.pointsPossible);
           setLiveTeacherFeedback((prev) => ({ ...prev, ...parsed.liveTeacherFeedback }));
           if (parsed.liveTeacherFeedbackEnabled) {
             setLiveTeacherFeedbackEnabledLive(true);
@@ -1072,8 +1067,8 @@ export default function HomeClient({
       return;
     }
     setAutosaveStatus(t("home.autosave.saving"));
-    offlineSyncRef.current.scheduleSync();
-  }, [answerSyncEnabled, getAnswersForSync, setAutosaveStatus, t]);
+    scheduleOfflineAnswerSync();
+  }, [answerSyncEnabled, getAnswersForSync, setAutosaveStatus, t, scheduleOfflineAnswerSync]);
 
   const scheduleStudentAutosaveRef = useLatestRef(scheduleStudentAutosave);
 
@@ -1197,9 +1192,6 @@ export default function HomeClient({
           setExamAnswers({});
           setStudentAnswersHydrated(false);
           setExamFinished(false);
-          setExamGraded(false);
-          setPointsEarned(null);
-          setPointsPossible(null);
           setExamSuspended(false);
           setStatusMessage(body.error ?? t("home.status.alreadySubmitted"));
           return;
@@ -1383,9 +1375,6 @@ export default function HomeClient({
       setJoinedSession(null);
       setExamSuspended(false);
       setExamFinished(false);
-      setExamGraded(false);
-      setPointsEarned(null);
-      setPointsPossible(null);
       setActiveExamDisplayName("");
       setTeacherLiveBanner(null);
       setStatusMessage(t("home.status.signedOut"));
@@ -1678,9 +1667,6 @@ export default function HomeClient({
       setStudentAnswersHydrated(false);
       setExamSuspended(false);
       setExamFinished(false);
-      setExamGraded(false);
-      setPointsEarned(null);
-      setPointsPossible(null);
       setStatusMessage("");
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : t("home.errors.rejoinExam"));
@@ -1752,9 +1738,6 @@ export default function HomeClient({
       setStudentAnswersHydrated(false);
       setExamSuspended(false);
       setExamFinished(false);
-      setExamGraded(false);
-      setPointsEarned(null);
-      setPointsPossible(null);
       setAutosaveStatus("");
       setStatusMessage(t("home.status.inLiveSession"));
     } catch (error) {
@@ -1789,9 +1772,6 @@ export default function HomeClient({
     setStudentAnswersHydrated(false);
     setExamSuspended(false);
     setExamFinished(false);
-    setExamGraded(false);
-    setPointsEarned(null);
-    setPointsPossible(null);
     setActiveExamDisplayName("");
     setLiveTeacherFeedback({});
     setLiveTeacherFeedbackEnabledLive(false);
