@@ -337,6 +337,11 @@
         "pausedHint": "Keep this tab visible. Your teacher will let you back in."
       }
     },
+    "submitted": {
+      "title": "Exam submitted",
+      "message": "Your answers have been saved. Your teacher will review them when the session ends.",
+      "closeHint": "You can close this tab or go to another page — nothing else is needed from you."
+    },
     "autosave": {
       "saving": "Saving…",
       "saved": "All changes saved",

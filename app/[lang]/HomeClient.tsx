@@ -17,15 +17,10 @@ import { LandingHero } from "./LandingHero";
  * home page's initial bundle doesn't pay for them. None of these need to
  * render on the first paint:
  *
- *  - `ScoreRing` — only shown on the submitted/graded overlay.
  *  - `SessionJoinShare` — pulls in `react-qr-code`; only used by teachers
  *    once they have a live banner.
  *  - `StudentExamQuestion` — student exam cards (choices, text areas, badges).
  */
-const ScoreRing = dynamic(
-  () => import("@/components/ScoreMeter").then((m) => m.ScoreRing),
-  { ssr: false },
-);
 const SessionJoinShare = dynamic(
   () => import("@/components/SessionJoinShare").then((m) => m.SessionJoinShare),
   { ssr: false },
@@ -43,7 +38,6 @@ import {
   joinUrlRequestsFreshDevice,
   persistAnonymousSessionId,
 } from "@/lib/anonymous-session";
-import { scoreTier } from "@/lib/exam-grades";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { useScoreCopy } from "@/lib/i18n/score-copy";
 import { deferEffect } from "@/lib/defer-effect";
@@ -246,8 +240,12 @@ export default function HomeClient({
   guestView = "landing",
 }: HomeClientProps) {
   const router = useRouter();
+
+  const goToSubmittedPage = useCallback(() => {
+    router.replace("/join/submitted");
+  }, [router]);
   const t = useTranslations();
-  const { formatPointsScore, scoreTierMessage } = useScoreCopy();
+  const { formatPointsScore } = useScoreCopy();
   useAutoUkrainianHome();
   const responseTypeLabel = (type: QuestionType): string => {
     switch (type) {
@@ -661,6 +659,10 @@ export default function HomeClient({
             setAuthForms(
               formId ? mergePendingBuilderForm(auth.forms, formId) : auth.forms,
             );
+            if (formId) {
+              setActiveFormId(formId);
+              setMode("teacher");
+            }
           } else {
             if (!cancelled) {
               setAuthForms([]);
@@ -889,21 +891,9 @@ export default function HomeClient({
         const isFirstLoadForKey = studentResponseLoadKeyRef.current !== loadKey;
         studentResponseLoadKeyRef.current = loadKey;
 
-        if (parsed && isFirstLoadForKey) {
-          if (parsed.finished) {
-            setStudentAnswersHydrated(true);
-            setStatusMessage(t("home.status.alreadySubmitted"));
-            clearJoinFormFields();
-            setJoinedSession(null);
-            setActiveExamDisplayName("");
-            setExamAnswers({});
-            setExamFinished(false);
-            setExamGraded(false);
-            setPointsEarned(null);
-            setPointsPossible(null);
-            setExamSuspended(false);
-            return;
-          }
+        if (parsed?.finished) {
+          router.replace("/join/submitted");
+          return;
         }
 
         const hasLocalEdits = pendingDirtySinceRef.current !== null;
@@ -942,8 +932,6 @@ export default function HomeClient({
                 score: formatPointsScore(parsed.pointsEarned, parsed.pointsPossible),
               }),
             );
-          } else if (parsed.finished) {
-            setStatusMessage(t("home.status.submitted"));
           } else if (parsed.suspended) {
             setStatusMessage(t("home.status.paused"));
           }
@@ -968,42 +956,7 @@ export default function HomeClient({
     return () => clearTimeout(timeoutId);
     // offlineSyncRef / answerSyncEnabledRef intentionally omitted — stable ref indirection
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [joinedLiveSessionId, anonymousSessionId, t, clearJoinFormFields, formatPointsScore]);
-
-  useEffect(() => {
-    if (!joinedLiveSessionId || !anonymousSessionId || !examFinished || examGraded) {
-      return;
-    }
-    const intervalId = window.setInterval(() => {
-      void (async () => {
-        try {
-          const res = await fetch(
-            `/api/public/live-sessions/${joinedLiveSessionId}/responses?deviceId=${encodeURIComponent(anonymousSessionId)}`,
-          );
-          if (!res.ok) {
-            return;
-          }
-          const data = (await res.json()) as unknown;
-          const parsed = parseLiveSessionStudentGet(data);
-          if (parsed.graded) {
-            setExamGraded(true);
-            setPointsEarned(parsed.pointsEarned);
-            setPointsPossible(parsed.pointsPossible);
-            if (parsed.pointsEarned != null && parsed.pointsPossible != null) {
-              setStatusMessage(
-                t("home.status.graded", {
-                  score: formatPointsScore(parsed.pointsEarned, parsed.pointsPossible),
-                }),
-              );
-            }
-          }
-        } catch {
-          /* ignore background poll errors */
-        }
-      })();
-    }, 5000);
-    return () => window.clearInterval(intervalId);
-  }, [joinedLiveSessionId, anonymousSessionId, examFinished, examGraded, t, formatPointsScore]);
+  }, [joinedLiveSessionId, anonymousSessionId, t, clearJoinFormFields, formatPointsScore, router]);
 
   const refreshLiveTeacherFeedback = useCallback(async () => {
     if (!joinedLiveSessionId || !anonymousSessionId) {
@@ -1041,10 +994,10 @@ export default function HomeClient({
       });
     }
     if (patch.finished === true) {
-      setExamFinished(true);
-      setStatusMessage(t("home.status.submitted"));
+      goToSubmittedPage();
+      return;
     }
-  }, [t]);
+  }, [t, goToSubmittedPage]);
 
   useStudentExamStatePoll({
     liveSessionId: joinedLiveSessionId,
@@ -1348,12 +1301,22 @@ export default function HomeClient({
     }
     const timeoutId = setTimeout(() => {
       const pool = authForms;
+      const urlFormId = readFormIdFromUrl();
+
       if (pool.length === 0) {
-        setActiveFormId("");
+        // Keep a URL-selected form while the list is still loading.
+        if (!urlFormId) {
+          setActiveFormId("");
+        }
         return;
       }
+
+      if (urlFormId && pool.some((form) => form.id === urlFormId)) {
+        setActiveFormId(urlFormId);
+        return;
+      }
+
       if (activeFormId && !pool.some((form) => form.id === activeFormId)) {
-        const urlFormId = readFormIdFromUrl();
         if (urlFormId !== activeFormId) {
           setActiveFormId("");
         }
@@ -1866,8 +1829,7 @@ export default function HomeClient({
         autosaveBannerClearRef.current = undefined;
       }
       setAutosaveStatus("");
-      setExamFinished(true);
-      setStatusMessage(t("home.status.submitted"));
+      goToSubmittedPage();
     } catch (error) {
       const aborted = error instanceof Error && error.name === "AbortError";
       setAutosaveStatus(t("home.autosave.failed"));
@@ -2886,60 +2848,6 @@ export default function HomeClient({
                 </p>
               </div>
             ) : null}
-            {joinedSession && examFinished ? (
-              <div
-                className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 overflow-hidden rounded-[var(--tp-radius)] border border-[var(--tp-success-border)] bg-[var(--tp-surface)]/95 p-6 text-center shadow-lg backdrop-blur-sm tp-anim-fade-in"
-                role="status"
-                aria-live="polite"
-              >
-                {examGraded && pointsEarned != null && pointsPossible != null ? (
-                  <>
-                    <div className="tp-anim-pop">
-                      <ScoreRing
-                        earned={pointsEarned}
-                        possible={pointsPossible}
-                        size={140}
-                        stroke={12}
-                        animate
-                      />
-                    </div>
-                    <p className="text-lg font-semibold text-[var(--tp-text)]">
-                      {scoreTierMessage(scoreTier(pointsEarned, pointsPossible))}
-                    </p>
-                    <p className="max-w-md text-sm text-[var(--tp-text-secondary)]">
-                      {t("home.exam.overlay.youEarned", {
-                        score: formatPointsScore(pointsEarned, pointsPossible),
-                      })}
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <span aria-hidden className="tp-anim-celebrate">
-                      <svg
-                        className="h-12 w-12 text-[var(--tp-mint)]"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2.4"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <circle cx="12" cy="12" r="10" />
-                        <path d="m9 12 2 2 4-4" />
-                      </svg>
-                    </span>
-                    <p className="text-lg font-semibold text-[var(--tp-text)]">{t("home.exam.overlay.submitted")}</p>
-                    <p className="inline-flex items-center gap-2 text-sm text-[var(--tp-text-secondary)]">
-                      <span aria-hidden className="tp-halo-dot" />
-                      {t("home.exam.overlay.grading")}
-                    </p>
-                    <p className="max-w-md text-xs text-[var(--tp-text-muted)]">
-                      {t("home.exam.overlay.gradingHint")}
-                    </p>
-                  </>
-                )}
-              </div>
-            ) : null}
             {joinedSession && examSuspended ? (
               <div
                 className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-[var(--tp-radius)] border border-[var(--tp-warning-border)] bg-[var(--tp-surface)]/95 p-6 text-center shadow-lg backdrop-blur-sm tp-anim-fade-in"
@@ -3195,26 +3103,6 @@ export default function HomeClient({
                       ? t("home.exam.submitReady")
                       : t("home.exam.submitExam")}
                 </button>
-              ) : joinedSession && examFinished ? (
-                <span
-                  className="tp-submit-ready tp-submit-ready--done inline-flex min-h-11 items-center gap-2 px-5"
-                  role="status"
-                  data-testid="student-submit-done"
-                >
-                  <svg
-                    aria-hidden
-                    className="h-4 w-4"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M5 12l5 5L20 7" />
-                  </svg>
-                  {t("home.exam.submitted")}
-                </span>
               ) : null}
             </div>
             ) : null}

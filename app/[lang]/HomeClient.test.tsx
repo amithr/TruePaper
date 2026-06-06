@@ -84,8 +84,10 @@ describe("HomeClient", () => {
     expect(screen.getByRole("heading", { level: 2, name: /join a live session/i })).toBeInTheDocument();
   });
 
-  it("renders teacher builder empty state when signed in", async () => {
+  it("renders teacher builder empty state when signed in without a form id", async () => {
     vi.mocked(readTeacherHomeIntent).mockReturnValue("builder");
+    const { readFormIdFromUrl } = await import("@/lib/home-url-intent");
+    vi.mocked(readFormIdFromUrl).mockReturnValue("");
 
     renderWithI18n(
       <HomeClient
@@ -100,5 +102,39 @@ describe("HomeClient", () => {
     await waitFor(() => {
       expect(screen.getByText("No form open")).toBeInTheDocument();
     });
+  });
+
+  it("opens the builder for a URL-selected form after the forms list loads", async () => {
+    vi.mocked(readTeacherHomeIntent).mockReturnValue("builder");
+    const { readFormIdFromUrl } = await import("@/lib/home-url-intent");
+    vi.mocked(readFormIdFromUrl).mockReturnValue("form-1");
+    const { requestJson } = await import("@/lib/request-json");
+    vi.mocked(requestJson).mockResolvedValue({
+      forms: [
+        {
+          id: "form-1",
+          title: "Biology Unit 1",
+          description: "Cells",
+          createdBy: "t1",
+          liveTeacherFeedbackEnabled: false,
+          questions: [],
+        },
+      ],
+    });
+
+    renderWithI18n(
+      <HomeClient
+        initialSession={{
+          user: { id: "t1", email: "t@example.com" },
+          profile: { role: "teacher", display_name: "Teacher" },
+        }}
+        guestView="landing"
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("Biology Unit 1")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("No form open")).not.toBeInTheDocument();
   });
 });

@@ -17,10 +17,43 @@ create table if not exists public.questions (
   id uuid primary key default gen_random_uuid(),
   form_id uuid not null references public.forms (id) on delete cascade,
   prompt text not null,
-  question_type text not null check (question_type in ('multipleChoice', 'text')),
+  question_type text not null check (
+    question_type in (
+      'multipleChoice',
+      'text',
+      'shortAnswer',
+      'extendedWritten',
+      'structuredMultiPart',
+      'annotateSource',
+      'drawDiagram',
+      'photoHandwritten',
+      'trueFalse',
+      'matching',
+      'ordering',
+      'labelling',
+      'mathInput'
+    )
+  ),
   options jsonb not null default '[]'::jsonb,
+  correct_answer text,
+  points integer not null default 1,
+  response_config jsonb not null default '{}'::jsonb,
   display_order integer not null default 0,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  constraint questions_points_chk check (points > 0 and points <= 1000),
+  constraint questions_correct_answer_chk check (
+    (
+      question_type = 'multipleChoice'
+      and (
+        correct_answer is null
+        or options ? correct_answer
+      )
+    )
+    or (
+      question_type <> 'multipleChoice'
+      and correct_answer is null
+    )
+  )
 );
 
 create index if not exists questions_form_id_idx on public.questions (form_id);
