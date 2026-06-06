@@ -307,22 +307,23 @@ export function TeacherResponseWatch({
     const config = question.responseConfig as GraphConfig;
     const width = Math.max(320, Math.min(640, config.width ?? 480));
     const height = Math.max(320, Math.min(640, config.height ?? 480));
-    const hasGraph = value.points.length > 0 || value.lines.length > 0;
+    const hasStudentWork =
+      value.points.length > 0 ||
+      value.lines.length > 0 ||
+      value.labels.some((label) => label.text.trim().length > 0);
     return (
       <div className="space-y-3">
-        {hasGraph ? (
-          <GraphCanvas
-            config={config}
-            points={value.points}
-            lines={value.lines}
-            readOnly
-            data-testid="teacher-watch-answer"
-          />
-        ) : (
-          <p className="text-sm text-[var(--tp-text-secondary)]" data-testid="teacher-watch-answer">
-            {t("session.watch.noResponse")}
-          </p>
-        )}
+        <GraphCanvas
+          config={config}
+          points={value.points}
+          lines={value.lines}
+          labels={value.labels}
+          readOnly
+          data-testid="teacher-watch-answer"
+        />
+        {!hasStudentWork ? (
+          <p className="text-sm text-[var(--tp-text-secondary)]">{t("session.watch.noResponse")}</p>
+        ) : null}
         {liveFeedbackEnabled ? (
           <div>
             <p className="mb-2 text-xs font-medium text-[var(--tp-text-secondary)]">

@@ -100,9 +100,10 @@ export function parseResponseValue(
         type: "graph",
         points: parsed.points,
         lines: Array.isArray(parsed.lines) ? parsed.lines : [],
+        labels: Array.isArray(parsed.labels) ? parsed.labels : [],
       };
     }
-    return { type: "graph", points: [], lines: [] };
+    return { type: "graph", points: [], lines: [], labels: [] };
   }
 
   if (normalized === "photoHandwritten") {
@@ -194,6 +195,7 @@ export function serializeResponseValue(value: ResponseValue): string {
         type: "graph",
         points: value.points,
         lines: value.lines,
+        labels: value.labels,
       });
     case "photoHandwritten":
       return JSON.stringify({
@@ -274,12 +276,21 @@ export function previewResponseText(
     case "drawDiagram":
       text = value.strokes.length > 0 ? "Drawing" : "";
       break;
-    case "graph":
-      text =
-        value.points.length > 0
-          ? `${value.points.length} point${value.points.length === 1 ? "" : "s"}`
-          : "";
+    case "graph": {
+      const parts: string[] = [];
+      if (value.points.length > 0) {
+        parts.push(`${value.points.length} point${value.points.length === 1 ? "" : "s"}`);
+      }
+      const labelText = value.labels
+        .map((label) => label.text.trim())
+        .filter(Boolean)
+        .join(", ");
+      if (labelText) {
+        parts.push(labelText);
+      }
+      text = parts.join("; ");
       break;
+    }
     case "photoHandwritten":
       text = value.imageDataUrl ? "Photo upload" : "";
       break;
@@ -312,7 +323,11 @@ export function isResponseAnswered(
     case "drawDiagram":
       return value.strokes.length > 0;
     case "graph":
-      return value.points.length > 0 || value.lines.length > 0;
+      return (
+        value.points.length > 0 ||
+        value.lines.length > 0 ||
+        value.labels.some((label) => label.text.trim().length > 0)
+      );
     case "photoHandwritten":
       return value.imageDataUrl.trim().length > 0;
     case "trueFalse":

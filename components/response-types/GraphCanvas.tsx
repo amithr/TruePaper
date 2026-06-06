@@ -1,6 +1,6 @@
 "use client";
 
-import type { GraphConfig, GraphLine, GraphPoint } from "@/lib/response-types/types";
+import type { GraphConfig, GraphLabel, GraphLine, GraphPoint } from "@/lib/response-types/types";
 import {
   formatGraphCoord,
   GRAPH_PADDING,
@@ -14,7 +14,9 @@ type PlaneProps = {
   config: GraphConfig;
   points: GraphPoint[];
   lines: GraphLine[];
+  labels?: GraphLabel[];
   selectedPointId?: string | null;
+  selectedLabelId?: string | null;
   highlightPointIds?: string[];
 };
 
@@ -22,7 +24,9 @@ export function GraphPlane({
   config,
   points,
   lines,
+  labels = [],
   selectedPointId = null,
+  selectedLabelId = null,
   highlightPointIds = [],
 }: PlaneProps) {
   const bounds = resolveGraphBounds(config);
@@ -143,6 +147,32 @@ export function GraphPlane({
         );
       })}
 
+      {config.xAxisLabel?.trim() ? (
+        <text
+          x={GRAPH_PADDING + plotWidth / 2}
+          y={height - 8}
+          textAnchor="middle"
+          fontSize={12}
+          fontWeight={600}
+          fill="#3f3f46"
+        >
+          {config.xAxisLabel.trim()}
+        </text>
+      ) : null}
+      {config.yAxisLabel?.trim() ? (
+        <text
+          x={14}
+          y={GRAPH_PADDING + plotHeight / 2}
+          textAnchor="middle"
+          fontSize={12}
+          fontWeight={600}
+          fill="#3f3f46"
+          transform={`rotate(-90, 14, ${GRAPH_PADDING + plotHeight / 2})`}
+        >
+          {config.yAxisLabel.trim()}
+        </text>
+      ) : null}
+
       {lines.map((line) => {
         const from = pointById.get(line.from);
         const to = pointById.get(line.to);
@@ -193,6 +223,31 @@ export function GraphPlane({
           </g>
         );
       })}
+
+      {labels.map((label) => {
+        if (!label.text.trim()) {
+          return null;
+        }
+        const { px, py } = mathToPixel(label.x, label.y, bounds, width, height);
+        const selected = label.id === selectedLabelId;
+        return (
+          <text
+            key={label.id}
+            x={px}
+            y={py}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fontSize={13}
+            fontWeight={600}
+            fill={selected ? "#c2410c" : "#18181b"}
+            stroke="#fff"
+            strokeWidth={3}
+            paintOrder="stroke"
+          >
+            {label.text}
+          </text>
+        );
+      })}
     </>
   );
 }
@@ -207,8 +262,10 @@ export function GraphCanvas({
   config,
   points,
   lines,
+  labels = [],
   readOnly = false,
   selectedPointId = null,
+  selectedLabelId = null,
   highlightPointIds = [],
   className = "",
   "data-testid": testId,
@@ -229,7 +286,9 @@ export function GraphCanvas({
         config={config}
         points={points}
         lines={lines}
+        labels={labels}
         selectedPointId={selectedPointId}
+        selectedLabelId={selectedLabelId}
         highlightPointIds={highlightPointIds}
       />
     </svg>

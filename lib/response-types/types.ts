@@ -76,6 +76,9 @@ export type GraphConfig = {
   width?: number;
   height?: number;
   showGrid?: boolean;
+  /** Optional axis titles shown on the coordinate plane */
+  xAxisLabel?: string;
+  yAxisLabel?: string;
 };
 
 export type PhotoHandwrittenConfig = {
@@ -146,7 +149,13 @@ export type DrawDiagramValue = { type: "drawDiagram"; strokes: DrawingStroke[] }
 
 export type GraphPoint = { id: string; x: number; y: number };
 export type GraphLine = { id: string; from: string; to: string };
-export type GraphValue = { type: "graph"; points: GraphPoint[]; lines: GraphLine[] };
+export type GraphLabel = { id: string; x: number; y: number; text: string };
+export type GraphValue = {
+  type: "graph";
+  points: GraphPoint[];
+  lines: GraphLine[];
+  labels: GraphLabel[];
+};
 
 export type PhotoHandwrittenValue = {
   type: "photoHandwritten";

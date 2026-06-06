@@ -160,6 +160,28 @@ export function BuilderResponseConfig({ question, updateActiveForm }: Props) {
             />
           </label>
         </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className={ui.label}>
+            {t("responseTypes.builder.graphXAxisLabel")}
+            <input
+              type="text"
+              value={config.xAxisLabel ?? ""}
+              onChange={(event) => patchConfig({ xAxisLabel: event.target.value })}
+              className="tp-input"
+              placeholder={t("responseTypes.builder.graphXAxisLabelPlaceholder")}
+            />
+          </label>
+          <label className={ui.label}>
+            {t("responseTypes.builder.graphYAxisLabel")}
+            <input
+              type="text"
+              value={config.yAxisLabel ?? ""}
+              onChange={(event) => patchConfig({ yAxisLabel: event.target.value })}
+              className="tp-input"
+              placeholder={t("responseTypes.builder.graphYAxisLabelPlaceholder")}
+            />
+          </label>
+        </div>
         <label className="flex items-center gap-2 text-sm">
           <input
             type="checkbox"
