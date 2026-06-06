@@ -48,6 +48,8 @@ export async function GET(request: Request, { params }: Params) {
       closesAt?: string;
       suspended?: boolean;
       finished?: boolean;
+      handRaiseQuestionId?: string | null;
+      handRaisedAt?: string | null;
     };
 
     return NextResponse.json({
@@ -55,6 +57,9 @@ export async function GET(request: Request, { params }: Params) {
       closesAt: typeof row.closesAt === "string" ? row.closesAt : null,
       suspended: row.suspended === true,
       finished: row.finished === true,
+      handRaiseQuestionId:
+        typeof row.handRaiseQuestionId === "string" ? row.handRaiseQuestionId : null,
+      handRaisedAt: typeof row.handRaisedAt === "string" ? row.handRaisedAt : null,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Configuration error.";

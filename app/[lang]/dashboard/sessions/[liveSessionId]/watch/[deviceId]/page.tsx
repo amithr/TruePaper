@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 
 import { useLocaleRouter as useRouter } from "@/lib/i18n/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -85,6 +85,8 @@ export default function WatchStudentExamPage() {
   const { formatPointsScore } = useScoreCopy();
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
+  const focusQuestionFromUrl = searchParams.get("question")?.trim() ?? "";
   const liveSessionId = typeof params.liveSessionId === "string" ? params.liveSessionId : "";
   const rawDevice = typeof params.deviceId === "string" ? params.deviceId : "";
   const deviceId = decodeURIComponent(rawDevice).trim();
@@ -462,6 +464,19 @@ export default function WatchStudentExamPage() {
       flushAllLiveFeedbackSaves();
     };
   }, [flushAllLiveFeedbackSaves]);
+
+  useEffect(() => {
+    if (!focusQuestionFromUrl || !snapshot?.form.questions.some((q) => q.id === focusQuestionFromUrl)) {
+      return;
+    }
+    setFeedbackFocusQuestionId(focusQuestionFromUrl);
+    deferEffect(() => {
+      document.getElementById(`watch-q-${focusQuestionFromUrl}`)?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    });
+  }, [focusQuestionFromUrl, snapshot?.form.questions]);
 
   const saveQuestionPoints = async (question: Form["questions"][number]) => {
     const nextPoints = Math.max(1, Math.min(1000, pointsDraftsByQuestionId[question.id] ?? question.points));
@@ -934,7 +949,10 @@ export default function WatchStudentExamPage() {
                 return (
                 <article
                   key={question.id}
-                  className={`${ui.questionCardNested} tp-question-grade tp-question-grade--${gradingState}`}
+                  id={`watch-q-${question.id}`}
+                  className={`${ui.questionCardNested} tp-question-grade tp-question-grade--${gradingState}${
+                    focusQuestionFromUrl === question.id ? " tp-watch-q--hand-focus" : ""
+                  }`}
                 >
                   <div className="flex flex-wrap items-baseline justify-between gap-2">
                     <h3 className="text-sm font-semibold text-zinc-900">

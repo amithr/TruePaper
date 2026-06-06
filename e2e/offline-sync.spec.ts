@@ -6,8 +6,9 @@ import {
   longStudentAnswer,
   offlineTailText,
   readAnonymousDeviceId,
+  reloadStudentExamWithOfflineEdits,
   typeStudentAnswerAndWaitForAutosave,
-  waitForStudentAnswersPut,
+  waitForStudentAnswersPutContaining,
 } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
@@ -36,11 +37,17 @@ test.describe("Offline exam sync E2E", () => {
     await expect(page.getByTestId("connection-indicator")).toHaveAttribute("data-state", "offline", {
       timeout: 15_000,
     });
+    // Offline autosave debounces before writing to IndexedDB.
+    await page.waitForTimeout(500);
 
-    await page.reload();
-    await expect(page.getByTestId("student-exam-answer")).toHaveValue(offlineText, { timeout: 30_000 });
+    await reloadStudentExamWithOfflineEdits(page, context);
+    await expect(answer).toHaveValue(offlineText, { timeout: 30_000 });
 
-    const syncAfterReconnect = waitForStudentAnswersPut(page, 60_000);
+    const syncAfterReconnect = waitForStudentAnswersPutContaining(
+      page,
+      "Offline tail saved locally",
+      60_000,
+    );
     await context.setOffline(false);
     await syncAfterReconnect;
     await expect(page.getByTestId("connection-indicator")).toHaveAttribute(

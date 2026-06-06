@@ -132,43 +132,60 @@ export function useOfflineExamSync({
     if (!liveSessionId || !deviceId || !displayName) {
       return;
     }
-    if (drainInFlightRef.current) {
-      await drainInFlightRef.current;
-      return;
-    }
 
-    const drain = (async () => {
+    // Loop until the queue is empty. A concurrent enqueue during an in-flight drain
+    // previously left pending rows behind because the waiter returned early.
+    while (true) {
+      if (drainInFlightRef.current) {
+        await drainInFlightRef.current;
+        continue;
+      }
+
       const browserOffline = typeof navigator !== "undefined" && !navigator.onLine;
       if (!browserOffline) {
         publish({ state: "syncing" });
       }
-      try {
-        const result = await drainSyncQueue(liveSessionId, deviceId, (item) =>
-          putStudentAnswersSync({
-            liveSessionId: item.liveSessionId,
-            deviceId: item.deviceId,
-            displayName: item.displayName,
-            answers: item.answers,
-            submissionId: item.submissionId,
-          }),
-        );
-        const syncedAt = result.synced > 0 ? Date.now() : lastSyncedAtRef.current;
-        publish({
-          pendingCount: result.pending,
-          state: deriveSyncState(result),
-          lastSyncedAt: syncedAt,
-        });
-        if (result.pending === 0) {
-          markFullySynced();
-        }
-      } finally {
-        drainInFlightRef.current = null;
-      }
-    })();
 
-    drainInFlightRef.current = drain;
-    await drain;
-  }, [liveSessionId, deviceId, displayName, markFullySynced, publish]);
+      const drain = (async () => {
+        try {
+          const result = await drainSyncQueue(liveSessionId, deviceId, (item) =>
+            putStudentAnswersSync({
+              liveSessionId: item.liveSessionId,
+              deviceId: item.deviceId,
+              displayName: item.displayName,
+              answers: item.answers,
+              submissionId: item.submissionId,
+            }),
+          );
+          const pendingAfter = await refreshPending();
+          const syncedAt = result.synced > 0 ? Date.now() : lastSyncedAtRef.current;
+          publish({
+            pendingCount: pendingAfter,
+            state: deriveSyncState({ ...result, pending: pendingAfter }),
+            lastSyncedAt: syncedAt,
+          });
+          if (pendingAfter === 0) {
+            markFullySynced();
+          }
+          return result;
+        } finally {
+          drainInFlightRef.current = null;
+        }
+      })();
+
+      drainInFlightRef.current = drain;
+      const result = await drain;
+
+      const pendingAfter = await refreshPending();
+      if (pendingAfter === 0) {
+        return;
+      }
+      // Retry immediately only when we made progress (e.g. a newer enqueue landed mid-drain).
+      if (result.synced === 0) {
+        return;
+      }
+    }
+  }, [liveSessionId, deviceId, displayName, markFullySynced, publish, refreshPending]);
 
   useEffect(() => {
     runDrainRef.current = runDrain;

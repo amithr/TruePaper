@@ -211,6 +211,7 @@ describe("useOfflineExamSync", () => {
   it("reports offline after transport failure while browser claims online", async () => {
     Object.defineProperty(navigator, "onLine", { value: true, configurable: true });
     drainSyncQueue.mockResolvedValue({ synced: 0, failed: 1, pending: 1 });
+    prunePendingSyncQueue.mockResolvedValue(1);
 
     const { result } = renderHook(() =>
       useOfflineExamSync({
@@ -235,6 +236,52 @@ describe("useOfflineExamSync", () => {
     }
 
     await waitFor(() => expect(result.current.snapshot.state).toBe("offline"));
+  });
+
+  it("drains a newer enqueue that lands while an earlier drain is in flight", async () => {
+    const answersV1 = { q1: "first" };
+    const answersV2 = { q1: "second" };
+    const getAnswers = vi.fn(() => answersV1);
+    const onSynced = vi.fn();
+    let releaseFirstDrain: (() => void) | undefined;
+    const firstDrainGate = new Promise<void>((resolve) => {
+      releaseFirstDrain = resolve;
+    });
+
+    drainSyncQueue
+      .mockImplementationOnce(async () => {
+        await firstDrainGate;
+        return { synced: 1, pending: 0 };
+      })
+      .mockResolvedValue({ synced: 1, pending: 0 });
+    prunePendingSyncQueue.mockResolvedValueOnce(1).mockResolvedValueOnce(1).mockResolvedValue(0);
+
+    const { result } = renderHook(() =>
+      useOfflineExamSync({
+        enabled: true,
+        liveSessionId: TEST_LIVE_SESSION_ID,
+        deviceId: TEST_DEVICE_ID,
+        displayName: TEST_DISPLAY_NAME,
+        getAnswers,
+        onSynced,
+      }),
+    );
+
+    await waitFor(() => expect(result.current.snapshot.idbAvailable).toBe(true));
+
+    const firstFlush = result.current.flushNow();
+    await waitFor(() => expect(drainSyncQueue).toHaveBeenCalledTimes(1));
+
+    getAnswers.mockReturnValue(answersV2);
+    const secondFlush = result.current.flushNow();
+
+    releaseFirstDrain?.();
+    await act(async () => {
+      await Promise.all([firstFlush, secondFlush]);
+    });
+
+    expect(drainSyncQueue).toHaveBeenCalledTimes(2);
+    expect(onSynced).toHaveBeenCalled();
   });
 
   it("acknowledgeSynced clears pending queue and marks synced", async () => {

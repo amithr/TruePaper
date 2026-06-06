@@ -35,6 +35,9 @@ export type LiveSessionOverviewParticipant = {
   syncState: "synced" | "pending" | "offline";
   pendingSyncCount: number;
   updatedAt: string;
+  /** When set, the student raised their hand on this question. */
+  handRaiseQuestionId: string | null;
+  handRaisedAt: string | null;
 };
 
 export type LiveSessionOverviewPayload = {

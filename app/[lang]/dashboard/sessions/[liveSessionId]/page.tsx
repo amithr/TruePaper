@@ -14,7 +14,7 @@ import { SessionExamRoster } from "@/components/SessionExamRoster";
 import { SessionJoinShare } from "@/components/SessionJoinShare";
 import {
   countNeedsGrading,
-  gradingRosterPriority,
+  compareRosterParticipants,
   matchesFilter,
   type GradingRosterFilter,
 } from "@/lib/grading-roster";
@@ -198,9 +198,10 @@ export default function LiveSessionDetailPage() {
   const displayedParticipants = [...overview.participants]
     .filter((p) => matchesFilter(p, rosterFilter))
     .sort((a, b) => {
-      const pa = gradingRosterPriority(a);
-      const pb = gradingRosterPriority(b);
-      if (pa !== pb) return pa - pb;
+      const byHand = compareRosterParticipants(a, b);
+      if (byHand !== 0) {
+        return byHand;
+      }
       return (a.displayName || "").localeCompare(b.displayName || "");
     });
 
@@ -357,11 +358,12 @@ export default function LiveSessionDetailPage() {
                 previewQuestions={s.previewQuestions ?? s.textQuestionIds.map((id) => ({ id, type: "text" }))}
                 liveDraftsByDevice={liveDraftsByDevice}
                 participants={displayedParticipants}
-                onOpenExam={(deviceId) =>
+                onOpenExam={(deviceId, questionId) => {
+                  const base = `/dashboard/sessions/${liveSessionId}/watch/${encodeURIComponent(deviceId)}`;
                   router.push(
-                    `/dashboard/sessions/${liveSessionId}/watch/${encodeURIComponent(deviceId)}`,
-                  )
-                }
+                    questionId ? `${base}?question=${encodeURIComponent(questionId)}` : base,
+                  );
+                }}
                 onResumeStudent={(deviceId) => void resumeStudent(deviceId)}
                 resumeBusyDeviceId={participantBusyDeviceId}
               />

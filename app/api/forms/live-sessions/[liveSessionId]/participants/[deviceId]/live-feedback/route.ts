@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
 
 import { isValidAnonymousSessionId } from "@/lib/anonymous-session";
+import { clearStudentHandRaise } from "@/lib/clear-student-hand-raise";
 import { parseLiveTeacherFeedback } from "@/lib/live-teacher-feedback";
+import { notifyLiveSessionActivity } from "@/lib/notify-live-session-activity";
 import { getSessionUser } from "@/lib/request-auth";
 import { broadcastStudentExamPatch } from "@/lib/student-exam-channel";
 import { createSupabaseAnonServiceClient } from "@/lib/supabase/anon-service";
@@ -86,6 +88,15 @@ export async function PATCH(request: Request, { params }: Params) {
   }
 
   const liveTeacherFeedback = parseLiveTeacherFeedback(data);
+
+  if (message) {
+    try {
+      await clearStudentHandRaise(supabase, liveSessionId, deviceId, questionId);
+      void notifyLiveSessionActivity(liveSessionId);
+    } catch {
+      /* best effort */
+    }
+  }
 
   try {
     const broadcastClient = createSupabaseAnonServiceClient();

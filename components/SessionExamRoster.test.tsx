@@ -25,13 +25,15 @@ function participant(
     lastTypingAt: null,
     syncState: "synced",
     pendingSyncCount: 0,
+    handRaiseQuestionId: null,
+    handRaisedAt: null,
     updatedAt: "2026-06-05T12:00:00.000Z",
     ...overrides,
   };
 }
 
 describe("SessionExamRoster", () => {
-  it("shows offline sync badge", () => {
+  it("shows offline wifi icon", () => {
     renderWithI18n(
       <SessionExamRoster
         previewQuestions={[]}
@@ -42,9 +44,10 @@ describe("SessionExamRoster", () => {
     );
     const badge = screen.getByTestId("roster-sync-badge");
     expect(badge).toHaveAttribute("data-sync-state", "offline");
+    expect(badge).toHaveAttribute("aria-label", "Offline");
   });
 
-  it("shows a saving badge while a student's answers are syncing", () => {
+  it("shows amber wifi while a student's answers are syncing", () => {
     renderWithI18n(
       <SessionExamRoster
         previewQuestions={[]}
@@ -55,10 +58,24 @@ describe("SessionExamRoster", () => {
     );
     const badge = screen.getByTestId("roster-sync-badge");
     expect(badge).toHaveAttribute("data-sync-state", "pending");
-    expect(badge.textContent).toMatch(/Saving/i);
+    expect(badge).toHaveAttribute("aria-label", "Saving…");
   });
 
-  it("hides sync badge after submission", () => {
+  it("shows green wifi for online synced students", () => {
+    renderWithI18n(
+      <SessionExamRoster
+        previewQuestions={[]}
+        participants={[participant({ syncState: "synced" })]}
+        liveDraftsByDevice={{}}
+        onOpenExam={vi.fn()}
+      />,
+    );
+    const badge = screen.getByTestId("roster-sync-badge");
+    expect(badge).toHaveAttribute("data-sync-state", "online");
+    expect(badge).toHaveAttribute("aria-label", "Online");
+  });
+
+  it("hides wifi icon after submission", () => {
     renderWithI18n(
       <SessionExamRoster
         previewQuestions={[]}

@@ -127,24 +127,39 @@ export async function GET(_request: Request, { params }: Params) {
       lastTypingAt: string | null;
       syncState: "synced" | "pending" | "offline";
       pendingSyncCount: number;
+      handRaiseQuestionId: string | null;
+      handRaisedAt: string | null;
     }
   >();
   const presencePrimary = await supabase
     .from("live_session_presence")
-    .select("anonymous_session_id, last_activity_at, last_typing_at, sync_state, pending_sync_count")
+    .select(
+      "anonymous_session_id, last_activity_at, last_typing_at, sync_state, pending_sync_count, hand_raise_question_id, hand_raised_at",
+    )
     .eq("live_session_id", liveSessionId);
 
+  const presenceMissingHand = presencePrimary.error
+    ? isMissingColumnError(presencePrimary.error, "hand_raised_at") ||
+      isMissingColumnError(presencePrimary.error, "hand_raise_question_id")
+    : false;
+  const presenceMissingSync =
+    presencePrimary.error && isMissingColumnError(presencePrimary.error, "sync_state");
+
   const presenceRows =
-    presencePrimary.error && isMissingColumnError(presencePrimary.error, "sync_state")
+    presenceMissingSync || presenceMissingHand
       ? (
           await supabase
             .from("live_session_presence")
-            .select("anonymous_session_id, last_activity_at, last_typing_at")
+            .select(
+              presenceMissingHand
+                ? "anonymous_session_id, last_activity_at, last_typing_at, sync_state, pending_sync_count"
+                : "anonymous_session_id, last_activity_at, last_typing_at",
+            )
             .eq("live_session_id", liveSessionId)
         ).data
       : presencePrimary.data;
 
-  if (!presencePrimary.error || isMissingColumnError(presencePrimary.error, "sync_state")) {
+  if (!presencePrimary.error || presenceMissingSync || presenceMissingHand) {
     for (const p of presenceRows ?? []) {
       const device = (p.anonymous_session_id as string | null)?.toLowerCase();
       if (device) {
@@ -161,6 +176,15 @@ export async function GET(_request: Request, { params }: Params) {
             0,
             Number((p as { pending_sync_count?: number | null }).pending_sync_count) || 0,
           ),
+          handRaiseQuestionId:
+            typeof (p as { hand_raise_question_id?: string | null }).hand_raise_question_id ===
+            "string"
+              ? (p as { hand_raise_question_id: string }).hand_raise_question_id
+              : null,
+          handRaisedAt:
+            typeof (p as { hand_raised_at?: string | null }).hand_raised_at === "string"
+              ? (p as { hand_raised_at: string }).hand_raised_at
+              : null,
         });
       }
     }
@@ -221,6 +245,8 @@ export async function GET(_request: Request, { params }: Params) {
       lastTypingAt,
       syncState,
       pendingSyncCount,
+      handRaiseQuestionId: pres?.handRaiseQuestionId ?? null,
+      handRaisedAt: pres?.handRaisedAt ?? null,
       updatedAt: r.updated_at as string,
     };
   });

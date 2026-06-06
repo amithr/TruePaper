@@ -335,7 +335,11 @@
         "youEarned": "Ви отримали {score}.",
         "paused": "На паузі",
         "pausedHint": "Тримайте цю вкладку видимою. Вчитель незабаром дозволить продовжити."
-      }
+      },
+      "raiseHand": "Підняти руку",
+      "raiseHandLower": "Опустити руку",
+      "raiseHandBusy": "Оновлення…",
+      "raiseHandError": "Не вдалося оновити стан «піднята рука»."
     },
     "submitted": {
       "title": "Іспит надіслано",
@@ -399,7 +403,8 @@
       "idle": "Неактивний",
       "workingPill": "Працює",
       "syncSaving": "Збереження…",
-      "syncOffline": "Офлайн"
+      "syncOffline": "Офлайн",
+      "syncOnline": "Онлайн"
     },
     "codeLabel": "Код {joinCode}",
     "liveOpenNoLimit": "Жива сесія відкрита · Без обмеження часу",
@@ -445,7 +450,8 @@
       "subtitleGraded": "Оцінено · {message}",
       "subtitleSubmittedOne": "Надіслано · {count} слово",
       "subtitleSubmittedOther": "Надіслано · {count} слів",
-      "workingNow": "· {count} працюють зараз"
+      "workingNow": "· {count} працюють зараз",
+      "answerHandRaise": "Учню потрібна допомога — відкрити іспит"
     },
     "actions": {
       "stop": "Зупинити сесію",

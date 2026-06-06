@@ -145,6 +145,8 @@ create table if not exists public.live_session_presence (
   pending_sync_count integer not null default 0,
   sync_state text not null default 'synced'
     check (sync_state in ('synced', 'pending', 'offline')),
+  hand_raised_at timestamptz,
+  hand_raise_question_id uuid,
   primary key (live_session_id, anonymous_session_id)
 ) with (fillfactor = 70);
 

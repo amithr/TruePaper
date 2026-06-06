@@ -46,6 +46,17 @@ export function countNeedsGrading<T extends GradingRosterRow>(rows: T[]): number
   return rows.reduce((n, r) => n + (r.finishedAt && !r.gradedAt ? 1 : 0), 0);
 }
 
+export function compareRosterParticipants<T extends GradingRosterRow & {
+  handRaisedAt?: string | null;
+}>(a: T, b: T): number {
+  const aHand = a.handRaisedAt ? 0 : 1;
+  const bHand = b.handRaisedAt ? 0 : 1;
+  if (aHand !== bHand) {
+    return aHand - bHand;
+  }
+  return gradingRosterPriority(a) - gradingRosterPriority(b);
+}
+
 export function matchesFilter<T extends GradingRosterRow>(row: T, filter: GradingRosterFilter): boolean {
   switch (filter) {
     case "needs-grading":

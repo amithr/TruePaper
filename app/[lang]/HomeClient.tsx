@@ -302,6 +302,8 @@ export default function HomeClient({
   const [examSuspended, setExamSuspended] = useState(false);
   const [airAlertPaused, setAirAlertPaused] = useState(false);
   const [examFinished, setExamFinished] = useState(false);
+  const [handRaiseQuestionId, setHandRaiseQuestionId] = useState<string | null>(null);
+  const [raiseHandBusyQuestionId, setRaiseHandBusyQuestionId] = useState<string | null>(null);
   const [examGraded, setExamGraded] = useState(false);
   const [pointsEarned, setPointsEarned] = useState<number | null>(null);
   const [pointsPossible, setPointsPossible] = useState<number | null>(null);
@@ -943,7 +945,10 @@ export default function HomeClient({
 
         setStudentAnswersHydrated(true);
         if (!fetchFailed && answerSyncEnabledRef.current) {
-          void offlineSyncRef.current.flushNow();
+          const json = stableStringifyStudentAnswers(latestStudentAnswersRef.current);
+          if (json !== lastPersistedAnswersJsonRef.current) {
+            void offlineSyncRef.current.flushNow();
+          }
         }
       } catch (error) {
         setStatusMessage(error instanceof Error ? error.message : t("home.errors.loadAnswers"));
@@ -998,6 +1003,11 @@ export default function HomeClient({
     if (patch.finished === true) {
       goToSubmittedPage();
       return;
+    }
+    if (patch.handRaiseQuestionId !== undefined || patch.handRaisedAt !== undefined) {
+      setHandRaiseQuestionId(
+        patch.handRaisedAt && patch.handRaiseQuestionId ? patch.handRaiseQuestionId : null,
+      );
     }
   }, [t, goToSubmittedPage]);
 
@@ -1057,9 +1067,13 @@ export default function HomeClient({
     if (!answerSyncEnabled) {
       return;
     }
+    const json = stableStringifyStudentAnswers(getAnswersForSync());
+    if (json === lastPersistedAnswersJsonRef.current) {
+      return;
+    }
     setAutosaveStatus(t("home.autosave.saving"));
     offlineSyncRef.current.scheduleSync();
-  }, [answerSyncEnabled, setAutosaveStatus, t]);
+  }, [answerSyncEnabled, getAnswersForSync, setAutosaveStatus, t]);
 
   const scheduleStudentAutosaveRef = useLatestRef(scheduleStudentAutosave);
 
@@ -1087,6 +1101,37 @@ export default function HomeClient({
       scheduleStudentAutosave();
     },
     [scheduleTypingHeartbeat, scheduleStudentAutosave],
+  );
+
+  const toggleRaiseHand = useCallback(
+    async (questionId: string) => {
+      if (!joinedLiveSessionId || !anonymousSessionId) {
+        return;
+      }
+      const raised = handRaiseQuestionId !== questionId;
+      setRaiseHandBusyQuestionId(questionId);
+      try {
+        const res = await fetch(`/api/public/live-sessions/${joinedLiveSessionId}/raise-hand`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            deviceId: anonymousSessionId,
+            questionId,
+            raised,
+          }),
+        });
+        const data = (await res.json()) as { error?: string };
+        if (!res.ok) {
+          throw new Error(data.error ?? t("home.exam.raiseHandError"));
+        }
+        setHandRaiseQuestionId(raised ? questionId : null);
+      } catch (e) {
+        setStatusMessage(e instanceof Error ? e.message : t("home.exam.raiseHandError"));
+      } finally {
+        setRaiseHandBusyQuestionId(null);
+      }
+    },
+    [anonymousSessionId, handRaiseQuestionId, joinedLiveSessionId, t],
   );
 
   useEffect(() => {
@@ -2998,6 +3043,14 @@ export default function HomeClient({
                       Boolean(examSuspended) ||
                       Boolean(airAlertPaused) ||
                       Boolean(examFinished));
+                  const showRaiseHand = Boolean(
+                    joinedSession &&
+                      examWritable &&
+                      !examFinished &&
+                      !examSuspended &&
+                      !airAlertPaused &&
+                      !isBuilderStudentPreview,
+                  );
                   return (
                     <StudentExamQuestion
                       key={question.id}
@@ -3016,6 +3069,10 @@ export default function HomeClient({
                       )}
                       showLiveFeedbackFeature={showLiveTeacherFeedback}
                       feedbackStore={liveTeacherFeedback}
+                      showRaiseHand={showRaiseHand}
+                      handRaised={handRaiseQuestionId === question.id}
+                      raiseHandBusy={raiseHandBusyQuestionId === question.id}
+                      onToggleRaiseHand={() => void toggleRaiseHand(question.id)}
                       onChoiceChange={(value) => {
                         if (isBuilderStudentPreview) {
                           setPreviewAnswers((prev) => ({
@@ -3064,9 +3121,7 @@ export default function HomeClient({
                   data-testid="student-autosave-status"
                   aria-live="polite"
                   className="text-xs text-[var(--tp-text-secondary)]"
-                >
-                  {"\u00a0"}
-                </p>
+                />
               </div>
               {joinedSession && examWritable && !examFinished ? (
                 <button

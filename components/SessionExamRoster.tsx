@@ -13,6 +13,7 @@ import {
   participantAvatarGradient,
   participantInitials,
 } from "@/lib/participant-display";
+import { RosterWifiIcon, rosterConnectionSyncState } from "@/components/RosterWifiIcon";
 import type { LiveParticipantUiStatus } from "@/lib/participant-status";
 import { focusRing } from "@/lib/ui";
 
@@ -20,7 +21,7 @@ type Props = {
   previewQuestions: RosterPreviewQuestion[];
   participants: LiveSessionOverviewParticipant[];
   liveDraftsByDevice: Record<string, StudentAnswers>;
-  onOpenExam: (deviceId: string) => void;
+  onOpenExam: (deviceId: string, questionId?: string | null) => void;
   onResumeStudent?: (deviceId: string) => void;
   resumeBusyDeviceId?: string | null;
 };
@@ -59,7 +60,7 @@ function StatusChip({
   );
 }
 
-function SyncStatusBadge({
+function ConnectionWifiIndicator({
   participant: p,
   t,
 }: {
@@ -69,27 +70,14 @@ function SyncStatusBadge({
   if (p.finishedAt || p.gradedAt) {
     return null;
   }
-  if (p.syncState === "offline") {
-    return (
-      <span className="tp-status tp-status-sync-offline" data-testid="roster-sync-badge" data-sync-state="offline">
-        <span className="tp-status-dot" aria-hidden />
-        {t("session.status.syncOffline")}
-      </span>
-    );
-  }
-  if (p.syncState === "pending" || p.pendingSyncCount > 0) {
-    return (
-      <span
-        className="tp-status tp-status-sync-pending"
-        data-testid="roster-sync-badge"
-        data-sync-state="pending"
-      >
-        <span className="tp-status-dot" aria-hidden />
-        {t("session.status.syncSaving")}
-      </span>
-    );
-  }
-  return null;
+  const syncState = rosterConnectionSyncState(p);
+  const label =
+    syncState === "offline"
+      ? t("session.status.syncOffline")
+      : syncState === "pending"
+        ? t("session.status.syncSaving")
+        : t("session.status.syncOnline");
+  return <RosterWifiIcon syncState={syncState} label={label} />;
 }
 
 function RosterStatusBadge({
@@ -170,7 +158,7 @@ function RosterRow({
   previewQuestions: RosterPreviewQuestion[];
   participant: LiveSessionOverviewParticipant;
   liveDraftsByDevice: Record<string, StudentAnswers>;
-  onOpenExam: (deviceId: string) => void;
+  onOpenExam: (deviceId: string, questionId?: string | null) => void;
   onResumeStudent?: (deviceId: string) => void;
   resumeBusyDeviceId?: string | null;
 }) {
@@ -186,7 +174,8 @@ function RosterRow({
 
   const isResumeBusy = resumeBusyDeviceId === deviceNorm;
   const isBlocked = p.status === "blocked";
-  const open = () => onOpenExam(p.anonymousSessionId);
+  const open = (questionId?: string | null) => onOpenExam(p.anonymousSessionId, questionId);
+  const handRaised = Boolean(p.handRaisedAt && p.handRaiseQuestionId);
 
   if (isBlocked && onResumeStudent) {
     return (
@@ -208,7 +197,7 @@ function RosterRow({
               </span>
             </div>
             <div className="tp-roster-row__statuses">
-              <SyncStatusBadge participant={p} t={t} />
+              <ConnectionWifiIndicator participant={p} t={t} />
               <RosterStatusBadge participant={p} t={t} />
             </div>
           </div>
@@ -230,7 +219,7 @@ function RosterRow({
       role="link"
       tabIndex={0}
       className={`tp-roster-row tp-roster-row--card ${focusRing}`}
-      onClick={open}
+      onClick={() => open()}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
@@ -266,7 +255,22 @@ function RosterRow({
             ) : null}
           </div>
           <div className="tp-roster-row__statuses">
-            <SyncStatusBadge participant={p} t={t} />
+            {handRaised ? (
+              <button
+                type="button"
+                className={`tp-roster-hand-btn ${focusRing}`}
+                aria-label={t("session.roster.answerHandRaise")}
+                title={t("session.roster.answerHandRaise")}
+                data-testid="roster-hand-button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  open(p.handRaiseQuestionId);
+                }}
+              >
+                ✋
+              </button>
+            ) : null}
+            <ConnectionWifiIndicator participant={p} t={t} />
             <RosterStatusBadge participant={p} t={t} />
           </div>
         </div>

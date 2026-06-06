@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { expect, type Page } from "@playwright/test";
+import { expect, type BrowserContext, type Page, type Route } from "@playwright/test";
 
 import type { E2eFixture } from "./global-setup";
 
@@ -19,15 +19,69 @@ export async function loadE2eFixture(): Promise<E2eFixture | null> {
   }
 }
 
+const studentResponsesUrl = /\/api\/public\/live-sessions\/[^/]+\/responses/;
+
+function blockStudentAnswerPut(route: Route) {
+  if (route.request().method() === "PUT" && studentResponsesUrl.test(route.request().url())) {
+    return route.abort("failed");
+  }
+  return route.continue();
+}
+
 /** Resolves when the student PUT autosave request succeeds. */
 export function waitForStudentAnswersPut(page: Page, timeout = 45_000) {
   return page.waitForResponse(
     (res) =>
       res.request().method() === "PUT" &&
-      /\/api\/public\/live-sessions\/[^/]+\/responses/.test(res.url()) &&
+      studentResponsesUrl.test(res.url()) &&
       res.ok(),
     { timeout },
   );
+}
+
+/** Resolves when a student PUT autosave includes the given answer snippet. */
+export function waitForStudentAnswersPutContaining(
+  page: Page,
+  textSnippet: string,
+  timeout = 45_000,
+) {
+  return page.waitForResponse(
+    async (res) => {
+      if (
+        res.request().method() !== "PUT" ||
+        !studentResponsesUrl.test(res.url()) ||
+        !res.ok()
+      ) {
+        return false;
+      }
+      try {
+        const body = (await res.request().postDataJSON()) as { answers?: Record<string, string> };
+        return Object.values(body.answers ?? {}).some((value) => value.includes(textSnippet));
+      } catch {
+        return false;
+      }
+    },
+    { timeout },
+  );
+}
+
+/**
+ * Reload the student exam after offline edits. A full reload needs network for the
+ * document; answer state should hydrate from IndexedDB while sync stays blocked.
+ */
+export async function reloadStudentExamWithOfflineEdits(
+  page: Page,
+  context: BrowserContext,
+): Promise<void> {
+  await page.route(studentResponsesUrl, blockStudentAnswerPut);
+  await context.setOffline(false);
+  try {
+    await page.reload({ waitUntil: "domcontentloaded" });
+  } finally {
+    await context.setOffline(true);
+    await page.unroute(studentResponsesUrl, blockStudentAnswerPut);
+  }
+  await expect(page.getByTestId("student-exam-answer")).toBeVisible({ timeout: 30_000 });
 }
 
 /** Wait for a successful student-side join API response. */
@@ -72,6 +126,17 @@ export async function joinStudentSession(
   const examAnswer = page.getByTestId("student-exam-answer");
   await expect(examAnswer).toBeVisible({ timeout: 30_000 });
   await expect(examAnswer).toBeEnabled({ timeout: 30_000 });
+
+  // Join triggers a hydration autosave; let it finish so later PUT waiters are not fooled.
+  await expect
+    .poll(
+      async () => {
+        const text = await page.getByTestId("student-autosave-status").textContent();
+        return text?.match(/saved/i) != null || text?.trim() === "";
+      },
+      { timeout: 15_000 },
+    )
+    .toBe(true);
 }
 
 /** Type into the exam answer and wait until autosave persists to the server. */
@@ -86,27 +151,52 @@ export async function typeStudentAnswerAndWaitForAutosave(
   await expect(answer).toBeEnabled();
   await expect(status).toBeAttached({ timeout: 15_000 });
 
-  const saved = waitForStudentAnswersPut(page);
   await answer.click();
   await answer.fill(text);
   await expect(answer).toHaveValue(text, { timeout: 15_000 });
 
+  // Register the PUT waiter after fill so we do not resolve on an earlier hydration autosave.
+  const saved = page.waitForResponse(
+    async (res) => {
+      if (
+        res.request().method() !== "PUT" ||
+        !/\/api\/public\/live-sessions\/[^/]+\/responses/.test(res.url()) ||
+        !res.ok()
+      ) {
+        return false;
+      }
+      try {
+        const body = (await res.request().postDataJSON()) as { answers?: Record<string, string> };
+        return Object.values(body.answers ?? {}).some((value) => value.includes(text));
+      } catch {
+        return false;
+      }
+    },
+    { timeout: 45_000 },
+  );
   // Playwright fill can update the DOM before React state; a small edit guarantees input events.
   await answer.press("End");
   await answer.press(" ");
   await answer.press("Backspace");
 
   await saved;
-  await expect(status).toContainText(/saved/i, { timeout: 10_000 });
+  await waitForAutosaveSaved(page, 45_000);
+}
+
+/** Wait until the autosave banner shows a successful save. */
+export async function waitForAutosaveSaved(page: Page, timeout = 45_000): Promise<void> {
+  const status = page.getByTestId("student-autosave-status");
+  await expect
+    .poll(() => status.textContent(), {
+      message: "autosave status should show saved",
+      timeout,
+    })
+    .toMatch(/saved/i);
 }
 
 /** Wait for the next successful student autosave after edits are already in flight. */
 export async function waitForNextStudentAutosave(page: Page, timeout = 45_000): Promise<void> {
-  const saved = waitForStudentAnswersPut(page, timeout);
-  await saved;
-  await expect(page.getByTestId("student-autosave-status")).toContainText(/saved/i, {
-    timeout: 10_000,
-  });
+  await waitForAutosaveSaved(page, timeout);
 }
 
 export async function readAnonymousDeviceId(page: Page): Promise<string> {

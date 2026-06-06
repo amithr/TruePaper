@@ -335,7 +335,11 @@
         "youEarned": "You earned {score}.",
         "paused": "Paused",
         "pausedHint": "Keep this tab visible. Your teacher will let you back in."
-      }
+      },
+      "raiseHand": "Raise hand",
+      "raiseHandLower": "Lower hand",
+      "raiseHandBusy": "Updating…",
+      "raiseHandError": "Could not update raise hand."
     },
     "submitted": {
       "title": "Exam submitted",
@@ -399,7 +403,8 @@
       "idle": "Idle",
       "workingPill": "Working",
       "syncSaving": "Saving…",
-      "syncOffline": "Offline"
+      "syncOffline": "Offline",
+      "syncOnline": "Online"
     },
     "codeLabel": "Code {joinCode}",
     "liveOpenNoLimit": "Live session open · No time limit",
@@ -445,7 +450,8 @@
       "subtitleGraded": "Graded · {message}",
       "subtitleSubmittedOne": "Submitted · {count} word",
       "subtitleSubmittedOther": "Submitted · {count} words",
-      "workingNow": "· {count} working now"
+      "workingNow": "· {count} working now",
+      "answerHandRaise": "Student needs help — open their exam"
     },
     "actions": {
       "stop": "Stop session",

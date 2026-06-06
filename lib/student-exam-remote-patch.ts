@@ -4,6 +4,8 @@ export type StudentExamRemotePatch = {
   liveTeacherFeedback?: LiveTeacherFeedbackByQuestionId;
   suspended?: boolean;
   finished?: boolean;
+  handRaiseQuestionId?: string | null;
+  handRaisedAt?: string | null;
 };
 
 /** Maps a form_responses row to student UI fields. Never includes answers (local state is authoritative). */

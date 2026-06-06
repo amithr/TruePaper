@@ -18,6 +18,8 @@ type Options = {
 type StudentStateResponse = {
   suspended?: boolean;
   finished?: boolean;
+  handRaiseQuestionId?: string | null;
+  handRaisedAt?: string | null;
 };
 
 /**
@@ -59,6 +61,9 @@ export function useStudentExamStatePoll({
         onPatchRef.current({
           suspended: data.suspended === true,
           finished: data.finished === true,
+          handRaiseQuestionId:
+            typeof data.handRaiseQuestionId === "string" ? data.handRaiseQuestionId : null,
+          handRaisedAt: typeof data.handRaisedAt === "string" ? data.handRaisedAt : null,
         });
       } catch {
         /* transient; next tick retries */

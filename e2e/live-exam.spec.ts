@@ -8,7 +8,7 @@ import {
   readAnonymousDeviceId,
   teacherFeedbackMessage,
   typeStudentAnswerAndWaitForAutosave,
-  waitForStudentAnswersPut,
+  waitForNextStudentAutosave,
 } from "./helpers";
 
 const teacherAuth = path.join(__dirname, ".auth", "teacher.json");
@@ -35,14 +35,10 @@ test.describe("Live exam E2E", () => {
     await expect(answer).toHaveValue(longStudentAnswer);
 
     const withTail = `${longStudentAnswer} Extra tail after autosave.`;
-    const tailSave = waitForStudentAnswersPut(page);
     await answer.press("End");
     await answer.pressSequentially(" Extra tail after autosave.", { delay: 5 });
     await expect(answer).toHaveValue(withTail, { timeout: 15_000 });
-    await tailSave;
-    await expect(page.getByTestId("student-autosave-status")).toContainText(/saved/i, {
-      timeout: 10_000,
-    });
+    await waitForNextStudentAutosave(page);
   });
 
   test("teacher watch page shows student answers updating", async ({ browser }) => {
