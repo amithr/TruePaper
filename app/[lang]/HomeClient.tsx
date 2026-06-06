@@ -262,6 +262,8 @@ export default function HomeClient({
         return t("responseTypes.annotateSource.label");
       case "drawDiagram":
         return t("responseTypes.drawDiagram.label");
+      case "graph":
+        return t("responseTypes.graph.label");
       case "photoHandwritten":
         return t("responseTypes.photoHandwritten.label");
       case "trueFalse":

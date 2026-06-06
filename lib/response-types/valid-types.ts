@@ -8,6 +8,7 @@ export const VALID_QUESTION_TYPES: readonly ResponseTypeId[] = [
   "structuredMultiPart",
   "annotateSource",
   "drawDiagram",
+  "graph",
   "photoHandwritten",
   "trueFalse",
   "matching",

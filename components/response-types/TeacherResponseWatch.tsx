@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { DrawingCanvas } from "@/components/DrawingCanvas";
+import { GraphCanvas } from "@/components/response-types/GraphCanvas";
 import type { Question } from "@/lib/forms";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { parseResponseValue } from "@/lib/response-types/answers";
@@ -17,6 +18,7 @@ import type { DrawingStroke } from "@/lib/response-types/drawing";
 import {
   normalizeResponseType,
   type DrawDiagramConfig,
+  type GraphConfig,
   type LabellingConfig,
   type MatchingConfig,
   type OrderingConfig,
@@ -277,6 +279,50 @@ export function TeacherResponseWatch({
           readOnly
           data-testid="teacher-watch-answer"
         />
+        {liveFeedbackEnabled ? (
+          <div>
+            <p className="mb-2 text-xs font-medium text-[var(--tp-text-secondary)]">
+              {t("responseTypes.watch.annotate")}
+            </p>
+            <DrawingCanvas
+              width={width}
+              height={height}
+              strokes={annotationDraft}
+              backgroundImageUrl={undefined}
+              strokeColor="#c2410c"
+              strokeWidth={3}
+              onChange={(strokes) => {
+                setAnnotationDraft(strokes);
+                scheduleCanvasSave(strokes);
+              }}
+            />
+          </div>
+        ) : null}
+        <WrittenFeedbackBlock {...feedbackProps} liveFeedbackEnabled={liveFeedbackEnabled} />
+      </div>
+    );
+  }
+
+  if (type === "graph" && value.type === "graph") {
+    const config = question.responseConfig as GraphConfig;
+    const width = Math.max(320, Math.min(640, config.width ?? 480));
+    const height = Math.max(320, Math.min(640, config.height ?? 480));
+    const hasGraph = value.points.length > 0 || value.lines.length > 0;
+    return (
+      <div className="space-y-3">
+        {hasGraph ? (
+          <GraphCanvas
+            config={config}
+            points={value.points}
+            lines={value.lines}
+            readOnly
+            data-testid="teacher-watch-answer"
+          />
+        ) : (
+          <p className="text-sm text-[var(--tp-text-secondary)]" data-testid="teacher-watch-answer">
+            {t("session.watch.noResponse")}
+          </p>
+        )}
         {liveFeedbackEnabled ? (
           <div>
             <p className="mb-2 text-xs font-medium text-[var(--tp-text-secondary)]">

@@ -2,6 +2,7 @@
 
 import { AnnotateSourceResponder } from "@/components/response-types/AnnotateSourceResponder";
 import { DrawDiagramResponder } from "@/components/response-types/DrawDiagramResponder";
+import { GraphResponder } from "@/components/response-types/GraphResponder";
 import { ExtendedWrittenResponder } from "@/components/response-types/ExtendedWrittenResponder";
 import { LabellingResponder } from "@/components/response-types/LabellingResponder";
 import { MatchingResponder } from "@/components/response-types/MatchingResponder";
@@ -33,6 +34,7 @@ import type {
   AnnotateSourceConfig,
   DrawDiagramConfig,
   ExtendedWrittenConfig,
+  GraphConfig,
   LabellingConfig,
   MatchingConfig,
   MathInputConfig,
@@ -109,6 +111,8 @@ export function StudentResponseDispatcher({
         return t("responseTypes.annotateSource.label");
       case "drawDiagram":
         return t("responseTypes.drawDiagram.label");
+      case "graph":
+        return t("responseTypes.graph.label");
       case "photoHandwritten":
         return t("responseTypes.photoHandwritten.label");
       case "trueFalse":
@@ -236,6 +240,18 @@ export function StudentResponseDispatcher({
         />
       ) : null}
 
+      {type === "graph" && value.type === "graph" ? (
+        <GraphResponder
+          points={value.points}
+          lines={value.lines}
+          disabled={disabled}
+          config={question.responseConfig as GraphConfig}
+          onChange={(points, lines) =>
+            onAnswerChange(serializeResponseValue({ type: "graph", points, lines }))
+          }
+        />
+      ) : null}
+
       {type === "photoHandwritten" && value.type === "photoHandwritten" ? (
         <PhotoHandwrittenResponder
           imageDataUrl={value.imageDataUrl}
@@ -336,6 +352,19 @@ export function StudentResponseDispatcher({
               <DrawingCanvas
                 width={(question.responseConfig as DrawDiagramConfig).width ?? 600}
                 height={(question.responseConfig as DrawDiagramConfig).height ?? 360}
+                strokes={canvasAnnotation}
+                readOnly
+              />
+            </div>
+          ) : null}
+          {canvasAnnotation.length > 0 && value.type === "graph" ? (
+            <div>
+              <p className="mb-2 text-xs font-medium text-[var(--tp-text-secondary)]">
+                {t("responseTypes.feedback.annotation")}
+              </p>
+              <DrawingCanvas
+                width={(question.responseConfig as GraphConfig).width ?? 480}
+                height={(question.responseConfig as GraphConfig).height ?? 480}
                 strokes={canvasAnnotation}
                 readOnly
               />

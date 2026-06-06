@@ -2,6 +2,7 @@ import type {
   AnnotateSourceValue,
   DrawDiagramValue,
   ExtendedWrittenValue,
+  GraphValue,
   LabellingValue,
   MatchingValue,
   MathInputValue,
@@ -23,6 +24,7 @@ const JSON_TYPES = new Set([
   "structuredMultiPart",
   "annotateSource",
   "drawDiagram",
+  "graph",
   "photoHandwritten",
   "trueFalse",
   "matching",
@@ -89,6 +91,18 @@ export function parseResponseValue(
       return { type: "drawDiagram", strokes: parsed.strokes };
     }
     return { type: "drawDiagram", strokes: [] };
+  }
+
+  if (normalized === "graph") {
+    const parsed = parseJsonWire<GraphValue>(text, "graph");
+    if (parsed && Array.isArray(parsed.points)) {
+      return {
+        type: "graph",
+        points: parsed.points,
+        lines: Array.isArray(parsed.lines) ? parsed.lines : [],
+      };
+    }
+    return { type: "graph", points: [], lines: [] };
   }
 
   if (normalized === "photoHandwritten") {
@@ -175,6 +189,12 @@ export function serializeResponseValue(value: ResponseValue): string {
         type: "drawDiagram",
         strokes: value.strokes,
       });
+    case "graph":
+      return JSON.stringify({
+        type: "graph",
+        points: value.points,
+        lines: value.lines,
+      });
     case "photoHandwritten":
       return JSON.stringify({
         type: "photoHandwritten",
@@ -254,6 +274,12 @@ export function previewResponseText(
     case "drawDiagram":
       text = value.strokes.length > 0 ? "Drawing" : "";
       break;
+    case "graph":
+      text =
+        value.points.length > 0
+          ? `${value.points.length} point${value.points.length === 1 ? "" : "s"}`
+          : "";
+      break;
     case "photoHandwritten":
       text = value.imageDataUrl ? "Photo upload" : "";
       break;
@@ -285,6 +311,8 @@ export function isResponseAnswered(
       return value.highlights.length > 0;
     case "drawDiagram":
       return value.strokes.length > 0;
+    case "graph":
+      return value.points.length > 0 || value.lines.length > 0;
     case "photoHandwritten":
       return value.imageDataUrl.trim().length > 0;
     case "trueFalse":

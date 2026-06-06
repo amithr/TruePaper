@@ -5,6 +5,7 @@ import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { parseResponseConfig } from "@/lib/response-types/registry";
 import type {
   DrawDiagramConfig,
+  GraphConfig,
   LabellingConfig,
   MatchingConfig,
   MathInputConfig,
@@ -90,6 +91,82 @@ export function BuilderResponseConfig({ question, updateActiveForm }: Props) {
             onChange={(event) => patchConfig({ height: Number(event.target.value) || 360 })}
             className="tp-input"
           />
+        </label>
+      </div>
+    );
+  }
+
+  if (question.type === "graph") {
+    const config = parseResponseConfig(question.type, question.responseConfig) as GraphConfig;
+    return (
+      <div className="space-y-3 rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] p-3">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className={ui.label}>
+            {t("responseTypes.builder.graphXMin")}
+            <input
+              type="number"
+              value={config.xMin ?? -5}
+              onChange={(event) => patchConfig({ xMin: Number(event.target.value) })}
+              className="tp-input"
+            />
+          </label>
+          <label className={ui.label}>
+            {t("responseTypes.builder.graphXMax")}
+            <input
+              type="number"
+              value={config.xMax ?? 5}
+              onChange={(event) => patchConfig({ xMax: Number(event.target.value) })}
+              className="tp-input"
+            />
+          </label>
+          <label className={ui.label}>
+            {t("responseTypes.builder.graphYMin")}
+            <input
+              type="number"
+              value={config.yMin ?? -5}
+              onChange={(event) => patchConfig({ yMin: Number(event.target.value) })}
+              className="tp-input"
+            />
+          </label>
+          <label className={ui.label}>
+            {t("responseTypes.builder.graphYMax")}
+            <input
+              type="number"
+              value={config.yMax ?? 5}
+              onChange={(event) => patchConfig({ yMax: Number(event.target.value) })}
+              className="tp-input"
+            />
+          </label>
+          <label className={ui.label}>
+            {t("responseTypes.builder.canvasWidth")}
+            <input
+              type="number"
+              min={320}
+              max={640}
+              value={config.width ?? 480}
+              onChange={(event) => patchConfig({ width: Number(event.target.value) || 480 })}
+              className="tp-input"
+            />
+          </label>
+          <label className={ui.label}>
+            {t("responseTypes.builder.canvasHeight")}
+            <input
+              type="number"
+              min={320}
+              max={640}
+              value={config.height ?? 480}
+              onChange={(event) => patchConfig({ height: Number(event.target.value) || 480 })}
+              className="tp-input"
+            />
+          </label>
+        </div>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={config.showGrid !== false}
+            onChange={(event) => patchConfig({ showGrid: event.target.checked })}
+          />
+          {t("responseTypes.builder.graphShowGrid")}
         </label>
       </div>
     );

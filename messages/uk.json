@@ -761,6 +761,16 @@
       "undo": "Скасувати",
       "clear": "Очистити"
     },
+    "graph": {
+      "label": "Графік",
+      "pointMode": "Додати точку",
+      "lineMode": "Провести лінію",
+      "undo": "Скасувати",
+      "clear": "Очистити",
+      "pointHint": "Клацніть на сітці, щоб поставити точку.",
+      "lineHintFirst": "Клацніть точку, потім іншу — з’єднає їх лінією.",
+      "lineHintSecond": "Тепер клацніть другу точку для лінії."
+    },
     "photoHandwritten": {
       "label": "Фото рукописної роботи",
       "upload": "Зробити фото або завантажити",
@@ -821,6 +831,11 @@
       "correctAnswer": "Правильна відповідь",
       "canvasWidth": "Ширина полотна",
       "canvasHeight": "Висота полотна",
+      "graphXMin": "Мінімум X",
+      "graphXMax": "Максимум X",
+      "graphYMin": "Мінімум Y",
+      "graphYMax": "Максимум Y",
+      "graphShowGrid": "Показувати сітку",
       "mathPlaceholder": "Текст-підказка",
       "matchingPairs": "Пари відповідності",
       "matchLeft": "Лівий елемент",

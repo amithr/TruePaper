@@ -12,6 +12,7 @@ export type ResponseTypeId =
   | "structuredMultiPart"
   | "annotateSource"
   | "drawDiagram"
+  | "graph"
   | "photoHandwritten"
   | "trueFalse"
   | "matching"
@@ -67,6 +68,16 @@ export type DrawDiagramConfig = {
   backgroundDataUrl?: string;
 };
 
+export type GraphConfig = {
+  xMin?: number;
+  xMax?: number;
+  yMin?: number;
+  yMax?: number;
+  width?: number;
+  height?: number;
+  showGrid?: boolean;
+};
+
 export type PhotoHandwrittenConfig = {
   maxDimension?: number;
 };
@@ -102,6 +113,7 @@ export type ResponseConfig =
   | StructuredMultiPartConfig
   | AnnotateSourceConfig
   | DrawDiagramConfig
+  | GraphConfig
   | PhotoHandwrittenConfig
   | TrueFalseConfig
   | MatchingConfig
@@ -131,6 +143,11 @@ export type AnnotateSourceValue = {
 export type MultipleChoiceValue = { type: "multipleChoice"; choice: string };
 
 export type DrawDiagramValue = { type: "drawDiagram"; strokes: DrawingStroke[] };
+
+export type GraphPoint = { id: string; x: number; y: number };
+export type GraphLine = { id: string; from: string; to: string };
+export type GraphValue = { type: "graph"; points: GraphPoint[]; lines: GraphLine[] };
+
 export type PhotoHandwrittenValue = {
   type: "photoHandwritten";
   imageDataUrl: string;
@@ -150,6 +167,7 @@ export type ResponseValue =
   | AnnotateSourceValue
   | MultipleChoiceValue
   | DrawDiagramValue
+  | GraphValue
   | PhotoHandwrittenValue
   | TrueFalseValue
   | MatchingValue
@@ -203,7 +221,7 @@ export function isObjectiveResponseType(type: ResponseTypeId): boolean {
 }
 
 export function isVisualResponseType(type: ResponseTypeId): boolean {
-  return type === "drawDiagram" || type === "photoHandwritten";
+  return type === "drawDiagram" || type === "graph" || type === "photoHandwritten";
 }
 
 const KNOWN_TYPES = new Set<ResponseTypeId>([
@@ -213,6 +231,7 @@ const KNOWN_TYPES = new Set<ResponseTypeId>([
   "structuredMultiPart",
   "annotateSource",
   "drawDiagram",
+  "graph",
   "photoHandwritten",
   "trueFalse",
   "matching",

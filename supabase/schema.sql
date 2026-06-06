@@ -26,6 +26,7 @@ create table if not exists public.questions (
       'structuredMultiPart',
       'annotateSource',
       'drawDiagram',
+      'graph',
       'photoHandwritten',
       'trueFalse',
       'matching',

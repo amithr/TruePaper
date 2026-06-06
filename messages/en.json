@@ -761,6 +761,16 @@
       "undo": "Undo",
       "clear": "Clear"
     },
+    "graph": {
+      "label": "Graph",
+      "pointMode": "Add point",
+      "lineMode": "Draw line",
+      "undo": "Undo",
+      "clear": "Clear",
+      "pointHint": "Click on the grid to place a point.",
+      "lineHintFirst": "Click a point, then click another to connect them.",
+      "lineHintSecond": "Now click a second point to draw the line."
+    },
     "photoHandwritten": {
       "label": "Photo handwritten work",
       "upload": "Take photo or upload",
@@ -821,6 +831,11 @@
       "correctAnswer": "Correct answer",
       "canvasWidth": "Canvas width",
       "canvasHeight": "Canvas height",
+      "graphXMin": "X minimum",
+      "graphXMax": "X maximum",
+      "graphYMin": "Y minimum",
+      "graphYMax": "Y maximum",
+      "graphShowGrid": "Show grid lines",
       "mathPlaceholder": "Placeholder text",
       "matchingPairs": "Matching pairs",
       "matchLeft": "Left item",
