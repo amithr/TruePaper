@@ -33,6 +33,7 @@ describe("response-types registry", () => {
 
   it("reports live feedback support per type", () => {
     expect(questionSupportsLiveFeedback("extendedWritten")).toBe(true);
-    expect(questionSupportsLiveFeedback("trueFalse")).toBe(false);
+    expect(questionSupportsLiveFeedback("trueFalse")).toBe(true);
+    expect(questionSupportsLiveFeedback("multipleChoice")).toBe(true);
   });
 });

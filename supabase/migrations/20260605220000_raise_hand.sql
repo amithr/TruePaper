@@ -26,10 +26,10 @@ begin
     raise exception 'invalid device id';
   end if;
 
-  select fs.id, fs.form_id, fs.opens_at, fs.closes_at, fs.delivery_mode
+  select sess.id, sess.form_id, sess.opens_at, sess.closes_at, sess.delivery_mode
   into fs
-  from public.form_sessions fs
-  where fs.id = p_live_session_id
+  from public.form_sessions sess
+  where sess.id = p_live_session_id
   limit 1;
 
   if not found then

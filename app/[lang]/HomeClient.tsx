@@ -53,7 +53,7 @@ import {
   questionSupportsLiveFeedback,
 } from "@/lib/response-types/registry";
 import { isResponseAnswered } from "@/lib/response-types/answers";
-import { postExamTabLeave } from "@/lib/exam-tab-leave";
+import { postExamTabLeave, postExamTabLeaveAwait } from "@/lib/exam-tab-leave";
 import { useLatestRef } from "@/lib/use-latest-ref";
 import type { Form, Question, QuestionType, StudentAnswers } from "@/lib/forms";
 import { isValidLiveSessionDisplayName, normalizeLiveSessionDisplayName } from "@/lib/live-session-display-name";
@@ -79,9 +79,12 @@ import type { DeliveryMode } from "@/lib/offline/config";
 import { sessionAllowsAnswerSync } from "@/lib/offline/delivery-mode";
 import { heartbeatSyncMeta } from "@/lib/offline/heartbeat-meta";
 import { cacheExamSession, loadCachedExamSession } from "@/lib/offline/session-cache";
+import { studentConnectionDisplayState } from "@/lib/student-connection-display-state";
 import type { ConnectionSnapshot } from "@/lib/offline/types";
 import { useOfflineExamSync } from "@/lib/offline/use-offline-exam-sync";
+import { useBrowserOnline } from "@/lib/use-browser-online";
 import { useStudentExamRealtime } from "@/lib/use-student-exam-realtime";
+import { shouldApplyTeacherExamResume } from "@/lib/student-exam-tab-pause";
 import { useStudentExamStatePoll } from "@/lib/use-student-exam-state-poll";
 import { focusRing, ui } from "@/lib/ui";
 
@@ -364,6 +367,8 @@ export default function HomeClient({
   const [urlAuthNotice, setUrlAuthNotice] = useState("");
   const [nowTick, setNowTick] = useState(() => Date.now());
   const tabLeaveReportedRef = useRef(false);
+  /** Server recorded tab suspension — required before accepting `suspended: false` (teacher resume). */
+  const serverTabPauseConfirmedRef = useRef(false);
   const studentResponseLoadKeyRef = useRef<string | null>(null);
   const teacherDashboardRedirectedRef = useRef(false);
   const [studentAnswersHydrated, setStudentAnswersHydrated] = useState(false);
@@ -828,6 +833,58 @@ export default function HomeClient({
 
   const offlineSyncRef = useLatestRef(offlineSync);
   const answerSyncEnabledRef = useLatestRef(answerSyncEnabled);
+  const browserOnline = useBrowserOnline();
+  const studentConnectionState = useMemo(
+    () => studentConnectionDisplayState(browserOnline, offlineSync.snapshot),
+    [browserOnline, offlineSync.snapshot.state],
+  );
+  const lastSyncHeartbeatKeyRef = useRef("");
+
+  useEffect(() => {
+    if (
+      !joinedSession ||
+      !anonymousSessionId ||
+      !activeExamDisplayName ||
+      !sessionOpen ||
+      examSuspended ||
+      examFinished
+    ) {
+      return;
+    }
+    const syncMeta = heartbeatSyncMeta(offlineSync.snapshot);
+    const key = `${browserOnline ? "online" : "offline"}:${syncMeta.syncState}:${syncMeta.pendingSyncCount}`;
+    if (lastSyncHeartbeatKeyRef.current === key) {
+      return;
+    }
+    lastSyncHeartbeatKeyRef.current = key;
+    void (async () => {
+      try {
+        await fetch(`/api/public/live-sessions/${joinedSession.liveSessionId}/heartbeat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            deviceId: anonymousSessionId,
+            displayName: activeExamDisplayName,
+            isTyping: false,
+            interaction: true,
+            ...syncMeta,
+          }),
+        });
+      } catch {
+        /* ignore */
+      }
+    })();
+  }, [
+    browserOnline,
+    offlineSync.snapshot.pendingCount,
+    offlineSync.snapshot.state,
+    joinedSession,
+    anonymousSessionId,
+    activeExamDisplayName,
+    sessionOpen,
+    examSuspended,
+    examFinished,
+  ]);
 
   useEffect(() => {
     if (!isAirAlertEnabled() || !joinedSession || examFinished) {
@@ -919,6 +976,9 @@ export default function HomeClient({
         }
 
         if (parsed) {
+          if (parsed.suspended) {
+            serverTabPauseConfirmedRef.current = true;
+          }
           setExamSuspended(parsed.suspended);
           setExamFinished(parsed.finished);
           setLiveTeacherFeedback((prev) => ({ ...prev, ...parsed.liveTeacherFeedback }));
@@ -985,9 +1045,14 @@ export default function HomeClient({
       }
     }
     if (patch.suspended === true) {
+      serverTabPauseConfirmedRef.current = true;
       setExamSuspended(true);
       setStatusMessage(t("home.status.paused"));
     } else if (patch.suspended === false) {
+      if (!shouldApplyTeacherExamResume(serverTabPauseConfirmedRef.current)) {
+        return;
+      }
+      serverTabPauseConfirmedRef.current = false;
       setExamSuspended((prevSuspended) => {
         if (prevSuspended) {
           setStatusMessage(t("home.status.resumed"));
@@ -1216,32 +1281,59 @@ export default function HomeClient({
   useEffect(() => {
     if (!examSuspended) {
       tabLeaveReportedRef.current = false;
+      serverTabPauseConfirmedRef.current = false;
     }
   }, [examSuspended]);
 
   useEffect(() => {
-    if (!joinedSession || !anonymousSessionId || !examSuspended) {
+    if (!joinedSession || !anonymousSessionId || !examSuspended || !activeExamDisplayName) {
       return;
     }
     const liveSessionId = joinedSession.liveSessionId;
-    const checkIfResumed = () => {
+    const deviceId = anonymousSessionId;
+    const displayName = activeExamDisplayName;
+    const tabLeaveUrl = `/api/public/live-sessions/${liveSessionId}/tab-leave`;
+
+    const syncTabPauseWithServer = () => {
       if (document.visibilityState !== "visible") {
         return;
       }
-      void fetchStudentExamStatus(liveSessionId, anonymousSessionId).then((status) => {
-        if (status && !status.suspended) {
-          applyStudentExamRemotePatch({ suspended: false });
+      void (async () => {
+        const status = await fetchStudentExamStatus(liveSessionId, deviceId);
+        if (!status) {
+          return;
         }
-      });
+        if (status.suspended) {
+          serverTabPauseConfirmedRef.current = true;
+          return;
+        }
+        if (!serverTabPauseConfirmedRef.current) {
+          const ok = await postExamTabLeaveAwait(tabLeaveUrl, { deviceId, displayName });
+          if (ok) {
+            serverTabPauseConfirmedRef.current = true;
+          }
+          return;
+        }
+        applyStudentExamRemotePatch({ suspended: false });
+      })();
     };
-    checkIfResumed();
-    document.addEventListener("visibilitychange", checkIfResumed);
-    window.addEventListener("focus", checkIfResumed);
+
+    syncTabPauseWithServer();
+    document.addEventListener("visibilitychange", syncTabPauseWithServer);
+    window.addEventListener("focus", syncTabPauseWithServer);
+    window.addEventListener("online", syncTabPauseWithServer);
     return () => {
-      document.removeEventListener("visibilitychange", checkIfResumed);
-      window.removeEventListener("focus", checkIfResumed);
+      document.removeEventListener("visibilitychange", syncTabPauseWithServer);
+      window.removeEventListener("focus", syncTabPauseWithServer);
+      window.removeEventListener("online", syncTabPauseWithServer);
     };
-  }, [joinedSession, anonymousSessionId, examSuspended, applyStudentExamRemotePatch]);
+  }, [
+    joinedSession,
+    anonymousSessionId,
+    examSuspended,
+    activeExamDisplayName,
+    applyStudentExamRemotePatch,
+  ]);
 
   useEffect(() => {
     if (
@@ -1273,7 +1365,11 @@ export default function HomeClient({
       }
       tabLeaveReportedRef.current = true;
       applyPausedState();
-      postExamTabLeave(tabLeaveUrl, { deviceId, displayName });
+      postExamTabLeave(tabLeaveUrl, { deviceId, displayName }, (delivered) => {
+        if (delivered) {
+          serverTabPauseConfirmedRef.current = true;
+        }
+      });
     };
 
     const isDocumentHidden = () =>
@@ -3092,7 +3188,7 @@ export default function HomeClient({
               <div className="flex flex-wrap items-center gap-3">
                 {joinedSession ? (
                   <ConnectionIndicator
-                    state={offlineSync.snapshot.state}
+                    state={studentConnectionState}
                     pendingCount={offlineSync.snapshot.pendingCount}
                   />
                 ) : null}

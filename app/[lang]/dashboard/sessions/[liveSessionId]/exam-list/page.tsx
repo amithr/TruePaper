@@ -19,6 +19,7 @@ import type { LiveSessionOverviewPayload } from "@/lib/live-session-overview";
 import { deferEffect } from "@/lib/defer-effect";
 import { isNoTimeLimitSession } from "@/lib/session-window";
 import { useLiveSessionAnswerDrafts } from "@/lib/use-live-session-answer-drafts";
+import { useLiveSessionOverviewRefresh } from "@/lib/use-live-session-overview-refresh";
 import { usePollingRefresh } from "@/lib/use-polling-refresh";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { focusRing, ui } from "@/lib/ui";
@@ -94,6 +95,12 @@ export default function SessionExamListPage() {
     immediate: false,
     onRefresh: () => void refreshOverview(),
   });
+
+  useLiveSessionOverviewRefresh(
+    Boolean(overview?.session.sessionOpen),
+    liveSessionId,
+    () => void refreshOverview(),
+  );
 
   useEffect(() => {
     const id = window.setInterval(() => setNowTick(Date.now()), 1000);

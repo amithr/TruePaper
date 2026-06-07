@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { DrawingCanvas } from "@/components/DrawingCanvas";
 import { GraphCanvas } from "@/components/response-types/GraphCanvas";
@@ -106,6 +106,21 @@ function WrittenFeedbackBlock({
   );
 }
 
+function WatchQuestionBlock({
+  children,
+  feedback,
+}: {
+  children: ReactNode;
+  feedback: Omit<FeedbackEditorProps, "questionId"> & { liveFeedbackEnabled: boolean };
+}) {
+  return (
+    <div className="space-y-3">
+      {children}
+      <WrittenFeedbackBlock {...feedback} />
+    </div>
+  );
+}
+
 export function TeacherResponseWatch({
   question,
   rawAnswer,
@@ -155,48 +170,52 @@ export function TeacherResponseWatch({
     [onCanvasAnnotationSave, question.id],
   );
 
-  const feedbackProps: FeedbackEditorProps = {
-    questionId: question.id,
+  const feedbackBundle = {
     showEditor: showFeedbackEditor,
     draftMessage: draftMsg,
     isSaving: isSavingNow,
     feedbackHint: t("session.watch.feedbackSavedLive"),
+    liveFeedbackEnabled,
     onFocus: () => onFeedbackFocus(question.id),
     onBlur: () => onFeedbackBlur(question.id),
-    onChange: (next) => onFeedbackChange(question.id, next),
+    onChange: (next: string) => onFeedbackChange(question.id, next),
   };
 
   if (type === "multipleChoice" && value.type === "multipleChoice") {
     return (
-      <div className="space-y-2">
-        {question.options.map((option, optionIndex) => (
-          <label
-            key={`${question.id}-${optionIndex}`}
-            className="flex cursor-default items-center gap-2 text-sm"
-          >
-            <input
-              type="radio"
-              name={`watch-${question.id}`}
-              value={option}
-              checked={value.choice === option}
-              disabled
-            />
-            <span>{option || t("review.optionN", { n: optionIndex + 1 })}</span>
-          </label>
-        ))}
-      </div>
+      <WatchQuestionBlock feedback={feedbackBundle}>
+        <div className="space-y-2" data-testid="teacher-watch-answer">
+          {question.options.map((option, optionIndex) => (
+            <label
+              key={`${question.id}-${optionIndex}`}
+              className="flex cursor-default items-center gap-2 text-sm"
+            >
+              <input
+                type="radio"
+                name={`watch-${question.id}`}
+                value={option}
+                checked={value.choice === option}
+                disabled
+              />
+              <span>{option || t("review.optionN", { n: optionIndex + 1 })}</span>
+            </label>
+          ))}
+        </div>
+      </WatchQuestionBlock>
     );
   }
 
   if (type === "trueFalse" && value.type === "trueFalse") {
     return (
-      <p className="text-sm font-medium" data-testid="teacher-watch-answer">
-        {value.answer === null
-          ? t("session.watch.noResponse")
-          : value.answer
-            ? t("responseTypes.trueFalse.true")
-            : t("responseTypes.trueFalse.false")}
-      </p>
+      <WatchQuestionBlock feedback={feedbackBundle}>
+        <p className="text-sm font-medium" data-testid="teacher-watch-answer">
+          {value.answer === null
+            ? t("session.watch.noResponse")
+            : value.answer
+              ? t("responseTypes.trueFalse.true")
+              : t("responseTypes.trueFalse.false")}
+        </p>
+      </WatchQuestionBlock>
     );
   }
 
@@ -206,17 +225,19 @@ export function TeacherResponseWatch({
     const right = config.right ?? [];
     const rightById = Object.fromEntries(right.map((r) => [r.id, r.text]));
     return (
-      <ul className="space-y-1 text-sm" data-testid="teacher-watch-answer">
-        {left.map((item) => (
-          <li key={item.id}>
-            <span className="font-medium">{item.text}</span>
-            <span className="text-[var(--tp-text-secondary)]">
-              {" → "}
-              {rightById[value.pairs[item.id]] ?? t("session.watch.noResponse")}
-            </span>
-          </li>
-        ))}
-      </ul>
+      <WatchQuestionBlock feedback={feedbackBundle}>
+        <ul className="space-y-1 text-sm" data-testid="teacher-watch-answer">
+          {left.map((item) => (
+            <li key={item.id}>
+              <span className="font-medium">{item.text}</span>
+              <span className="text-[var(--tp-text-secondary)]">
+                {" → "}
+                {rightById[value.pairs[item.id]] ?? t("session.watch.noResponse")}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </WatchQuestionBlock>
     );
   }
 
@@ -225,11 +246,13 @@ export function TeacherResponseWatch({
     const itemById = Object.fromEntries((config.items ?? []).map((i) => [i.id, i.text]));
     const order = value.order.length > 0 ? value.order : (config.items ?? []).map((i) => i.id);
     return (
-      <ol className="list-decimal space-y-1 pl-5 text-sm" data-testid="teacher-watch-answer">
-        {order.map((id) => (
-          <li key={id}>{itemById[id] ?? id}</li>
-        ))}
-      </ol>
+      <WatchQuestionBlock feedback={feedbackBundle}>
+        <ol className="list-decimal space-y-1 pl-5 text-sm" data-testid="teacher-watch-answer">
+          {order.map((id) => (
+            <li key={id}>{itemById[id] ?? id}</li>
+          ))}
+        </ol>
+      </WatchQuestionBlock>
     );
   }
 
@@ -237,31 +260,32 @@ export function TeacherResponseWatch({
     const config = question.responseConfig as LabellingConfig;
     const termById = Object.fromEntries((config.terms ?? []).map((term) => [term.id, term.text]));
     return (
-      <ul className="space-y-1 text-sm" data-testid="teacher-watch-answer">
-        {(config.zones ?? []).map((zone) => (
-          <li key={zone.id}>
-            <span className="font-medium">{zone.text}</span>
-            <span className="text-[var(--tp-text-secondary)]">
-              {": "}
-              {termById[value.assignments[zone.id]] ?? t("session.watch.noResponse")}
-            </span>
-          </li>
-        ))}
-      </ul>
+      <WatchQuestionBlock feedback={feedbackBundle}>
+        <ul className="space-y-1 text-sm" data-testid="teacher-watch-answer">
+          {(config.zones ?? []).map((zone) => (
+            <li key={zone.id}>
+              <span className="font-medium">{zone.text}</span>
+              <span className="text-[var(--tp-text-secondary)]">
+                {": "}
+                {termById[value.assignments[zone.id]] ?? t("session.watch.noResponse")}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </WatchQuestionBlock>
     );
   }
 
   if (type === "mathInput" && value.type === "mathInput") {
     return (
-      <div className="space-y-3">
+      <WatchQuestionBlock feedback={feedbackBundle}>
         <pre
           data-testid="teacher-watch-answer"
           className="overflow-x-auto rounded-md border border-zinc-300 bg-white px-3 py-2 font-mono text-sm text-zinc-900"
         >
           {value.latex || t("session.watch.noResponse")}
         </pre>
-        <WrittenFeedbackBlock {...feedbackProps} liveFeedbackEnabled={liveFeedbackEnabled} />
-      </div>
+      </WatchQuestionBlock>
     );
   }
 
@@ -298,7 +322,7 @@ export function TeacherResponseWatch({
             />
           </div>
         ) : null}
-        <WrittenFeedbackBlock {...feedbackProps} liveFeedbackEnabled={liveFeedbackEnabled} />
+        <WrittenFeedbackBlock {...feedbackBundle} />
       </div>
     );
   }
@@ -343,7 +367,7 @@ export function TeacherResponseWatch({
             />
           </div>
         ) : null}
-        <WrittenFeedbackBlock {...feedbackProps} liveFeedbackEnabled={liveFeedbackEnabled} />
+        <WrittenFeedbackBlock {...feedbackBundle} />
       </div>
     );
   }
@@ -387,7 +411,7 @@ export function TeacherResponseWatch({
             />
           </div>
         ) : null}
-        <WrittenFeedbackBlock {...feedbackProps} liveFeedbackEnabled={liveFeedbackEnabled} />
+        <WrittenFeedbackBlock {...feedbackBundle} />
       </div>
     );
   }
@@ -404,7 +428,7 @@ export function TeacherResponseWatch({
           : rawAnswer ?? "";
 
   return (
-    <div className="space-y-3">
+    <WatchQuestionBlock feedback={feedbackBundle}>
       <textarea
         readOnly
         rows={6}
@@ -414,8 +438,7 @@ export function TeacherResponseWatch({
         onFocus={() => onFeedbackFocus(question.id)}
         className="w-full resize-y rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
       />
-      <WrittenFeedbackBlock {...feedbackProps} liveFeedbackEnabled={liveFeedbackEnabled} />
-    </div>
+    </WatchQuestionBlock>
   );
 }
 

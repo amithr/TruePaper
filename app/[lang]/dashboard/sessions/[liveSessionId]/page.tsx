@@ -23,6 +23,7 @@ import { isNoTimeLimitSession } from "@/lib/session-window";
 import { deferEffect } from "@/lib/defer-effect";
 import { notifyStudentExamResumed } from "@/lib/notify-student-exam-resumed";
 import { useLiveSessionAnswerDrafts } from "@/lib/use-live-session-answer-drafts";
+import { useLiveSessionOverviewRefresh } from "@/lib/use-live-session-overview-refresh";
 import { usePollingRefresh } from "@/lib/use-polling-refresh";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { ui } from "@/lib/ui";
@@ -102,6 +103,12 @@ export default function LiveSessionDetailPage() {
     immediate: false,
     onRefresh: () => void refreshOverview(),
   });
+
+  useLiveSessionOverviewRefresh(
+    Boolean(overview?.session.sessionOpen),
+    liveSessionId,
+    () => void refreshOverview(),
+  );
 
   useEffect(() => {
     const id = window.setInterval(() => setNowTick(Date.now()), 1000);

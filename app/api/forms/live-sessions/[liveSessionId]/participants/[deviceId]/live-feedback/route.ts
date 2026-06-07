@@ -76,7 +76,7 @@ export async function PATCH(request: Request, { params }: Params) {
       );
     }
     if (error.message.includes("question not found")) {
-      return NextResponse.json({ error: "Question not found or not a text question." }, { status: 404 });
+      return NextResponse.json({ error: "Question not found for this session." }, { status: 404 });
     }
     if (error.message.includes("student response not found")) {
       return NextResponse.json(

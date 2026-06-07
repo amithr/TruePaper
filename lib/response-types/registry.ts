@@ -14,7 +14,6 @@ import type {
   StructuredMultiPartConfig,
   TrueFalseConfig,
 } from "@/lib/response-types/types";
-import { isVisualResponseType, isWrittenResponseType } from "@/lib/response-types/types";
 
 export type ResponseTypeMeta = {
   id: ResponseTypeId;
@@ -88,7 +87,7 @@ const REGISTRY: Record<ResponseTypeId, ResponseTypeMeta> = {
     labelKey: "multipleChoice",
     descriptionKey: "multipleChoiceDesc",
     feedbackAnchors: ["whole"],
-    supportsLiveFeedback: false,
+    supportsLiveFeedback: true,
     supportsRubric: false,
     defaultPoints: 1,
     defaultConfig: () => ({}),
@@ -207,7 +206,7 @@ const REGISTRY: Record<ResponseTypeId, ResponseTypeMeta> = {
     labelKey: "trueFalse",
     descriptionKey: "trueFalseDesc",
     feedbackAnchors: ["whole"],
-    supportsLiveFeedback: false,
+    supportsLiveFeedback: true,
     supportsRubric: false,
     defaultPoints: 1,
     defaultConfig: () => ({ correctAnswer: true }) satisfies TrueFalseConfig,
@@ -218,7 +217,7 @@ const REGISTRY: Record<ResponseTypeId, ResponseTypeMeta> = {
     labelKey: "matching",
     descriptionKey: "matchingDesc",
     feedbackAnchors: ["whole"],
-    supportsLiveFeedback: false,
+    supportsLiveFeedback: true,
     supportsRubric: false,
     defaultPoints: 3,
     defaultConfig: () =>
@@ -240,7 +239,7 @@ const REGISTRY: Record<ResponseTypeId, ResponseTypeMeta> = {
     labelKey: "ordering",
     descriptionKey: "orderingDesc",
     feedbackAnchors: ["whole"],
-    supportsLiveFeedback: false,
+    supportsLiveFeedback: true,
     supportsRubric: false,
     defaultPoints: 3,
     defaultConfig: () =>
@@ -259,7 +258,7 @@ const REGISTRY: Record<ResponseTypeId, ResponseTypeMeta> = {
     labelKey: "labelling",
     descriptionKey: "labellingDesc",
     feedbackAnchors: ["whole"],
-    supportsLiveFeedback: false,
+    supportsLiveFeedback: true,
     supportsRubric: false,
     defaultPoints: 3,
     defaultConfig: () =>
@@ -337,10 +336,5 @@ export function getRubricForQuestion(
 }
 
 export function questionSupportsLiveFeedback(type: ResponseTypeId | string): boolean {
-  const meta = getResponseTypeMeta(type);
-  if (!meta.supportsLiveFeedback) {
-    return false;
-  }
-  const normalized = type === "text" ? "extendedWritten" : (type as ResponseTypeId);
-  return isWrittenResponseType(normalized) || isVisualResponseType(normalized);
+  return getResponseTypeMeta(type).supportsLiveFeedback;
 }
