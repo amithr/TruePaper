@@ -298,7 +298,8 @@
       "optionN": "Option {n}",
       "addOption": "Add option",
       "correctAnswer": "Correct answer (optional)",
-      "noCorrectSelected": "No correct answer selected"
+      "noCorrectSelected": "No correct answer selected",
+      "addingQuestion": "Adding question…"
     },
     "exam": {
       "previewTitle": "Preview mode",

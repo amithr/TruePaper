@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { DrawingCanvas } from "@/components/DrawingCanvas";
+import { AnnotateSourceResponder } from "@/components/response-types/AnnotateSourceResponder";
 import { GraphCanvas } from "@/components/response-types/GraphCanvas";
 import type { Question } from "@/lib/forms";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
@@ -17,6 +18,7 @@ import {
 import type { DrawingStroke } from "@/lib/response-types/drawing";
 import {
   normalizeResponseType,
+  type AnnotateSourceConfig,
   type DrawDiagramConfig,
   type GraphConfig,
   type LabellingConfig,
@@ -413,6 +415,20 @@ export function TeacherResponseWatch({
         ) : null}
         <WrittenFeedbackBlock {...feedbackBundle} />
       </div>
+    );
+  }
+
+  if (type === "annotateSource" && value.type === "annotateSource") {
+    return (
+      <WatchQuestionBlock feedback={feedbackBundle}>
+        <AnnotateSourceResponder
+          passageId={`watch-passage-${question.id}`}
+          highlights={value.highlights}
+          disabled
+          config={question.responseConfig as AnnotateSourceConfig}
+          onChange={() => {}}
+        />
+      </WatchQuestionBlock>
     );
   }
 

@@ -43,4 +43,26 @@ describe("StudentResponseDispatcher", () => {
     );
     expect(screen.getByTestId("student-short-answer")).toBeInTheDocument();
   });
+
+  it("renders annotate source passage and tools for empty answers", () => {
+    renderWithI18n(
+      <StudentResponseDispatcher
+        question={makeQuestion("annotateSource")}
+        index={0}
+        answer={undefined}
+        answered={false}
+        examActive
+        disabled={false}
+        protectTextarea={false}
+        showLiveFeedbackFeature={false}
+        feedbackStore={{}}
+        onAnswerChange={vi.fn()}
+        onChoiceChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /highlight/i })).toBeInTheDocument();
+    expect(
+      screen.getByText(/Paste the source passage here/i),
+    ).toBeInTheDocument();
+  });
 });

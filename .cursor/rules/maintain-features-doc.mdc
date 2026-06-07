@@ -1,0 +1,21 @@
+---
+description: Keep docs/FEATURES.md in sync when changing product behavior
+alwaysApply: true
+---
+
+# Maintain FEATURES.md
+
+Before completing any task that changes product behavior, read `docs/FEATURES.md` for context.
+
+**Update `docs/FEATURES.md` in the same change** when you:
+
+- Add, remove, or rename a user-facing feature or flow
+- Add or change an API route under `app/api/`
+- Add a Supabase migration (append to the migration index)
+- Add a response type, delivery mode, or offline/sync behavior
+- Add or change environment variables
+- Add E2E specs or materially change test coverage scope
+
+Use the checklist at the bottom of `docs/FEATURES.md`. Keep entries concise and path-oriented so future agents can navigate quickly.
+
+Do not skip this because the user did not mention the doc — it is part of the definition of done for feature work.

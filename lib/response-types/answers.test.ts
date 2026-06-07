@@ -36,4 +36,12 @@ describe("response answer wire format", () => {
     });
     expect(isResponseAnswered("matching", raw)).toBe(true);
   });
+
+  it("parses empty annotate source answers as highlight type", () => {
+    expect(parseResponseValue("annotateSource", undefined)).toEqual({
+      type: "annotateSource",
+      highlights: [],
+    });
+    expect(isResponseAnswered("annotateSource", undefined)).toBe(false);
+  });
 });

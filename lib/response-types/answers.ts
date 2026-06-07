@@ -76,6 +76,7 @@ export function parseResponseValue(
         activePartId: parsed.activePartId,
       };
     }
+    return { type: "structuredMultiPart", parts: {} };
   }
 
   if (normalized === "annotateSource") {
@@ -83,6 +84,7 @@ export function parseResponseValue(
     if (parsed && Array.isArray(parsed.highlights)) {
       return { type: "annotateSource", highlights: parsed.highlights };
     }
+    return { type: "annotateSource", highlights: [] };
   }
 
   if (normalized === "drawDiagram") {

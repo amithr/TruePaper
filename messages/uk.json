@@ -298,7 +298,8 @@
       "optionN": "Варіант {n}",
       "addOption": "Додати варіант",
       "correctAnswer": "Правильна відповідь (необов'язково)",
-      "noCorrectSelected": "Правильну відповідь не обрано"
+      "noCorrectSelected": "Правильну відповідь не обрано",
+      "addingQuestion": "Додавання питання…"
     },
     "exam": {
       "previewTitle": "Режим перегляду",

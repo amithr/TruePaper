@@ -356,6 +356,7 @@ export default function HomeClient({
   const builderSavedClearRef = useRef<number | undefined>(undefined);
   const [isLoadingForms, setIsLoadingForms] = useState(false);
   const [isMutating, setIsMutating] = useState(false);
+  const [addingQuestionType, setAddingQuestionType] = useState<QuestionType | null>(null);
   const [saveTemplateTarget, setSaveTemplateTarget] = useState<
     | { kind: "form"; title: string }
     | { kind: "question"; questionId: string; title: string }
@@ -1650,6 +1651,7 @@ export default function HomeClient({
     }
 
     setIsMutating(true);
+    setAddingQuestionType(type);
     setStatusMessage("");
     try {
       // Flush any pending edits to existing questions/details before adding a new one
@@ -1679,6 +1681,7 @@ export default function HomeClient({
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : t("home.errors.addQuestion"));
     } finally {
+      setAddingQuestionType(null);
       setIsMutating(false);
     }
   };
@@ -2574,21 +2577,37 @@ export default function HomeClient({
             </div>
 
             <div className="flex flex-wrap gap-2 border-t border-[var(--tp-border)] pt-6">
-              {listAuthorableResponseTypes().map((typeMeta) => (
+              {listAuthorableResponseTypes().map((typeMeta) => {
+                const isAdding = addingQuestionType === typeMeta.id;
+                return (
                 <button
                   key={typeMeta.id}
                   type="button"
                   onClick={() => void addQuestion(typeMeta.id)}
                   disabled={isMutating}
-                  className={typeMeta.id === "extendedWritten" ? "tp-btn-primary" : ui.btnSecondary}
+                  aria-busy={isAdding}
+                  className={`inline-flex items-center gap-2 ${
+                    typeMeta.id === "extendedWritten" ? "tp-btn-primary" : ui.btnSecondary
+                  }`}
                 >
-                  {responseTypeLabel(typeMeta.id)}
+                  {isAdding ? (
+                    <>
+                      <span
+                        className="inline-block h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent opacity-80"
+                        aria-hidden
+                      />
+                      <span>{t("home.builder.addingQuestion")}</span>
+                    </>
+                  ) : (
+                    responseTypeLabel(typeMeta.id)
+                  )}
                 </button>
-              ))}
+                );
+              })}
             </div>
 
             <div className={`${ui.questionList} border-t border-[var(--tp-border)] pt-8`}>
-              {activeForm.questions.length === 0 ? (
+              {activeForm.questions.length === 0 && !addingQuestionType ? (
                 <p className={ui.empty}>{t("home.builder.emptyQuestions")}</p>
               ) : (
                 activeForm.questions.map((question, index) => (
@@ -2952,6 +2971,19 @@ export default function HomeClient({
                   </article>
                 ))
               )}
+              {addingQuestionType ? (
+                <article
+                  className={`${ui.questionCardNested} flex items-center justify-center gap-3 py-10 text-sm text-[var(--tp-text-secondary)]`}
+                  role="status"
+                  aria-live="polite"
+                >
+                  <span
+                    className="inline-block h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-[var(--tp-border)] border-t-[var(--tp-accent)]"
+                    aria-hidden
+                  />
+                  {t("home.builder.addingQuestion")}
+                </article>
+              ) : null}
             </div>
           </section>
         ) : studentExamForm && !showTeacherTools ? (
