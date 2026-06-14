@@ -1,13 +1,9 @@
 import HomeClient from "../HomeClient";
-import { readClientSessionForPage } from "@/lib/cached-request-session";
-
-export const dynamic = "force-dynamic";
 
 /**
- * Student join entry point. Keeps the marketing homepage focused on teachers
- * while giving students a dedicated, low-distraction page.
+ * Static student join shell. Session hydrates client-side when needed (e.g.
+ * teachers previewing the student join flow).
  */
-export default async function JoinPage() {
-  const initialSession = await readClientSessionForPage();
-  return <HomeClient initialSession={initialSession} guestView="join" />;
+export default function JoinPage() {
+  return <HomeClient initialSession={null} guestView="join" />;
 }

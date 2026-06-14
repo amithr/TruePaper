@@ -231,6 +231,7 @@ create table if not exists public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   role text not null check (role in ('teacher', 'student')),
   display_name text,
+  onboarding_tour_completed_at timestamptz,
   created_at timestamptz not null default now()
 );
 

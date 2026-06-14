@@ -36,6 +36,15 @@ vi.mock("@/lib/offline/idb", () => ({
   isIdbAvailable: () => isIdbAvailable(),
 }));
 
+vi.mock("@/lib/offline/background-sync", () => ({
+  registerOfflineBackgroundSync: vi.fn(),
+  postMessageDrainSync: vi.fn(),
+}));
+
+vi.mock("@/lib/offline/reachability", () => ({
+  pingServerReachable: vi.fn().mockResolvedValue(true),
+}));
+
 import { useOfflineExamSync } from "@/lib/offline/use-offline-exam-sync";
 
 describe("useOfflineExamSync", () => {

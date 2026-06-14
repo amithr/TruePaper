@@ -1,7 +1,7 @@
 const DB_NAME = "truepaper-offline-v1";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
-export type StoreName = "answers" | "sync_queue" | "session_cache" | "meta";
+export type StoreName = "answers" | "sync_queue" | "session_cache" | "meta" | "finish_queue";
 
 type UpgradeCallback = (db: IDBDatabase) => void;
 
@@ -31,6 +31,9 @@ function openDb(onUpgrade?: UpgradeCallback): Promise<IDBDatabase> {
         }
         if (!db.objectStoreNames.contains("meta")) {
           db.createObjectStore("meta", { keyPath: "key" });
+        }
+        if (!db.objectStoreNames.contains("finish_queue")) {
+          db.createObjectStore("finish_queue", { keyPath: "key" });
         }
         onUpgrade?.(db);
       };
@@ -88,6 +91,20 @@ export async function idbGetAllByIndex<T>(
       const tx = db.transaction(store, "readonly");
       const idx = tx.objectStore(store).index(indexName);
       const req = idx.getAll(query);
+      req.onsuccess = () => resolve((req.result as T[]) ?? []);
+      req.onerror = () => reject(req.error);
+    });
+  } catch {
+    return [];
+  }
+}
+
+export async function idbGetAll<T>(store: StoreName): Promise<T[]> {
+  try {
+    const db = await openDb();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(store, "readonly");
+      const req = tx.objectStore(store).getAll();
       req.onsuccess = () => resolve((req.result as T[]) ?? []);
       req.onerror = () => reject(req.error);
     });

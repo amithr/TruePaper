@@ -20,15 +20,16 @@
 9. [Grading & review](#grading--review)
 10. [Template library](#template-library)
 11. [i18n, legal, chrome](#i18n-legal-chrome)
-12. [Database & migrations](#database--migrations)
-13. [API routes](#api-routes)
-14. [Key files map](#key-files-map)
-15. [Client runtime (hooks, polling, broadcast)](#client-runtime-hooks-polling-broadcast)
-16. [Testing](#testing)
-17. [Environment variables](#environment-variables)
-18. [Deployment notes](#deployment-notes)
-19. [Agent conventions & pitfalls](#agent-conventions--pitfalls)
-20. [Keeping this doc current](#keeping-this-doc-current)
+12. [List UI (entity lists)](#list-ui-entity-lists)
+13. [Database & migrations](#database--migrations)
+14. [API routes](#api-routes)
+15. [Key files map](#key-files-map)
+16. [Client runtime (hooks, polling, broadcast)](#client-runtime-hooks-polling-broadcast)
+17. [Testing](#testing)
+18. [Environment variables](#environment-variables)
+19. [Deployment notes](#deployment-notes)
+20. [Agent conventions & pitfalls](#agent-conventions--pitfalls)
+21. [Keeping this doc current](#keeping-this-doc-current)
 
 ---
 
@@ -85,7 +86,7 @@ flowchart LR
 | `supabase/schema.sql` | Greenfield bootstrap (alternative to migrations) |
 | `e2e/` | Playwright functional tests |
 | `load-tests/` | k6 load test for student sync |
-| `proxy.ts` | Locale routing + Supabase session refresh (middleware equivalent) |
+| `proxy.ts` | Locale routing, teacher home → dashboard redirect, Supabase session refresh |
 | `docs/FEATURES.md` | **This file** |
 
 **Framework notes:** Next.js **16** (App Router), React **19**. Read `node_modules/next/dist/docs/` before assuming Next APIs — this project uses Next 16 conventions (`AGENTS.md`).
@@ -97,6 +98,8 @@ flowchart LR
 ### Teachers
 
 - Cookie session via `@supabase/ssr` — `lib/supabase/server.ts`, refreshed in `proxy.ts`.
+- **Static home/join:** `app/[lang]/page.tsx` and `app/[lang]/join/page.tsx` are statically generated; guests skip server auth. Signed-in users hydrate via `GET /api/auth/session` in `lib/use-client-session-hydration.ts` (only when a Supabase auth cookie is present).
+- **Teacher home redirect:** `proxy.ts` sends teachers from plain `/[lang]` to `/[lang]/dashboard` before RSC (skips loading `HomeClient` for the common case). Builder (`?form=`) and join query params bypass the redirect — `lib/home-url-intent.ts` → `hasTeacherHomeIntentFromSearchParams`.
 - `profiles` table: `role` is `'teacher'` or `'student'`; OAuth signups default to teacher (`20260524100000_oauth_signup_defaults.sql`).
 - API routes use `getSessionUser()` from `lib/request-auth.ts`.
 - RLS: teachers own `forms` / `questions`; session owner manages live session data.
@@ -122,8 +125,9 @@ flowchart LR
 ### Dashboard
 
 - `app/[lang]/dashboard/page.tsx` → `components/dashboard/TeacherDashboard.tsx`
-- Running sessions, past sessions, form library sections
+- Running sessions, past sessions, form library sections — all use the **flat entity list** pattern (`docs/LISTS.md`, `components/lists/EntityList.tsx`, CSS `tp-entity-list-*` in `app/globals.css`).
 - Session list API: `GET /api/teacher/sessions`
+- **Quick-start link:** per-form bookmarkable URL (`/dashboard/forms/[formId]/start?…`) copied from each form row's overflow menu (⋯); opening it (while logged in as the form owner) auto-creates a live session with the encoded duration/delivery settings and redirects to the session roster. Builder: `lib/form-start-link.ts`, page `app/[lang]/dashboard/forms/[formId]/start/page.tsx`.
 
 ### Form builder
 
@@ -132,6 +136,7 @@ flowchart LR
 - Questions: `POST /api/forms/[formId]/questions`, `PATCH/DELETE /api/questions/[questionId]`
 - Response type config UI: `components/response-types/BuilderResponseConfig.tsx`
 - Unsaved builder state: `lib/pending-builder-form.ts`
+- **AI exam import:** teacher downloads a Markdown authoring guide (`GET /api/forms/ai-template`), feeds it to ChatGPT/Claude with their content, then uploads the generated JSON (`POST /api/forms/import`) to create an editable form. Parser/guide builder: `lib/ai-exam-import.ts`. UI: download link + "Import exam" upload in `components/dashboard/DashboardFormLibrary.tsx`.
 
 ### Start & manage live sessions
 
@@ -145,7 +150,7 @@ flowchart LR
 
 ### Monitor students
 
-- Roster: `components/SessionExamRoster.tsx` — presence, typing, sync badges, suspensions, hand raises
+- Roster: `components/SessionExamRoster.tsx` — presence, typing, sync badges, suspensions, hand raises; flat divider rows (`tp-roster-list--flat`)
 - Watch one student: `app/[lang]/dashboard/sessions/[liveSessionId]/watch/[deviceId]/page.tsx`
 - Snapshot API: `GET .../participants/[deviceId]/exam-snapshot`
 - Live feedback: `PATCH .../participants/[deviceId]/live-feedback`
@@ -183,6 +188,19 @@ flowchart LR
 - APIs under `app/api/library/` — templates, org settings, clone to form
 - Domain: `lib/library/`
 
+### Onboarding (teacher-only)
+
+Two complementary, teacher-scoped aids (students never see either):
+
+- **Ambient help hints** — subtle `ⓘ` tooltips on dashboard / builder / session / watch / roster controls.
+  - Primitive: `components/HelpHint.tsx` (Floating UI; hover/focus/tap, ESC to close, `aria-describedby`).
+  - Device-local on/off pref: `lib/help-prefs.ts` (versioned `localStorage`, `CustomEvent` broadcast) + hook `lib/use-help-prefs.ts`.
+  - Toggle control: `components/HelpTipsToggle.tsx` (in the dashboard header). Default **on**.
+  - Copy: `help.*` namespace in `messages/{en,uk}.json`.
+- **First-login guided tour** — auto-runs **once**, never behind an opt-in.
+  - Driver: `driver.js` via `lib/onboarding-tour.ts` (dynamic-imported; two segments — dashboard `data-tour` anchors then builder anchors, handed off through `sessionStorage` key in `lib/onboarding-tour-key.ts`).
+  - Completion is **account-scoped**: `profiles.onboarding_tour_completed_at` (migration `20260607120000`). Dashboard server (`app/[lang]/dashboard/page.tsx`) reads it (resilient to pre-migration) and passes `tourCompleted` to `TeacherDashboard`, which starts the tour and marks done via `POST /api/auth/onboarding-tour/complete`.
+
 ---
 
 ## Student features
@@ -215,7 +233,7 @@ flowchart LR
 - Button calls `submitExam()` in `HomeClient.tsx`:
   1. `PUT .../responses` (authoritative final save + `submissionId`)
   2. `POST .../finish` (sets `finished_at`, triggers MC autograde)
-- **Requires network.** Offline submit fails with timeout/error — **not queued**.
+- On retryable network failure → queued in `finish_queue` (IDB) and retried via `use-offline-finish-submit` + Background Sync.
 - After success → `app/[lang]/join/submitted/page.tsx`.
 
 ### What students cannot do
@@ -291,46 +309,73 @@ flowchart TD
   Debounce --> Drain[sync-engine drain]
   Drain --> PUT[PUT /responses + submissionId]
   PUT --> RPC[save_live_session_student_response]
+  Submit[Submit exam] --> FinishQ[finish_queue IDB]
+  FinishQ --> FinishDrain[finish-engine drain]
+  FinishDrain --> FinishAPI[PUT /responses + POST /finish]
   PageHide[pagehide / online event] --> Queue
+  Poll[pending poll + reachability ping] --> Drain
+  Poll --> FinishDrain
+  BgSync[Background Sync tag] --> SW[public/sw.js drain]
+  SW --> Drain
+  SW --> FinishDrain
   Heartbeat[heartbeat] --> Roster[Teacher roster sync badge]
 ```
 
 | Module | Role |
 |--------|------|
-| `lib/offline/use-offline-exam-sync.ts` | Main hook wired in `HomeClient.tsx` |
+| `lib/offline/use-offline-exam-sync.ts` | Answer sync hook in `HomeClient.tsx` — debounce, periodic retry, reachability ping, online jitter |
+| `lib/offline/use-offline-finish-submit.ts` | Deferred exam submit queue + drain in `HomeClient.tsx` |
+| `lib/offline/finish-queue.ts` | Pending finish rows in IDB (`finish_queue` store) |
+| `lib/offline/finish-engine.ts` | Finish drain with backoff |
+| `lib/offline/finish-transport.ts` | Bounded PUT + POST `/finish` |
 | `lib/offline/answer-store.ts` | Local answers + per-question revisions |
-| `lib/offline/sync-queue.ts` | Pending submissions in IDB |
-| `lib/offline/sync-engine.ts` | Drain with backoff + jitter |
-| `lib/offline/sync-transport.ts` | Network PUT |
+| `lib/offline/sync-queue.ts` | Pending answer sync rows in IDB |
+| `lib/offline/sync-engine.ts` | Answer drain with backoff + jitter |
+| `lib/offline/sync-transport.ts` | Network PUT for answers |
 | `lib/offline/session-cache.ts` | Cached exam shell for offline start |
+| `lib/offline/join-cache.ts` | Pre-join join code + display name draft in IDB |
+| `lib/offline/reachability.ts` | `GET /api/public/ping` reachability checks |
+| `lib/offline/background-sync.ts` | Background Sync registration + SW postMessage |
+| `lib/offline/tab-leave-policy.ts` | Delivery-mode tab-leave grace (live only suspends) |
 | `lib/offline/heartbeat-meta.ts` | Maps connection snapshot → heartbeat fields |
 | `lib/offline/sw-bypass.ts` | SW must not cache API/sync requests |
+| `lib/network-error.ts` | Retryable fetch/submit classification |
 
 ### Config (`lib/offline/config.ts`)
 
 - Debounce: 400ms; max wait while typing: 3s
 - Retry: 800ms base, 30s max with jitter
+- Pending poll: 8s (answers), 6s (finish queue)
+- Online reconnect jitter: up to 3s
+- Reachability ping: every 12s while exam active
+- Tab-leave grace: 8s live / 15s self-paced & hybrid (suspension disabled outside live)
 - Client sync states: `online | offline | syncing | synced | local_only`
 
 ### What works offline
 
 - Edit answers → saved to IndexedDB immediately.
-- Tab close (`pagehide`) → enqueue + best-effort drain.
-- Reopen tab / come online → `online` event drains queue.
+- Tab close (`pagehide`) → enqueue + best-effort drain (+ Background Sync when supported).
+- Reopen tab / come online → jittered reconnect drain; periodic poll while pending.
 - Reload while offline → answers restored from IDB (E2E: `e2e/offline-sync.spec.ts`).
+- **Exam submit** — on retryable failure, queued in `finish_queue` and retried automatically.
+- **Pre-join** — join code + display name restored from IDB draft after refresh.
 
-### What does **not** work offline
+### Still requires network
 
-- **Exam submit (finish)** — requires live `PUT` + `POST /finish`; no offline finish queue.
 - **Live teacher feedback** — requires polling (degrades gracefully).
 - **Raise hand** — requires network.
-- **Join / register** — requires network (session cache helps only after first join).
+- **Initial join / register** — requires network (join draft + session cache help after first visit).
 
 ### PWA
 
 - `public/manifest.json` — installable shell
-- `public/sw.js` — caches app shell; **bypasses** `/api/*`, non-GET, RSC/action requests
+- `public/sw.js` — caches app shell; drains IDB queues on Background Sync / `DRAIN_OFFLINE_SYNC` message; **bypasses** `/api/*`, non-GET, RSC/action requests
 - Registered in `components/ServiceWorkerRegistration.tsx`
+
+### Teacher: accept late sync
+
+- Form library checkbox → `POST /api/forms/{formId}/live-sessions` body `acceptLateSync` → `form_sessions.accept_late_sync` (default `true`).
+- Quick-start link query `lateSync=0` when disabled — `lib/form-start-link.ts`.
 
 ### Air alert (optional)
 
@@ -405,6 +450,25 @@ Registry & rubrics: `lib/response-types/registry.ts`, `feedback.ts`, `autograde.
 
 ---
 
+## List UI (entity lists)
+
+Teacher-facing **collection views** (forms, sessions, roster) share one flat list pattern. Full spec: **`docs/LISTS.md`**.
+
+| Piece | Location |
+|-------|----------|
+| Design doc | `docs/LISTS.md` |
+| React wrappers | `components/lists/EntityList.tsx` |
+| CSS (`tp-entity-list-*`) | `app/globals.css` |
+| Class shortcuts | `lib/ui.ts` → `ui.entityList*` |
+| Control tooltips | `components/HoverTooltip.tsx` |
+| Form rows | `components/dashboard/FormLibraryRow.tsx` |
+| Running / past sessions | `DashboardRunningSessions.tsx`, `DashboardPastSessions.tsx` |
+| Live roster (flat rows) | `SessionExamRoster.tsx` + `tp-roster-list--flat` |
+
+**Not entity lists:** question stacks (`tp-question-list`), template catalog grid (`tp-template-card`), exam MC choices — see `docs/LISTS.md` exclusions.
+
+---
+
 ## Database & migrations
 
 Run migrations in **filename order**. Latest migration wins for RPC definitions.
@@ -419,7 +483,7 @@ Run migrations in **filename order**. Latest migration wins for RPC definitions.
 | `form_responses` | Per-student answers (`anonymous_session_id`, `live_session_id`, grades, `finished_at`) |
 | `live_session_presence` | Heartbeat / typing / sync metadata |
 | `answer_sync_submissions` | Idempotent submission dedupe ledger |
-| `profiles` | Auth users (teachers) |
+| `profiles` | Auth users (teachers); `onboarding_tour_completed_at` gates first-login tour |
 | Library tables | Orgs, templates (see `20260605140000`) |
 
 ### Important RPCs (SECURITY DEFINER, anon client)
@@ -438,7 +502,7 @@ Run migrations in **filename order**. Latest migration wins for RPC definitions.
 ### Migration index (newest last)
 
 <details>
-<summary>All 51 migrations — click to expand</summary>
+<summary>All 52 migrations — click to expand</summary>
 
 | File | Summary |
 |------|---------|
@@ -493,6 +557,7 @@ Run migrations in **filename order**. Latest migration wins for RPC definitions.
 | `20260605240000_fix_set_student_hand_raise.sql` | Hand raise RPC fix |
 | `20260605250000_live_feedback_all_question_types.sql` | Feedback all types |
 | `20260605260000_restore_mc_autograde_on_finish.sql` | MC autograde on finish |
+| `20260607120000_onboarding_tour.sql` | `profiles.onboarding_tour_completed_at` flag |
 
 </details>
 
@@ -508,12 +573,15 @@ Run migrations in **filename order**. Latest migration wins for RPC definitions.
 | POST | `/register` | Teacher registration |
 | POST | `/logout` | Clear session |
 | GET | `/session` | Current user + profile |
+| POST | `/onboarding-tour/complete` | Mark teacher first-login tour seen |
 
 ### Forms (teacher) — `app/api/forms/`
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET/POST | `/forms` | List / create |
+| GET | `/forms/ai-template` | Download AI exam authoring guide (Markdown, public) |
+| POST | `/forms/import` | Create form + questions from AI-generated JSON |
 | PATCH/DELETE | `/forms/[formId]` | Update / delete |
 | POST | `/forms/[formId]/questions` | Add question |
 | GET/PUT | `/forms/[formId]/responses` | Authenticated responses (non-live legacy) |
@@ -549,6 +617,7 @@ PATCH, DELETE — edit / delete question.
 |------|---------|
 | `GET /join` | Join code lookup |
 | `GET /resume` | Resume code lookup |
+| `GET /ping` | Reachability check (no auth) |
 | `GET /live-board` | Projector board |
 | `GET /forms` | **410** — disabled |
 | `GET/PUT /forms/[formId]/responses` | **410** — use live-session routes |
@@ -578,17 +647,25 @@ Dashboard session summaries.
 | Concern | Start here |
 |---------|------------|
 | Student + teacher exam UI | `app/[lang]/HomeClient.tsx` |
+| Client session hydration (static home) | `lib/use-client-session-hydration.ts` |
+| Supabase auth cookie detection | `lib/supabase/auth-cookie.ts` |
 | Offline sync hook | `lib/offline/use-offline-exam-sync.ts` |
+| Offline finish submit | `lib/offline/use-offline-finish-submit.ts` |
 | Student answer hydration | `lib/student-exam-answer-hydration.ts` |
 | Join / resume codes | `lib/join-code.ts`, `lib/resume-code.ts` |
 | Roster status | `lib/participant-status.ts` |
 | Session window | `lib/session-window.ts` |
 | Forms domain types | `lib/forms.ts` |
 | DB row mappers | `lib/forms-api.ts` |
+| AI exam import (parser + guide) | `lib/ai-exam-import.ts` |
+| Onboarding hints (pref + hook + UI) | `lib/help-prefs.ts`, `lib/use-help-prefs.ts`, `components/HelpHint.tsx` |
+| First-login guided tour | `lib/onboarding-tour.ts`, `lib/onboarding-tour-key.ts` |
 | Anon Supabase client | `lib/supabase/anon-service.ts` |
 | Teacher session SSR | `lib/teacher-dashboard-server.ts` |
 | Request helper | `lib/request-json.ts` |
 | URL intent (join/resume deep links) | `lib/home-url-intent.ts` |
+| Form quick-start links | `lib/form-start-link.ts`, `lib/start-live-session.ts` |
+| Flat entity lists (UI) | `docs/LISTS.md`, `components/lists/EntityList.tsx` |
 
 ---
 
@@ -675,7 +752,7 @@ Requires `.env.local`: `E2E_TEACHER_EMAIL`, `E2E_TEACHER_PASSWORD`, Supabase URL
 5. **Service worker must bypass APIs** — mirror logic in `lib/offline/sw-bypass.ts` and `public/sw.js`.
 6. **Migrations are ordered** — new migration filename must sort after latest; never edit applied migrations in production.
 7. **i18n** — add strings to both `messages/en.json` and `messages/uk.json`.
-8. **Offline ≠ submit** — only answers are queued offline; finish requires online + open session window.
+8. **Offline submit** — answers and finish both queue in IDB; finish respects `accept_late_sync` + session window on server.
 9. **Graceful DB degradation** — `lib/is-missing-db-function.ts` / `is-missing-db-column.ts` for pre-migration deploys.
 
 ---
@@ -687,6 +764,7 @@ Requires `.env.local`: `E2E_TEACHER_EMAIL`, `E2E_TEACHER_PASSWORD`, Supabase URL
 ### Update checklist
 
 - [ ] New/changed **user-facing feature** → update relevant section + mermaid if flow changed
+- [ ] New **dashboard/collection list UI** → follow `docs/LISTS.md`; extend `tp-entity-list-*` if needed
 - [ ] New **API route** → add to [API routes](#api-routes)
 - [ ] New **migration** → add row to migration index
 - [ ] New **lib module** or moved hook → update [Key files map](#key-files-map) or offline table
@@ -700,4 +778,4 @@ Requires `.env.local`: `E2E_TEACHER_EMAIL`, `E2E_TEACHER_PASSWORD`, Supabase URL
 - Duplicate README setup steps here (link to `README.md` for install/deploy basics).
 - Document every component — only entry points and non-obvious wiring.
 
-*Last reviewed: 2026-06-05 (migrations through `20260605260000`).*
+*Last reviewed: 2026-06-12 (entity list UI standardization).*

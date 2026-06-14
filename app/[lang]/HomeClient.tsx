@@ -7,8 +7,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 
 import { ConnectionIndicator } from "@/components/ConnectionIndicator";
+import { HelpHint } from "@/components/HelpHint";
 import { JoinCodeInput } from "@/components/JoinCodeInput";
 import { useBodyFocusMode } from "@/lib/use-body-focus-mode";
+import { BUILDER_TOUR_PENDING_KEY } from "@/lib/onboarding-tour-key";
 import { LoadingBar } from "@/components/LoadingBar";
 import { LandingHero } from "./LandingHero";
 
@@ -81,8 +83,19 @@ import { heartbeatSyncMeta } from "@/lib/offline/heartbeat-meta";
 import { cacheExamSession, loadCachedExamSession } from "@/lib/offline/session-cache";
 import { studentConnectionDisplayState } from "@/lib/student-connection-display-state";
 import type { ConnectionSnapshot } from "@/lib/offline/types";
+import { newSubmissionId } from "@/lib/offline/sync-queue";
+import { isRetryableNetworkError } from "@/lib/network-error";
+import { submitExamToServer } from "@/lib/offline/finish-transport";
+import { clearJoinDraft, loadJoinDraft, saveJoinDraft } from "@/lib/offline/join-cache";
+import {
+  tabLeaveBlurGraceMs,
+  tabLeaveGraceMs,
+  tabLeaveSuspensionEnabled,
+} from "@/lib/offline/tab-leave-policy";
 import { useOfflineExamSync } from "@/lib/offline/use-offline-exam-sync";
+import { useOfflineFinishSubmit } from "@/lib/offline/use-offline-finish-submit";
 import { useBrowserOnline } from "@/lib/use-browser-online";
+import { useClientSessionHydration } from "@/lib/use-client-session-hydration";
 import { useStudentExamRealtime } from "@/lib/use-student-exam-realtime";
 import { shouldApplyTeacherExamResume } from "@/lib/student-exam-tab-pause";
 import { useStudentExamStatePoll } from "@/lib/use-student-exam-state-poll";
@@ -229,9 +242,8 @@ function HomeChrome({
 
 type HomeClientProps = {
   /**
-   * Session resolved server-side and passed in. `null` for guests. Removing
-   * the previous client `/api/auth/session` fetch saves a network round trip
-   * on every home-page load.
+   * Session from SSR when available; static home/join pages pass `null` and
+   * hydrate via `/api/auth/session` when a Supabase auth cookie is present.
    */
   initialSession: SessionData | null;
   /** Guest-only: marketing homepage vs dedicated student join page. */
@@ -286,7 +298,7 @@ export default function HomeClient({
   /** False until client has read `window.location` (SSR/hydration safe). */
   const [urlSynced, setUrlSynced] = useState(false);
   const [homePageIntent, setHomePageIntent] = useState<TeacherHomeIntent>("none");
-  const [session, setSession] = useState<SessionData | null>(initialSession);
+  const { session, setSession, sessionHydrated } = useClientSessionHydration(initialSession);
   const [mode, setMode] = useState<"teacher" | "student">("student");
   const [authForms, setAuthForms] = useState<Form[]>([]);
   const [activeFormId, setActiveFormId] = useState("");
@@ -327,6 +339,8 @@ export default function HomeClient({
   const connSnapshotRef = useRef<ConnectionSnapshot>({
     state: "synced",
     pendingCount: 0,
+    pendingFinish: false,
+    serverReachable: true,
     lastSyncedAt: null,
     idbAvailable: true,
   });
@@ -415,6 +429,49 @@ export default function HomeClient({
   );
 
   const latestActiveFormRef = useLatestRef(activeForm);
+
+  // First-login tour (Segment B). Runs once in the builder when handed off from
+  // the dashboard segment via a transient sessionStorage flag.
+  const builderTourStartedRef = useRef(false);
+  useEffect(() => {
+    if (builderTourStartedRef.current || mode !== "teacher" || !isTeacher || !activeForm) {
+      return;
+    }
+    let pending = false;
+    try {
+      pending = window.sessionStorage.getItem(BUILDER_TOUR_PENDING_KEY) === "1";
+    } catch {
+      pending = false;
+    }
+    if (!pending) {
+      return;
+    }
+    builderTourStartedRef.current = true;
+    try {
+      window.sessionStorage.removeItem(BUILDER_TOUR_PENDING_KEY);
+    } catch {
+      /* ignore */
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      if (cancelled) {
+        return;
+      }
+      void import("@/lib/onboarding-tour")
+        .then(({ startBuilderTour }) => {
+          if (!cancelled) {
+            startBuilderTour(t, () => {});
+          }
+        })
+        .catch(() => {
+          /* tour is non-critical */
+        });
+    }, 700);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [mode, isTeacher, activeForm, t]);
 
   const closesAtForStudent = joinedSession?.closesAt ?? null;
   const joinedSessionNoTimeLimit = joinedSession
@@ -542,9 +599,29 @@ export default function HomeClient({
       } catch {
         /* ignore */
       }
+      void loadJoinDraft().then((draft) => {
+        if (!draft) {
+          return;
+        }
+        setJoinCodeInput((prev) => prev || draft.joinCode);
+        setJoinDisplayNameInput((prev) => prev || draft.displayName);
+      });
     }, 0);
     return () => clearTimeout(timeoutId);
   }, []);
+
+  useEffect(() => {
+    if (joinedSession) {
+      return;
+    }
+    const code = normalizeJoinCode(joinCodeInput);
+    const name = normalizeLiveSessionDisplayName(joinDisplayNameInput);
+    if (!code && !name) {
+      return;
+    }
+    const id = window.setTimeout(() => void saveJoinDraft(code, name), 500);
+    return () => window.clearTimeout(id);
+  }, [joinCodeInput, joinDisplayNameInput, joinedSession]);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -615,10 +692,8 @@ export default function HomeClient({
     });
   }, [t]);
 
-  // Session is now provided as an SSR prop (`initialSession`). The old client
-  // fetch to /api/auth/session was removed to eliminate a round trip on every
-  // home-page load. Auth mutations elsewhere (login / logout / OAuth callback)
-  // already navigate, which re-renders this page with a fresh server session.
+  // Session: static pages pass `null`; `useClientSessionHydration` fetches
+  // `/api/auth/session` only when a Supabase auth cookie is present.
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -724,7 +799,7 @@ export default function HomeClient({
    * `/join` stays available for teachers who want to preview the student flow.
    */
   useEffect(() => {
-    if (!urlSynced || session === null || guestView === "join") {
+    if (!urlSynced || !sessionHydrated || session === null || guestView === "join") {
       return;
     }
     if (session.profile?.role !== "teacher") {
@@ -745,7 +820,7 @@ export default function HomeClient({
     }
     teacherDashboardRedirectedRef.current = true;
     router.replace("/dashboard");
-  }, [session, router, homePageIntent, joinedSession, urlSynced, guestView]);
+  }, [session, router, homePageIntent, joinedSession, urlSynced, sessionHydrated, guestView]);
 
   /** Non-teachers must not open the form builder via `?form=`. */
   useEffect(() => {
@@ -824,20 +899,43 @@ export default function HomeClient({
       }, 2600);
     },
     onStatusChange: (snap) => {
-      connSnapshotRef.current = snap;
       if (!snap.idbAvailable) {
         setAutosaveStatus(t("offline.idbCleared"));
       }
     },
   });
+  const finishSubmit = useOfflineFinishSubmit({
+    liveSessionId: joinedLiveSessionId || null,
+    deviceId: anonymousSessionId || null,
+    onFinished: () => {
+      void offlineSync.acknowledgeSynced().catch(() => {});
+      goToSubmittedPage();
+    },
+  });
+  const connectionSnapshot = useMemo(
+    (): ConnectionSnapshot => ({
+      ...offlineSync.snapshot,
+      pendingFinish: finishSubmit.pendingFinish,
+    }),
+    [offlineSync.snapshot, finishSubmit.pendingFinish],
+  );
+  useEffect(() => {
+    connSnapshotRef.current = connectionSnapshot;
+  }, [connectionSnapshot]);
+
+  useEffect(() => {
+    if (finishSubmit.pendingFinish) {
+      setStatusMessage(t("offline.submitQueued"));
+    }
+  }, [finishSubmit.pendingFinish, t]);
   const scheduleOfflineAnswerSync = offlineSync.scheduleSync;
 
   const offlineSyncRef = useLatestRef(offlineSync);
   const answerSyncEnabledRef = useLatestRef(answerSyncEnabled);
   const browserOnline = useBrowserOnline();
   const studentConnectionState = useMemo(
-    () => studentConnectionDisplayState(browserOnline, offlineSync.snapshot),
-    [browserOnline, offlineSync.snapshot.state],
+    () => studentConnectionDisplayState(browserOnline, connectionSnapshot),
+    [browserOnline, connectionSnapshot],
   );
   const lastSyncHeartbeatKeyRef = useRef("");
 
@@ -852,7 +950,7 @@ export default function HomeClient({
     ) {
       return;
     }
-    const syncMeta = heartbeatSyncMeta(offlineSync.snapshot);
+    const syncMeta = heartbeatSyncMeta(connectionSnapshot);
     const key = `${browserOnline ? "online" : "offline"}:${syncMeta.syncState}:${syncMeta.pendingSyncCount}`;
     if (lastSyncHeartbeatKeyRef.current === key) {
       return;
@@ -877,8 +975,8 @@ export default function HomeClient({
     })();
   }, [
     browserOnline,
-    offlineSync.snapshot.pendingCount,
-    offlineSync.snapshot.state,
+    connectionSnapshot.pendingCount,
+    connectionSnapshot.state,
     joinedSession,
     anonymousSessionId,
     activeExamDisplayName,
@@ -1347,6 +1445,9 @@ export default function HomeClient({
     ) {
       return;
     }
+    if (!tabLeaveSuspensionEnabled(deliveryMode)) {
+      return;
+    }
 
     let hiddenTimer: number | undefined;
     let blurTimer: number | undefined;
@@ -1354,6 +1455,8 @@ export default function HomeClient({
     const deviceId = anonymousSessionId;
     const displayName = activeExamDisplayName;
     const tabLeaveUrl = `/api/public/live-sessions/${liveSessionId}/tab-leave`;
+    const hiddenGraceMs = tabLeaveGraceMs(deliveryMode);
+    const blurGraceMs = tabLeaveBlurGraceMs(deliveryMode);
 
     const applyPausedState = () => {
       setExamSuspended(true);
@@ -1383,7 +1486,7 @@ export default function HomeClient({
             reportTabLeave();
           }
           hiddenTimer = undefined;
-        }, 200);
+        }, hiddenGraceMs);
       } else {
         if (hiddenTimer !== undefined) {
           window.clearTimeout(hiddenTimer);
@@ -1407,7 +1510,7 @@ export default function HomeClient({
         if (isDocumentHidden()) {
           reportTabLeave();
         }
-      }, 400);
+      }, blurGraceMs);
     };
 
     document.addEventListener("visibilitychange", onVisibility);
@@ -1429,7 +1532,16 @@ export default function HomeClient({
         window.clearTimeout(blurTimer);
       }
     };
-  }, [joinedSession, sessionOpen, examSuspended, examFinished, anonymousSessionId, activeExamDisplayName, t]);
+  }, [
+    joinedSession,
+    sessionOpen,
+    examSuspended,
+    examFinished,
+    anonymousSessionId,
+    activeExamDisplayName,
+    deliveryMode,
+    t,
+  ]);
 
   useEffect(() => {
     if (mode !== "teacher" || !isTeacher) {
@@ -1767,6 +1879,7 @@ export default function HomeClient({
       setExamSuspended(false);
       setExamFinished(false);
       setStatusMessage("");
+      void clearJoinDraft();
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : t("home.errors.rejoinExam"));
     } finally {
@@ -1839,6 +1952,7 @@ export default function HomeClient({
       setExamFinished(false);
       setAutosaveStatus("");
       setStatusMessage(t("home.status.inLiveSession"));
+      void clearJoinDraft();
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : t("home.errors.joinSession"));
     } finally {
@@ -1882,9 +1996,6 @@ export default function HomeClient({
     if (!joinedSession) {
       return;
     }
-    // Recover the device id if React state lost it (e.g. storage was briefly
-    // blocked on mount). getOrCreate returns the *stored* id when present, so this
-    // won't orphan a student's existing answers — it just unblocks submit.
     let deviceId = anonymousSessionId;
     if (!deviceId) {
       deviceId = getOrCreateAnonymousSessionId();
@@ -1893,14 +2004,12 @@ export default function HomeClient({
       }
     }
     if (!deviceId || !activeExamDisplayName) {
-      // Never silently no-op: tell the student why nothing happened.
       setStatusMessage(t("home.errors.submitExam"));
       return;
     }
 
     setIsMutating(true);
     setStatusMessage("");
-    // Suspend autosave so a background drain can't race the explicit submit below.
     setAutosaveSuspended(true);
     const textQuestions = joinedSession.form.questions.filter((q) => questionSupportsLiveFeedback(q.type));
     const answers = mergeStudentAnswersForSave(
@@ -1909,55 +2018,54 @@ export default function HomeClient({
       textQuestions,
     );
     latestStudentAnswersRef.current = answers;
-    // Always send a submissionId so the server hits the unambiguous 5-arg RPC.
-    // Calling the save RPC with exactly 4 args is ambiguous in PostgREST when both
-    // the 4-arg and 5-arg overloads exist, which surfaces as a misleading
-    // "missing save_live_session_student_response (4-arg)" error.
     const submissionId =
       typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
         ? crypto.randomUUID()
         : undefined;
     try {
       setAutosaveStatus(t("home.autosave.saving"));
-      // Authoritative save + finish. We intentionally do NOT await offlineSync.flushNow()
-      // here: it can block on an in-flight background drain (a timeout-less fetch), which
-      // would freeze the button on "Submitting…" forever. A bounded request guarantees we
-      // always either finish or surface an error.
-      await requestJsonWithTimeout<{ ok: true }>(
-        `/api/public/live-sessions/${joinedSession.liveSessionId}/responses`,
-        {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            deviceId,
-            displayName: activeExamDisplayName,
-            answers,
-            ...(submissionId ? { submissionId } : {}),
-          }),
-        },
-      );
-      lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(answers);
-      await requestJsonWithTimeout<{ ok: true }>(
-        `/api/public/live-sessions/${joinedSession.liveSessionId}/finish`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            deviceId,
-            displayName: activeExamDisplayName,
-          }),
-        },
-      );
-      // Best-effort: clear any queued autosave items now that the server copy is final.
-      await offlineSync.acknowledgeSynced().catch(() => {});
-      if (autosaveBannerClearRef.current !== undefined) {
-        window.clearTimeout(autosaveBannerClearRef.current);
-        autosaveBannerClearRef.current = undefined;
+      const result = await submitExamToServer({
+        liveSessionId: joinedSession.liveSessionId,
+        deviceId,
+        displayName: activeExamDisplayName,
+        answers,
+        submissionId: submissionId ?? newSubmissionId(),
+      });
+      if (result.ok) {
+        lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers(answers);
+        await offlineSync.acknowledgeSynced().catch(() => {});
+        if (autosaveBannerClearRef.current !== undefined) {
+          window.clearTimeout(autosaveBannerClearRef.current);
+          autosaveBannerClearRef.current = undefined;
+        }
+        setAutosaveStatus("");
+        goToSubmittedPage();
+        return;
       }
-      setAutosaveStatus("");
-      goToSubmittedPage();
+      if (result.retryable) {
+        await finishSubmit.queueSubmit({
+          displayName: activeExamDisplayName,
+          answers,
+          submissionId,
+        });
+        setAutosaveStatus("");
+        setStatusMessage(t("offline.submitQueued"));
+        return;
+      }
+      setAutosaveStatus(t("home.autosave.failed"));
+      setStatusMessage(result.message || t("home.errors.submitExam"));
     } catch (error) {
       const aborted = error instanceof Error && error.name === "AbortError";
+      if (isRetryableNetworkError(error)) {
+        await finishSubmit.queueSubmit({
+          displayName: activeExamDisplayName,
+          answers,
+          submissionId,
+        });
+        setAutosaveStatus("");
+        setStatusMessage(t("offline.submitQueued"));
+        return;
+      }
       setAutosaveStatus(t("home.autosave.failed"));
       setStatusMessage(
         aborted
@@ -2039,6 +2147,7 @@ export default function HomeClient({
 
   const teacherPendingDashboardRedirect =
     urlSynced &&
+    sessionHydrated &&
     !isJoinRoute &&
     session?.profile?.role === "teacher" &&
     homePageIntent === "none" &&
@@ -2046,7 +2155,7 @@ export default function HomeClient({
 
   const showGuestHeader = guestView === "landing" && !session;
 
-  if (!urlSynced || teacherPendingDashboardRedirect) {
+  if (!urlSynced || !sessionHydrated || teacherPendingDashboardRedirect) {
     return (
       <HomeChrome guestHeader={showGuestHeader}>
         <div className="min-h-screen bg-[var(--tp-bg)] py-8 text-[var(--tp-text)] sm:py-10">
@@ -2488,6 +2597,7 @@ export default function HomeClient({
               </div>
               <button
                 type="button"
+                data-tour="save-form"
                 onClick={() => void saveBuilderForm()}
                 disabled={
                   builderSaveStatus === "saving" ||
@@ -2535,6 +2645,7 @@ export default function HomeClient({
                 {t("home.builder.formTitle")}
                 <input
                   type="text"
+                  data-tour="form-title"
                   value={activeForm.title}
                   onChange={(event) =>
                     updateActiveForm((form) => ({ ...form, title: event.target.value }))
@@ -2573,10 +2684,17 @@ export default function HomeClient({
                     {t("home.builder.liveFeedbackDesc")}
                   </span>
                 </span>
+                <span data-tour="live-feedback" className="mt-0.5">
+                  <HelpHint id="builder-live-feedback" text={t("help.builder.liveFeedback")} />
+                </span>
               </label>
             </div>
 
-            <div className="flex flex-wrap gap-2 border-t border-[var(--tp-border)] pt-6">
+            <div
+              data-tour="add-question"
+              className="flex flex-wrap items-center gap-2 border-t border-[var(--tp-border)] pt-6"
+            >
+              <HelpHint id="builder-question-type" text={t("help.builder.questionType")} />
               {listAuthorableResponseTypes().map((typeMeta) => {
                 const isAdding = addingQuestionType === typeMeta.id;
                 return (
@@ -2645,12 +2763,18 @@ export default function HomeClient({
                       <aside
                         className={`${ui.questionScoring} order-first w-full shrink-0 sm:max-w-[11rem] lg:order-2 lg:w-40`}
                       >
-                        <p className={ui.sectionTitle}>{t("home.builder.scoring")}</p>
+                        <p className={`${ui.sectionTitle} flex items-center gap-1`}>
+                          {t("home.builder.scoring")}
+                          {index === 0 ? (
+                            <HelpHint id="builder-points" text={t("help.builder.points")} />
+                          ) : null}
+                        </p>
                         <label className={`${ui.label} mt-2 block`}>
                           {t("home.builder.points")}
                           <div className="mt-1.5 flex items-center gap-2">
                             <input
                               type="number"
+                              data-tour={index === 0 ? "question-points" : undefined}
                               min={1}
                               max={1000}
                               value={question.points}
@@ -2766,8 +2890,13 @@ export default function HomeClient({
                         >
                           {t("home.builder.addOption")}
                         </button>
-                        <label className="block text-sm font-medium">
-                          {t("home.builder.correctAnswer")}
+                        <label className="block text-sm font-medium" data-tour={index === 0 ? "correct-answer" : undefined}>
+                          <span className="inline-flex items-center gap-1">
+                            {t("home.builder.correctAnswer")}
+                            {index === 0 ? (
+                              <HelpHint id="builder-correct-answer" text={t("help.builder.correctAnswer")} />
+                            ) : null}
+                          </span>
                           <select
                             value={question.correctAnswer ?? ""}
                             onChange={(event) =>
@@ -2853,7 +2982,12 @@ export default function HomeClient({
                               </div>
                             ) : (
                               <label className="text-sm">
-                                {t("responseTypes.builder.acceptedAnswers")}
+                                <span className="inline-flex items-center gap-1">
+                                  {t("responseTypes.builder.acceptedAnswers")}
+                                  {index === 0 ? (
+                                    <HelpHint id="builder-accepted-answers" text={t("help.builder.acceptedAnswers")} />
+                                  ) : null}
+                                </span>
                                 <input
                                   type="text"
                                   value={((question.responseConfig as { acceptedAnswers?: string[] }).acceptedAnswers ?? []).join(", ")}
@@ -2964,6 +3098,13 @@ export default function HomeClient({
                               className="tp-input"
                             />
                           </label>
+                        ) : null}
+                        {index === 0 &&
+                        question.type !== "multipleChoice" &&
+                        question.type !== "extendedWritten" &&
+                        question.type !== "text" &&
+                        question.type !== "shortAnswer" ? (
+                          <HelpHint id="builder-response-config" text={t("help.builder.responseConfig")} />
                         ) : null}
                         <BuilderResponseConfig question={question} updateActiveForm={updateActiveForm} />
                       </div>
@@ -3221,7 +3362,9 @@ export default function HomeClient({
                 {joinedSession ? (
                   <ConnectionIndicator
                     state={studentConnectionState}
-                    pendingCount={offlineSync.snapshot.pendingCount}
+                    pendingCount={connectionSnapshot.pendingCount}
+                    pendingFinish={connectionSnapshot.pendingFinish}
+                    serverReachable={connectionSnapshot.serverReachable}
                   />
                 ) : null}
                 <p

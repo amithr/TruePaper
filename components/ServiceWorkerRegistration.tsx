@@ -10,6 +10,14 @@ export function ServiceWorkerRegistration() {
     void navigator.serviceWorker.register("/sw.js").catch(() => {
       /* best-effort */
     });
+
+    const onMessage = (event: MessageEvent) => {
+      if (event.data?.type === "OFFLINE_SYNC_DRAINED") {
+        window.dispatchEvent(new CustomEvent("truepaper-offline-sync-drained"));
+      }
+    };
+    navigator.serviceWorker.addEventListener("message", onMessage);
+    return () => navigator.serviceWorker.removeEventListener("message", onMessage);
   }, []);
 
   return null;

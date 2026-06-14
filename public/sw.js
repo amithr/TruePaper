@@ -1,5 +1,7 @@
 const CACHE = "truepaper-shell-v2";
 const SHELL_URLS = ["/", "/en", "/uk"];
+const OFFLINE_DB = "truepaper-offline-v1";
+const OFFLINE_SYNC_TAG = "truepaper-offline-sync";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -31,7 +33,6 @@ function shouldBypassServiceWorker(request) {
   if (url.pathname.startsWith("/api/")) {
     return true;
   }
-  // Never intercept Next.js App Router navigations (RSC payloads, prefetch, actions).
   if (
     url.searchParams.has("_rsc") ||
     request.headers.get("RSC") === "1" ||
@@ -61,4 +62,112 @@ self.addEventListener("fetch", (event) => {
       })
       .catch(() => caches.match(request).then((cached) => cached ?? fetch(request))),
   );
+});
+
+function openOfflineDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(OFFLINE_DB, 2);
+    req.onerror = () => reject(req.error);
+    req.onsuccess = () => resolve(req.result);
+  });
+}
+
+function idbGetAll(db, store) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, "readonly");
+    const req = tx.objectStore(store).getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function idbDelete(db, store, key) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, "readwrite");
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.objectStore(store).delete(key);
+  });
+}
+
+async function drainSyncItem(item) {
+  const res = await fetch(`/api/public/live-sessions/${item.liveSessionId}/responses`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      deviceId: item.deviceId,
+      displayName: item.displayName,
+      answers: item.answers,
+      submissionId: item.submissionId,
+    }),
+  });
+  return res.ok;
+}
+
+async function drainFinishItem(item) {
+  const saveRes = await fetch(`/api/public/live-sessions/${item.liveSessionId}/responses`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      deviceId: item.deviceId,
+      displayName: item.displayName,
+      answers: item.answers,
+      submissionId: item.submissionId,
+    }),
+  });
+  if (!saveRes.ok) {
+    return false;
+  }
+  const finishRes = await fetch(`/api/public/live-sessions/${item.liveSessionId}/finish`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      deviceId: item.deviceId,
+      displayName: item.displayName,
+    }),
+  });
+  return finishRes.ok;
+}
+
+async function drainOfflineQueues() {
+  let db;
+  try {
+    db = await openOfflineDb();
+  } catch {
+    return;
+  }
+
+  const syncItems = await idbGetAll(db, "sync_queue");
+  for (const item of syncItems) {
+    try {
+      if (await drainSyncItem(item)) {
+        await idbDelete(db, "sync_queue", item.submissionId);
+      }
+    } catch {
+      /* retry on next sync */
+    }
+  }
+
+  const finishItems = await idbGetAll(db, "finish_queue");
+  for (const item of finishItems) {
+    try {
+      if (await drainFinishItem(item)) {
+        await idbDelete(db, "finish_queue", item.key);
+      }
+    } catch {
+      /* retry on next sync */
+    }
+  }
+}
+
+self.addEventListener("sync", (event) => {
+  if (event.tag === OFFLINE_SYNC_TAG) {
+    event.waitUntil(drainOfflineQueues());
+  }
+});
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type === "DRAIN_OFFLINE_SYNC") {
+    event.waitUntil(drainOfflineQueues());
+  }
 });

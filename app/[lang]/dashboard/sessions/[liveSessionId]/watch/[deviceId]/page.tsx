@@ -6,6 +6,7 @@ import { useLocaleRouter as useRouter } from "@/lib/i18n/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Breadcrumbs } from "@/components/Breadcrumbs";
+import { HelpHint } from "@/components/HelpHint";
 import { LoadingBar } from "@/components/LoadingBar";
 import { OverflowMenu, type OverflowMenuItem } from "@/components/OverflowMenu";
 import {
@@ -721,10 +722,13 @@ export default function WatchStudentExamPage() {
       type: "custom",
       key: "review-share",
       node: (
-        <StudentReviewShare
-          liveSessionId={liveSessionId}
-          deviceId={deviceIdNorm}
-        />
+        <span className="flex items-center gap-2">
+          <StudentReviewShare
+            liveSessionId={liveSessionId}
+            deviceId={deviceIdNorm}
+          />
+          <HelpHint id="watch-review-link" text={t("help.watch.reviewLink")} />
+        </span>
       ),
     });
     overflowItems.push({
@@ -738,12 +742,15 @@ export default function WatchStudentExamPage() {
         type: "custom",
         key: "rejoin-share",
         node: (
-          <TeacherStudentRejoinShare
-            liveSessionId={liveSessionId}
-            deviceId={deviceIdNorm}
-            initialCode={snapshot.studentResumeCode}
-            studentLabel={st.displayName || undefined}
-          />
+          <span className="flex items-center gap-2">
+            <TeacherStudentRejoinShare
+              liveSessionId={liveSessionId}
+              deviceId={deviceIdNorm}
+              initialCode={snapshot.studentResumeCode}
+              studentLabel={st.displayName || undefined}
+            />
+            <HelpHint id="watch-resume-code" text={t("help.session.resumeCode")} />
+          </span>
         ),
       });
     }
@@ -853,37 +860,41 @@ export default function WatchStudentExamPage() {
               ) : null}
             </div>
             {!st.graded ? (
-              <button
-                type="button"
-                disabled={!canMarkGraded || markingGraded}
-                onClick={() => void markExamGraded()}
-                title={
-                  canMarkGraded
-                    ? t("session.watch.markGradedTitle")
-                    : t("session.watch.markGradedDisabledTitle")
-                }
-                className={`tp-mark-graded-cta ${focusRing}`}
-              >
-                {markingGraded ? (
-                  t("common.marking")
-                ) : (
-                  <>
-                    <svg
-                      aria-hidden
-                      className="h-4 w-4"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.4"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M5 12l5 5L20 7" />
-                    </svg>
-                    {t("session.watch.markGraded")}
-                  </>
-                )}
-              </button>
+              <div className="flex items-center gap-2">
+                <HelpHint id="watch-grade" text={t("help.watch.grade")} />
+                <button
+                  type="button"
+                  disabled={!canMarkGraded || markingGraded}
+                  onClick={() => void markExamGraded()}
+                  title={
+                    canMarkGraded
+                      ? t("session.watch.markGradedTitle")
+                      : t("session.watch.markGradedDisabledTitle")
+                  }
+                  className={`tp-mark-graded-cta ${focusRing}`}
+                >
+                  {markingGraded ? (
+                    t("common.marking")
+                  ) : (
+                    <>
+                      <svg
+                        aria-hidden
+                        className="h-4 w-4"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.4"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M5 12l5 5L20 7" />
+                      </svg>
+                      {t("session.watch.markGraded")}
+                    </>
+                  )}
+                </button>
+                <HelpHint id="watch-mark-graded" text={t("help.watch.markGraded")} />
+              </div>
             ) : null}
           </div>
         ) : (
@@ -924,7 +935,12 @@ export default function WatchStudentExamPage() {
 
         <section className="tp-card p-6">
           <header>
-            <h2 className="text-xl font-bold">{snapshot.form.title || t("common.untitledForm")}</h2>
+            <h2 className="flex items-center gap-1.5 text-xl font-bold">
+              {snapshot.form.title || t("common.untitledForm")}
+              {snapshot.form.liveTeacherFeedbackEnabled ? (
+                <HelpHint id="watch-live-feedback" text={t("help.watch.liveFeedback")} />
+              ) : null}
+            </h2>
             {snapshot.form.description ? (
               <p className="mt-1 text-sm text-zinc-600">{snapshot.form.description}</p>
             ) : null}

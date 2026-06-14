@@ -1,23 +1,9 @@
-import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+import { refreshProxySession } from "@/lib/supabase/proxy-session";
 
-/**
- * Cheap check: does the request already carry a Supabase auth cookie? If not,
- * there is nothing to refresh and we can skip the (network-round-trip) call to
- * `supabase.auth.getUser()` entirely. Guests get a free fast path.
- */
-function requestHasSupabaseAuthCookie(request: NextRequest): boolean {
-  for (const cookie of request.cookies.getAll()) {
-    // Supabase SSR writes cookies named "sb-<projectRef>-auth-token[.N]".
-    if (cookie.name.startsWith("sb-") && cookie.name.includes("-auth-token")) {
-      return true;
-    }
-  }
-  return false;
-}
+export { requestHasSupabaseAuthCookie } from "@/lib/supabase/auth-cookie";
+export { refreshProxySession } from "@/lib/supabase/proxy-session";
 
 /**
  * Refresh the Supabase auth session for the given request and write any
@@ -31,28 +17,8 @@ export async function applySupabaseSessionRefresh(
   request: NextRequest,
   response: NextResponse,
 ): Promise<NextResponse> {
-  if (!supabaseUrl || !supabaseAnonKey) {
-    return response;
-  }
-  if (!requestHasSupabaseAuthCookie(request)) {
-    return response;
-  }
-
-  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      getAll() {
-        return request.cookies.getAll();
-      },
-      setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value, options }) => {
-          response.cookies.set(name, value, options);
-        });
-      },
-    },
-  });
-
-  await supabase.auth.getUser();
-  return response;
+  const { response: refreshed } = await refreshProxySession(request, response);
+  return refreshed;
 }
 
 /** @deprecated kept temporarily so any stale import compiles. Use applySupabaseSessionRefresh. */

@@ -5,6 +5,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { LoadingBar } from "@/components/LoadingBar";
+import {
+  EntityList,
+  EntityListColumns,
+  EntityListFooter,
+  EntityListPanel,
+  EntityListPager,
+  EntityListRow,
+} from "@/components/lists/EntityList";
 import { PAST_SESSIONS_PAGE_SIZE } from "@/lib/teacher-dashboard-server";
 import type { TeacherSessionSummary } from "@/lib/teacher-sessions";
 import { deferEffect } from "@/lib/defer-effect";
@@ -130,98 +138,87 @@ export function DashboardPastSessions({ onError }: Props) {
       ) : null}
       {showEmpty ? <p className="mt-4 tp-empty">{t("pastSessions.empty")}</p> : null}
       {!loading && hasVisibleRows ? (
-        <div className="mt-4 space-y-3">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[32rem] table-fixed text-left text-sm">
-              <colgroup>
-                <col className="w-[32%]" />
-                <col className="w-[16%]" />
-                <col className="w-[18%]" />
-                <col className="w-[18%]" />
-                <col className="w-[16%]" />
-              </colgroup>
-              <thead>
-                <tr className="border-b border-[var(--tp-border)] text-[var(--tp-text-muted)]">
-                  <th className="py-2 pr-4 font-medium">{t("pastSessions.colForm")}</th>
-                  <th className="py-2 pr-4 font-medium">{t("pastSessions.colCode")}</th>
-                  <th className="py-2 pr-4 font-medium">{t("pastSessions.colClosed")}</th>
-                  <th className="py-2 pr-4 font-medium">{t("pastSessions.colStudents")}</th>
-                  <th className="py-2 font-medium">{t("pastSessions.colActions")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sessions.map((s) => {
-                  const exiting = exitingSessionIds.has(s.id);
-                  return (
-                    <tr
-                      key={s.id}
-                      role={exiting ? undefined : "link"}
-                      tabIndex={exiting ? -1 : 0}
-                      onClick={
-                        exiting
-                          ? undefined
-                          : () => router.push(`/dashboard/sessions/${s.id}`)
-                      }
-                      onKeyDown={
-                        exiting
-                          ? undefined
-                          : (event) => {
-                              if (event.key === "Enter" || event.key === " ") {
-                                event.preventDefault();
-                                router.push(`/dashboard/sessions/${s.id}`);
-                              }
-                            }
-                      }
-                      aria-hidden={exiting}
-                      className={`border-b border-[var(--tp-border)]/60 last:border-0 transition-colors ${
-                        exiting
-                          ? "tp-anim-fade-out"
-                          : "cursor-pointer hover:bg-[var(--tp-bg-subtle)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--tp-accent-ring)] focus-visible:ring-inset"
-                      }`}
-                    >
-                      <td className="truncate py-3 pr-4 font-medium text-[var(--tp-text)]">
-                        {s.formTitle}
-                      </td>
-                      <td className="py-3 pr-4 font-mono text-xs tracking-[0.25em] text-[var(--tp-text-muted)]">
-                        {s.joinCode}
-                      </td>
-                      <td className="py-3 pr-4 text-[var(--tp-text-secondary)]">
-                        {new Date(s.closesAt).toLocaleDateString([], {
-                          month: "short",
-                          day: "numeric",
-                          year: "numeric",
-                        })}
-                      </td>
-                      <td className="py-3 pr-4 text-[var(--tp-text)]">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span>{s.responseCount}</span>
-                          {s.needsGradingCount > 0 ? (
-                            <span className="tp-grade-pill tp-grade-pill--needs">
-                              {t("pastSessions.toGrade", { n: s.needsGradingCount })}
-                            </span>
-                          ) : null}
-                        </div>
-                      </td>
-                      <td className="py-3" onClick={(event) => event.stopPropagation()}>
-                        <ConfirmButton
-                          tone="danger"
-                          label={t("common.delete")}
-                          confirmLabel={t("common.tapAgain")}
-                          busy={deletingSessionId === s.id}
-                          busyLabel={t("common.deleting")}
-                          disabled={deletingSessionId !== null || exiting}
-                          className="px-2 py-1 text-xs"
-                          onConfirm={() => void deleteSession(s.id)}
-                        />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+        <EntityListPanel className="mt-4">
+          <EntityListColumns
+            variant="five"
+            columns={[
+              t("pastSessions.colForm"),
+              t("pastSessions.colCode"),
+              t("pastSessions.colClosed"),
+              t("pastSessions.colStudents"),
+              t("pastSessions.colActions"),
+            ]}
+          />
+          <EntityList>
+            {sessions.map((s) => {
+              const exiting = exitingSessionIds.has(s.id);
+              return (
+                <EntityListRow
+                  key={s.id}
+                  className={`tp-entity-list-row--past${exiting ? " tp-anim-fade-out" : ""}`}
+                  interactive={!exiting}
+                  role={exiting ? undefined : "link"}
+                  tabIndex={exiting ? -1 : 0}
+                  aria-hidden={exiting}
+                  onClick={
+                    exiting ? undefined : () => router.push(`/dashboard/sessions/${s.id}`)
+                  }
+                  onKeyDown={
+                    exiting
+                      ? undefined
+                      : (event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            router.push(`/dashboard/sessions/${s.id}`);
+                          }
+                        }
+                  }
+                >
+                  <div className="tp-entity-list-row__cell tp-entity-list-row__cell--strong truncate">
+                    {s.formTitle}
+                  </div>
+                  <div className="tp-entity-list-row__cell tp-entity-list-row__cell--mono">
+                    {s.joinCode}
+                  </div>
+                  <div className="tp-entity-list-row__cell">
+                    {new Date(s.closesAt).toLocaleDateString([], {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </div>
+                  <div className="tp-entity-list-row__cell">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span>{s.responseCount}</span>
+                      {s.needsGradingCount > 0 ? (
+                        <span className="tp-grade-pill tp-grade-pill--needs">
+                          {t("pastSessions.toGrade", { n: s.needsGradingCount })}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div
+                    className="tp-entity-list-row__actions"
+                    onClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => event.stopPropagation()}
+                  >
+                    <ConfirmButton
+                      tone="danger"
+                      label={t("common.delete")}
+                      confirmLabel={t("common.tapAgain")}
+                      busy={deletingSessionId === s.id}
+                      busyLabel={t("common.deleting")}
+                      disabled={deletingSessionId !== null || exiting}
+                      className="px-2 py-1 text-xs"
+                      onConfirm={() => void deleteSession(s.id)}
+                    />
+                  </div>
+                </EntityListRow>
+              );
+            })}
+          </EntityList>
           {total > PAST_SESSIONS_PAGE_SIZE ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--tp-border)] pt-3 text-sm text-[var(--tp-text-secondary)]">
+            <EntityListFooter>
               <p>
                 {t("pastSessions.page", {
                   current: page + 1,
@@ -229,7 +226,7 @@ export function DashboardPastSessions({ onError }: Props) {
                   totalSessions: total,
                 })}
               </p>
-              <div className="flex items-center gap-2">
+              <EntityListPager>
                 <button
                   type="button"
                   disabled={page <= 0 || loading}
@@ -246,10 +243,10 @@ export function DashboardPastSessions({ onError }: Props) {
                 >
                   {t("common.next")}
                 </button>
-              </div>
-            </div>
+              </EntityListPager>
+            </EntityListFooter>
           ) : null}
-        </div>
+        </EntityListPanel>
       ) : null}
     </section>
   );

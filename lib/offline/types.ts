@@ -40,6 +40,27 @@ export type SyncResult =
 export type ConnectionSnapshot = {
   state: ClientSyncState;
   pendingCount: number;
+  pendingFinish: boolean;
+  serverReachable: boolean;
   lastSyncedAt: number | null;
   idbAvailable: boolean;
+};
+
+export type FinishQueueItem = {
+  key: string;
+  liveSessionId: string;
+  deviceId: string;
+  displayName: string;
+  answers: StudentAnswers;
+  submissionId: string;
+  createdAt: number;
+  attempts: number;
+  lastAttemptAt: number | null;
+};
+
+export type CachedJoinDraft = {
+  key: "join_draft";
+  joinCode: string;
+  displayName: string;
+  updatedAt: number;
 };

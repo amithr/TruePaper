@@ -1,8 +1,11 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+
+import { BUILDER_TOUR_PENDING_KEY } from "@/lib/onboarding-tour-key";
 
 import { BrandMark } from "@/components/BrandMark";
+import { HelpTipsToggle } from "@/components/HelpTipsToggle";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { DashboardFormLibrary } from "@/components/dashboard/DashboardFormLibrary";
 import { DashboardLazySection } from "@/components/dashboard/DashboardLazySection";
@@ -31,6 +34,8 @@ type Props = {
   profile: DashboardTeacherProfile;
   initialRunning: TeacherSessionSummary[];
   initialSuspensions: Record<string, SuspendedStudentRow[]>;
+  /** First-login tour: false → the dashboard segment auto-runs once. */
+  tourCompleted?: boolean;
 };
 
 export function TeacherDashboard({
@@ -38,6 +43,7 @@ export function TeacherDashboard({
   profile,
   initialRunning,
   initialSuspensions,
+  tourCompleted = true,
 }: Props) {
   const router = useLocaleRouter();
   const t = useTranslations();
@@ -46,6 +52,47 @@ export function TeacherDashboard({
   const onError = useCallback((message: string) => {
     setLoadError(message);
   }, []);
+
+  // First-login tour (Segment A). Auto-runs once when the profile flag is unset;
+  // marking complete is server-side, and a sessionStorage flag hands off to the
+  // builder segment if the teacher opens a form next.
+  const tourStartedRef = useRef(false);
+  useEffect(() => {
+    if (tourCompleted || tourStartedRef.current) {
+      return;
+    }
+    tourStartedRef.current = true;
+    let cancelled = false;
+    const markComplete = () => {
+      try {
+        window.sessionStorage.setItem(BUILDER_TOUR_PENDING_KEY, "1");
+      } catch {
+        /* sessionStorage unavailable — builder segment simply won't run */
+      }
+      void fetch("/api/auth/onboarding-tour/complete", { method: "POST" }).catch(() => {
+        /* best-effort; tour still won't re-run this session */
+      });
+    };
+    // Let the dashboard paint (and async sections settle) before anchoring steps.
+    const timer = window.setTimeout(() => {
+      if (cancelled) {
+        return;
+      }
+      void import("@/lib/onboarding-tour")
+        .then(({ startDashboardTour }) => {
+          if (!cancelled) {
+            startDashboardTour(t, markComplete);
+          }
+        })
+        .catch(() => {
+          /* tour is non-critical */
+        });
+    }, 600);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [tourCompleted, t]);
 
   const logout = async () => {
     await requestJson<{ ok: true }>("/api/auth/logout", { method: "POST" });
@@ -69,6 +116,7 @@ export function TeacherDashboard({
         <header className="flex flex-wrap items-center justify-between gap-3">
           <BrandMark />
           <div className="flex items-center gap-2">
+            <HelpTipsToggle />
             <LanguageToggle />
             <LocaleLink
               href="/join"
@@ -105,7 +153,7 @@ export function TeacherDashboard({
           </div>
         </header>
 
-        <section className="tp-card-accent p-6 sm:p-8 tp-anim-fade-up">
+        <section data-tour="welcome" className="tp-card-accent p-6 sm:p-8 tp-anim-fade-up">
           <p className={ui.sectionTitle}>{t("dashboard.eyebrow")}</p>
           <h1 className="mt-1 text-3xl font-bold tracking-tight">
             {t("dashboard.helloPrefix")}

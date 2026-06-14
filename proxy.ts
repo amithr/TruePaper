@@ -8,7 +8,9 @@ import {
   pickLocaleFromAcceptLanguage,
   type Locale,
 } from "@/lib/i18n/config";
+import { hasTeacherHomeIntentFromSearchParams } from "@/lib/home-url-intent";
 import { applySupabaseSessionRefresh } from "@/lib/supabase/middleware";
+import { refreshProxySession } from "@/lib/supabase/proxy-session";
 
 const ONE_YEAR_SECONDS = 60 * 60 * 24 * 365;
 
@@ -95,6 +97,13 @@ function preferredLocale(request: NextRequest): Locale {
   return pickLocaleFromAcceptLanguage(request.headers.get("accept-language"));
 }
 
+function redirectTeacherToDashboard(request: NextRequest, locale: Locale): NextResponse {
+  const target = request.nextUrl.clone();
+  target.pathname = `/${locale}/dashboard`;
+  target.search = "";
+  return NextResponse.redirect(target);
+}
+
 function redirectToLocaleHome(request: NextRequest, locale: Locale): NextResponse {
   const target = request.nextUrl.clone();
   target.pathname = `/${locale}`;
@@ -153,7 +162,16 @@ export async function proxy(request: NextRequest) {
     if (isPrefetchOrDataRequest(request, pathname)) {
       return baseResponse;
     }
-    return applySupabaseSessionRefresh(request, baseResponse);
+
+    const { response: refreshed, session } = await refreshProxySession(request, baseResponse);
+    if (
+      homeLocale &&
+      !hasTeacherHomeIntentFromSearchParams(request.nextUrl.searchParams) &&
+      session?.profile?.role === "teacher"
+    ) {
+      return redirectTeacherToDashboard(request, homeLocale);
+    }
+    return refreshed;
   }
 
   const locale = preferredLocale(request);

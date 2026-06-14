@@ -6,6 +6,8 @@ import { useTranslations } from "@/lib/i18n/I18nProvider";
 type Props = {
   state: ClientSyncState;
   pendingCount?: number;
+  pendingFinish?: boolean;
+  serverReachable?: boolean;
   className?: string;
 };
 
@@ -17,18 +19,27 @@ const STATE_CLASS: Record<ClientSyncState, string> = {
   local_only: "tp-conn--local",
 };
 
-export function ConnectionIndicator({ state, pendingCount = 0, className = "" }: Props) {
+export function ConnectionIndicator({
+  state,
+  pendingCount = 0,
+  pendingFinish = false,
+  serverReachable = true,
+  className = "",
+}: Props) {
   const t = useTranslations();
-  // Answers are coalesced to a single latest copy, so a raw pending *count* is
-  // meaningless to students — show a plain saved/saving/offline state instead.
+
   const label =
-    state === "offline"
-      ? t("offline.status.offline")
-      : state === "syncing"
-        ? t("offline.status.syncing")
-        : state === "local_only"
-          ? t("offline.status.localOnly")
-          : t("offline.status.synced");
+    pendingFinish
+      ? t("offline.status.submitQueued")
+      : state === "offline"
+        ? serverReachable === false
+          ? t("offline.status.unreachable")
+          : t("offline.status.offline")
+        : state === "syncing"
+          ? t("offline.status.syncing")
+          : state === "local_only"
+            ? t("offline.status.localOnly")
+            : t("offline.status.synced");
 
   return (
     <div
@@ -38,6 +49,7 @@ export function ConnectionIndicator({ state, pendingCount = 0, className = "" }:
       data-testid="connection-indicator"
       data-state={state}
       data-pending-count={pendingCount}
+      data-pending-finish={pendingFinish ? "true" : "false"}
     >
       <span className="tp-conn-dot" aria-hidden />
       <span className="tp-conn-label">{label}</span>

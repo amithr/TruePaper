@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { readFormIdFromUrl, readTeacherHomeIntent } from "@/lib/home-url-intent";
+import { readFormIdFromUrl, hasTeacherHomeIntentFromSearchParams, readTeacherHomeIntent } from "@/lib/home-url-intent";
 
 describe("home-url-intent", () => {
   it("detects builder intent from form query", () => {
@@ -25,6 +25,12 @@ describe("home-url-intent", () => {
 
   it("returns none for plain home", () => {
     expect(readTeacherHomeIntent({ search: "", hash: "" })).toBe("none");
+  });
+
+  it("detects builder/join intent from search params for proxy routing", () => {
+    expect(hasTeacherHomeIntentFromSearchParams(new URLSearchParams("form=abc"))).toBe(true);
+    expect(hasTeacherHomeIntentFromSearchParams(new URLSearchParams("code=ABCDEF"))).toBe(true);
+    expect(hasTeacherHomeIntentFromSearchParams(new URLSearchParams(""))).toBe(false);
   });
 
   it("reads form id from query", () => {

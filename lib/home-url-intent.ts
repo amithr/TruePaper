@@ -15,6 +15,20 @@ function resolveUrlParts(parts?: UrlParts): UrlParts | null {
   return { search: window.location.search, hash: window.location.hash };
 }
 
+/** True when URL query params open builder or student join flows (not plain home). */
+export function hasTeacherHomeIntentFromSearchParams(searchParams: URLSearchParams): boolean {
+  if (searchParams.get("form")?.trim()) {
+    return true;
+  }
+  if (searchParams.has("code") || searchParams.has("join") || searchParams.has("resume")) {
+    return true;
+  }
+  if (searchParams.get("new") === "1" || searchParams.has("student")) {
+    return true;
+  }
+  return false;
+}
+
 /** Infer teacher home routing from URL query/hash (builder vs join flow). */
 export function readTeacherHomeIntent(parts?: UrlParts): TeacherHomeIntent {
   const url = resolveUrlParts(parts);

@@ -6,6 +6,13 @@ import { useCallback, useEffect, useState } from "react";
 import { deferEffect } from "@/lib/defer-effect";
 
 import { ConfirmButton } from "@/components/ConfirmButton";
+import { HelpHint } from "@/components/HelpHint";
+import {
+  EntityList,
+  EntityListPanel,
+  EntityListRow,
+  EntityListToolbar,
+} from "@/components/lists/EntityList";
 import { SessionJoinShare } from "@/components/SessionJoinShare";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { notifyStudentExamResumed } from "@/lib/notify-student-exam-resumed";
@@ -103,6 +110,8 @@ export function DashboardRunningSessions({
     }
   };
 
+  const hasToGrade = sessions.some((s) => s.needsGradingCount > 0);
+
   return (
     <section id="running-sessions" className="scroll-mt-6 tp-card p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -157,56 +166,63 @@ export function DashboardRunningSessions({
       {sessions.length === 0 ? (
         <p className="tp-empty">{t("runningSessions.empty")}</p>
       ) : (
-        <ul className="space-y-3">
-          {sessions.map((s) => {
-            const msLeft = new Date(s.closesAt).getTime() - nowTick;
-            const suspended = suspensionsBySession[s.id] ?? [];
-            const noTimeLimit = isNoTimeLimitSession(s.opensAt, s.closesAt);
-            return (
-              <li
-                key={s.id}
-                className="tp-card tp-card-interactive p-4 sm:p-5 tp-anim-fade-up"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <Link
-                      href={`/dashboard/sessions/${s.id}`}
-                      className={`text-base font-semibold tracking-tight text-[var(--tp-text)] hover:text-[var(--tp-accent-hover)] ${focusRing}`}
-                    >
-                      {s.formTitle}
-                    </Link>
-                    <p className="mt-1 font-mono text-xs tracking-[0.3em] text-[var(--tp-text-muted)]">
-                      {s.joinCode}
-                    </p>
-                    <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs">
-                      <span className="tp-status tp-status-typing">
-                        <span className="tp-status-dot" />
-                        {t("runningSessions.working", { n: s.inProgressCount })}
-                      </span>
-                      <span className="tp-status tp-status-finished">
-                        <span className="tp-status-dot" />
-                        {t("runningSessions.done", { n: s.finishedCount })}
-                      </span>
-                      <span className="tp-status tp-status-idle">
-                        <span className="tp-status-dot" />
-                        {t("runningSessions.joined", { n: s.assignedCount })}
-                      </span>
-                      {s.needsGradingCount > 0 ? (
-                        <span
-                          className="tp-status tp-status-blocked"
-                          title={t("runningSessions.toGradeTitle", { count: s.needsGradingCount })}
-                        >
+        <EntityListPanel>
+          <EntityListToolbar>
+            <div className="flex flex-wrap items-center gap-2">
+              {hasToGrade ? (
+                <HelpHint id="dash-to-grade" text={t("help.dashboard.toGrade")} />
+              ) : null}
+              <HelpHint id="dash-join-code" text={t("help.dashboard.joinCode")} />
+            </div>
+          </EntityListToolbar>
+          <EntityList>
+            {sessions.map((s) => {
+              const msLeft = new Date(s.closesAt).getTime() - nowTick;
+              const suspended = suspensionsBySession[s.id] ?? [];
+              const noTimeLimit = isNoTimeLimitSession(s.opensAt, s.closesAt);
+              return (
+                <EntityListRow key={s.id} className="tp-entity-list-row--stacked">
+                  <div className="tp-entity-list-row__primary min-w-0">
+                    <div className="min-w-0">
+                      <Link
+                        href={`/dashboard/sessions/${s.id}`}
+                        className={`tp-entity-list-row__title ${focusRing}`}
+                      >
+                        {s.formTitle}
+                      </Link>
+                      <p className="tp-entity-list-row__cell tp-entity-list-row__cell--mono mt-0.5">
+                        {s.joinCode}
+                      </p>
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+                        <span className="tp-status tp-status-typing">
                           <span className="tp-status-dot" />
-                          {t("runningSessions.toGrade", { n: s.needsGradingCount })}
+                          {t("runningSessions.working", { n: s.inProgressCount })}
                         </span>
-                      ) : null}
-                    </div>
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <SessionJoinShare joinCode={s.joinCode} />
+                        <span className="tp-status tp-status-finished">
+                          <span className="tp-status-dot" />
+                          {t("runningSessions.done", { n: s.finishedCount })}
+                        </span>
+                        <span className="tp-status tp-status-idle">
+                          <span className="tp-status-dot" />
+                          {t("runningSessions.joined", { n: s.assignedCount })}
+                        </span>
+                        {s.needsGradingCount > 0 ? (
+                          <span
+                            className="tp-status tp-status-blocked"
+                            title={t("runningSessions.toGradeTitle", { count: s.needsGradingCount })}
+                          >
+                            <span className="tp-status-dot" />
+                            {t("runningSessions.toGrade", { n: s.needsGradingCount })}
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="mt-2">
+                        <SessionJoinShare joinCode={s.joinCode} />
+                      </div>
                     </div>
                   </div>
-                  <div className="flex flex-col items-end gap-2 text-right text-sm">
-                    <div className="text-[var(--tp-text-secondary)]">
+                  <div className="tp-entity-list-row__actions">
+                    <div className="text-sm text-[var(--tp-text-secondary)]">
                       {noTimeLimit ? (
                         <span>{t("common.noTimeLimit")}</span>
                       ) : (
@@ -247,45 +263,47 @@ export function DashboardRunningSessions({
                       onConfirm={() => stopRunningSession(s.id)}
                     />
                   </div>
-                </div>
-                {suspended.length > 0 ? (
-                  <div className="mt-3 rounded-[var(--tp-radius-sm)] border border-[var(--tp-warning-border)] bg-[var(--tp-warning-soft)] px-3 py-2 text-sm text-[var(--tp-warning-text)]">
-                    <p className="inline-flex items-center gap-1.5 font-semibold">
-                      <span aria-hidden className="tp-status tp-status-blocked">
-                        <span className="tp-status-dot" />
-                        {t("session.status.paused")}
-                      </span>
-                      {t("runningSessions.pausedNeedApproval", { n: suspended.length })}
-                    </p>
-                    <ul className="mt-2 space-y-2">
-                      {suspended.map((row) => (
-                        <li
-                          key={row.anonymousSessionId}
-                          className="flex flex-wrap items-center justify-between gap-2"
-                        >
-                          <span className="text-xs">
-                            <span className="font-medium">
-                              {row.displayName ? row.displayName : t("common.student")}
-                            </span>
-                            <span className="mx-1.5 text-[var(--tp-warning-text)] opacity-60">·</span>
-                            <span className="font-mono">{maskDashboardDeviceId(row.anonymousSessionId)}</span>
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => void resumeStudent(s.id, row.anonymousSessionId)}
-                            className="rounded-[var(--tp-radius-xs)] bg-[var(--tp-amber)] px-2.5 py-1 text-xs font-semibold text-white shadow-sm transition-transform active:scale-95"
+                  {suspended.length > 0 ? (
+                    <div className="tp-entity-list-callout">
+                      <p className="inline-flex items-center gap-1.5 font-semibold">
+                        <span aria-hidden className="tp-status tp-status-blocked">
+                          <span className="tp-status-dot" />
+                          {t("session.status.paused")}
+                        </span>
+                        {t("runningSessions.pausedNeedApproval", { n: suspended.length })}
+                      </p>
+                      <ul className="tp-entity-list-nested">
+                        {suspended.map((row) => (
+                          <li
+                            key={row.anonymousSessionId}
+                            className="tp-entity-list-nested__row"
                           >
-                            {t("session.actions.letIn")}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
+                            <span className="text-xs">
+                              <span className="font-medium">
+                                {row.displayName ? row.displayName : t("common.student")}
+                              </span>
+                              <span className="mx-1.5 opacity-60">·</span>
+                              <span className="font-mono">
+                                {maskDashboardDeviceId(row.anonymousSessionId)}
+                              </span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => void resumeStudent(s.id, row.anonymousSessionId)}
+                              className="rounded-[var(--tp-radius-xs)] bg-[var(--tp-amber)] px-2.5 py-1 text-xs font-semibold text-white shadow-sm transition-transform active:scale-95"
+                            >
+                              {t("session.actions.letIn")}
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </EntityListRow>
+              );
+            })}
+          </EntityList>
+        </EntityListPanel>
       )}
     </section>
   );

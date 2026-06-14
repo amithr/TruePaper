@@ -31,4 +31,13 @@ describe("ConnectionIndicator", () => {
     expect(screen.getByText(/Synced/i)).toBeInTheDocument();
     expect(screen.queryByText(/3 change/)).not.toBeInTheDocument();
   });
+
+  it("shows submit queued copy", () => {
+    render(
+      <I18nProvider locale="en" dict={en as Dictionary}>
+        <ConnectionIndicator state="syncing" pendingFinish />
+      </I18nProvider>,
+    );
+    expect(screen.getByText(/Submit queued/i)).toBeInTheDocument();
+  });
 });

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { TeacherDashboard } from "@/components/dashboard/TeacherDashboard";
 import { isLocale } from "@/lib/i18n/config";
 import { getCachedRequestSession } from "@/lib/cached-request-session";
+import { isMissingColumnError } from "@/lib/is-missing-db-column";
 import { fetchActiveTeacherSessions } from "@/lib/teacher-dashboard-server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -28,6 +29,23 @@ export default async function TeacherDashboardPage({ params }: Props) {
     auth.user.id,
   );
 
+  // First-login tour: account-scoped flag. Treat a missing column (pre-migration)
+  // as "completed" so we never trigger the tour against an un-migrated database.
+  let tourCompleted = true;
+  const { data: tourRow, error: tourError } = await supabase
+    .from("profiles")
+    .select("onboarding_tour_completed_at")
+    .eq("id", auth.user.id)
+    .maybeSingle();
+  if (tourError) {
+    if (!isMissingColumnError(tourError, "onboarding_tour_completed_at")) {
+      // Unexpected error — fail safe by skipping the tour rather than crashing.
+      tourCompleted = true;
+    }
+  } else {
+    tourCompleted = Boolean(tourRow?.onboarding_tour_completed_at);
+  }
+
   return (
     <TeacherDashboard
       user={{ id: auth.user.id, email: auth.user.email }}
@@ -38,6 +56,7 @@ export default async function TeacherDashboardPage({ params }: Props) {
       }}
       initialRunning={sessions}
       initialSuspensions={suspensionsBySession}
+      tourCompleted={tourCompleted}
     />
   );
 }

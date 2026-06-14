@@ -7,6 +7,9 @@ import { saveLocalAnswers } from "@/lib/offline/answer-store";
 import {
   SYNC_DEBOUNCE_MS,
   SYNC_MAX_WAIT_MS,
+  SYNC_POLL_INTERVAL_MS,
+  ONLINE_RECONNECT_JITTER_MS,
+  REACHABILITY_PING_INTERVAL_MS,
   type ClientSyncState,
 } from "@/lib/offline/config";
 import { isIdbAvailable } from "@/lib/offline/idb";
@@ -17,6 +20,8 @@ import {
 } from "@/lib/offline/sync-queue";
 import { drainSyncQueue } from "@/lib/offline/sync-engine";
 import { putStudentAnswersSync } from "@/lib/offline/sync-transport";
+import { registerOfflineBackgroundSync, postMessageDrainSync } from "@/lib/offline/background-sync";
+import { pingServerReachable } from "@/lib/offline/reachability";
 import type { ConnectionSnapshot } from "@/lib/offline/types";
 import { stableStringifyStudentAnswers } from "@/lib/student-answers-json";
 
@@ -24,6 +29,8 @@ function snapshotsEqual(a: ConnectionSnapshot, b: ConnectionSnapshot): boolean {
   return (
     a.state === b.state &&
     a.pendingCount === b.pendingCount &&
+    a.pendingFinish === b.pendingFinish &&
+    a.serverReachable === b.serverReachable &&
     a.lastSyncedAt === b.lastSyncedAt &&
     a.idbAvailable === b.idbAvailable
   );
@@ -70,6 +77,8 @@ export function useOfflineExamSync({
   const [snapshot, setSnapshot] = useState<ConnectionSnapshot>({
     state: "online",
     pendingCount: 0,
+    pendingFinish: false,
+    serverReachable: true,
     lastSyncedAt: null,
     idbAvailable: true,
   });
@@ -235,6 +244,8 @@ export function useOfflineExamSync({
         displayName,
         answers: current,
       });
+      await registerOfflineBackgroundSync();
+      postMessageDrainSync();
       await refreshPending();
       dirtySinceRef.current = null;
       lastSentAtRef.current = Date.now();
@@ -289,6 +300,8 @@ export function useOfflineExamSync({
       displayName,
       answers: current,
     });
+    await registerOfflineBackgroundSync();
+    postMessageDrainSync();
     dirtySinceRef.current = null;
     lastSentAtRef.current = Date.now();
     await refreshPending();
@@ -310,18 +323,49 @@ export function useOfflineExamSync({
   useEffect(() => {
     const onOnline = () => {
       publish({ state: "syncing" });
-      void runDrainRef.current();
+      const jitter = Math.floor(Math.random() * ONLINE_RECONNECT_JITTER_MS);
+      window.setTimeout(() => void runDrainRef.current(), jitter);
     };
-    const onOffline = () => publish({ state: "offline" });
+    const onOffline = () => publish({ state: "offline", serverReachable: false });
     window.addEventListener("online", onOnline);
     window.addEventListener("offline", onOffline);
-    // Optimistic on load: assume reachable and let a failed request prove otherwise.
-    publish({ state: "synced" });
+    publish({ state: "synced", serverReachable: true });
     return () => {
       window.removeEventListener("online", onOnline);
       window.removeEventListener("offline", onOffline);
     };
   }, [publish]);
+
+  useEffect(() => {
+    if (!enabled || !liveSessionId || !deviceId) {
+      return;
+    }
+    let cancelled = false;
+    const tick = async () => {
+      const reachable = await pingServerReachable();
+      if (cancelled) {
+        return;
+      }
+      publish({ serverReachable: reachable });
+    };
+    void tick();
+    const id = window.setInterval(() => void tick(), REACHABILITY_PING_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [enabled, liveSessionId, deviceId, publish]);
+
+  useEffect(() => {
+    if (!enabled || !liveSessionId || !deviceId) {
+      return;
+    }
+    if (snapshot.pendingCount === 0) {
+      return;
+    }
+    const id = window.setInterval(() => void runDrainRef.current(), SYNC_POLL_INTERVAL_MS);
+    return () => window.clearInterval(id);
+  }, [enabled, liveSessionId, deviceId, snapshot.pendingCount]);
 
   useEffect(() => {
     if (!enabled) {

@@ -13,6 +13,7 @@ type Body = {
   durationMinutes?: number;
   noTimeLimit?: boolean;
   deliveryMode?: "live" | "self_paced" | "hybrid";
+  acceptLateSync?: boolean;
 };
 
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
@@ -36,6 +37,7 @@ export async function POST(request: Request, { params }: Params) {
     body.deliveryMode === "self_paced" || body.deliveryMode === "hybrid"
       ? body.deliveryMode
       : "live";
+  const acceptLateSync = body.acceptLateSync !== false;
   const durationMinutes = noTimeLimit ? null : clamp(Math.round(Number(body.durationMinutes) || 45), 5, 480);
   const opensAt = new Date();
   const closesAt = noTimeLimit
@@ -50,18 +52,28 @@ export async function POST(request: Request, { params }: Params) {
       created_by: authSession.user.id,
       opens_at: opensAt.toISOString(),
       closes_at: closesAt.toISOString(),
+      accept_late_sync: acceptLateSync,
     };
     let result = await supabase
       .from("form_sessions")
       .insert({ ...baseRow, delivery_mode: deliveryMode })
-      .select("id, join_code, opens_at, closes_at, delivery_mode")
+      .select("id, join_code, opens_at, closes_at, delivery_mode, accept_late_sync")
       .single();
 
     if (result.error?.message?.includes("delivery_mode")) {
       result = await supabase
         .from("form_sessions")
         .insert(baseRow)
-        .select("id, join_code, opens_at, closes_at")
+        .select("id, join_code, opens_at, closes_at, accept_late_sync")
+        .single();
+    }
+
+    if (result.error?.message?.includes("accept_late_sync")) {
+      const { accept_late_sync: _omit, ...rowWithoutLateSync } = baseRow;
+      result = await supabase
+        .from("form_sessions")
+        .insert({ ...rowWithoutLateSync, delivery_mode: deliveryMode })
+        .select("id, join_code, opens_at, closes_at, delivery_mode")
         .single();
     }
 

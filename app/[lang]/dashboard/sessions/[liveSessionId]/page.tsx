@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { ConfirmButton } from "@/components/ConfirmButton";
+import { HelpHint } from "@/components/HelpHint";
 import { LoadingBar } from "@/components/LoadingBar";
 import { SaveTemplateModal } from "@/components/library/SaveTemplateModal";
 import { OverflowMenu, type OverflowMenuItem } from "@/components/OverflowMenu";
@@ -249,15 +250,18 @@ export default function LiveSessionDetailPage() {
       type: "custom",
       key: "session-action",
       node: sessionRunning ? (
-        <ConfirmButton
-          tone="danger"
-          label={t("session.actions.stop")}
-          confirmLabel={t("common.tapAgainStop")}
-          busy={sessionActionBusy}
-          busyLabel={t("common.stopping")}
-          onConfirm={stopSession}
-          className="w-full justify-start px-3 py-2.5 text-sm"
-        />
+        <span className="flex w-full items-center gap-2">
+          <ConfirmButton
+            tone="danger"
+            label={t("session.actions.stop")}
+            confirmLabel={t("common.tapAgainStop")}
+            busy={sessionActionBusy}
+            busyLabel={t("common.stopping")}
+            onConfirm={stopSession}
+            className="w-full justify-start px-3 py-2.5 text-sm"
+          />
+          <HelpHint id="session-stop" text={t("help.session.stop")} />
+        </span>
       ) : (
         <ConfirmButton
           tone="danger"
@@ -310,7 +314,11 @@ export default function LiveSessionDetailPage() {
 
         <section className="tp-card p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <h2 className="text-lg font-semibold">{t("session.roster.title")}</h2>
+            <h2 className="flex items-center gap-1.5 text-lg font-semibold">
+              {t("session.roster.title")}
+              <HelpHint id="roster-presence" text={t("help.roster.presence")} />
+              <HelpHint id="roster-sync" text={t("help.roster.syncBadge")} />
+            </h2>
             {overview.participants.length > 0 ? (
               <div
                 role="group"

@@ -13,6 +13,7 @@ import {
   participantAvatarGradient,
   participantInitials,
 } from "@/lib/participant-display";
+import { HelpHint } from "@/components/HelpHint";
 import { RosterWifiIcon, rosterConnectionSyncState } from "@/components/RosterWifiIcon";
 import type { LiveParticipantUiStatus } from "@/lib/participant-status";
 import { focusRing } from "@/lib/ui";
@@ -201,14 +202,17 @@ function RosterRow({
               <RosterStatusBadge participant={p} t={t} />
             </div>
           </div>
-          <button
-            type="button"
-            disabled={Boolean(resumeBusyDeviceId) && !isResumeBusy}
-            onClick={() => onResumeStudent(p.anonymousSessionId)}
-            className={`tp-btn-primary mt-3 min-h-11 w-full sm:w-auto ${focusRing}`}
-          >
-            {isResumeBusy ? t("common.lettingIn") : t("session.actions.letIn")}
-          </button>
+          <div className="mt-3 flex items-center gap-2">
+            <button
+              type="button"
+              disabled={Boolean(resumeBusyDeviceId) && !isResumeBusy}
+              onClick={() => onResumeStudent(p.anonymousSessionId)}
+              className={`tp-btn-primary min-h-11 w-full sm:w-auto ${focusRing}`}
+            >
+              {isResumeBusy ? t("common.lettingIn") : t("session.actions.letIn")}
+            </button>
+            <HelpHint id="roster-suspended" text={t("help.roster.suspended")} />
+          </div>
         </div>
       </div>
     );
@@ -270,6 +274,9 @@ function RosterRow({
                 ✋
               </button>
             ) : null}
+            {handRaised ? (
+              <HelpHint id="roster-hand-raise" text={t("help.roster.handRaise")} />
+            ) : null}
             <ConnectionWifiIndicator participant={p} t={t} />
             <RosterStatusBadge participant={p} t={t} />
           </div>
@@ -288,7 +295,7 @@ export function SessionExamRoster({
   resumeBusyDeviceId,
 }: Props) {
   return (
-    <div className="tp-roster-list tp-roster-list--cards">
+    <div className="tp-roster-list tp-roster-list--cards tp-roster-list--flat">
       {participants.map((p) => (
         <RosterRow
           key={p.anonymousSessionId}

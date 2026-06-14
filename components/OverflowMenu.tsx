@@ -1,5 +1,13 @@
 "use client";
 
+import {
+  FloatingPortal,
+  autoUpdate,
+  flip,
+  offset,
+  shift,
+  useFloating,
+} from "@floating-ui/react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { useTranslations } from "@/lib/i18n/I18nProvider";
@@ -12,6 +20,8 @@ export type OverflowMenuItem =
       onClick: () => void;
       disabled?: boolean;
       tone?: "default" | "danger";
+      /** When true, the menu stays open after click (e.g. arm-then-confirm delete). */
+      keepOpen?: boolean;
     }
   | {
       type: "link";
@@ -38,15 +48,26 @@ export function OverflowMenu({ label, items, className = "" }: Props) {
   const [open, setOpen] = useState(false);
   const menuId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const { refs, floatingStyles } = useFloating({
+    open,
+    onOpenChange: setOpen,
+    placement: "bottom-end",
+    middleware: [offset(6), flip({ padding: 8 }), shift({ padding: 8 })],
+    whileElementsMounted: autoUpdate,
+  });
 
   useEffect(() => {
     if (!open) {
       return;
     }
     const onPointerDown = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
+      const target = event.target as Node;
+      if (rootRef.current?.contains(target) || menuRef.current?.contains(target)) {
+        return;
       }
+      setOpen(false);
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -66,9 +87,11 @@ export function OverflowMenu({ label, items, className = "" }: Props) {
   }
 
   return (
-    <div ref={rootRef} className={`relative ${className}`}>
+    <div ref={rootRef} className={className}>
       <button
         type="button"
+        // eslint-disable-next-line react-hooks/refs -- Floating UI callback ref setter
+        ref={refs.setReference}
         className={`tp-overflow-trigger ${focusRing}`}
         aria-label={label}
         aria-expanded={open}
@@ -89,7 +112,17 @@ export function OverflowMenu({ label, items, className = "" }: Props) {
         </svg>
       </button>
       {open ? (
-        <div id={menuId} role="menu" className="tp-overflow-menu">
+        <FloatingPortal>
+          <div
+            id={menuId}
+            ref={(node) => {
+              menuRef.current = node;
+              refs.setFloating(node);
+            }}
+            role="menu"
+            className="tp-overflow-menu tp-overflow-menu--portal"
+            style={floatingStyles}
+          >
           {items.map((item, index) => {
             if (item.type === "custom") {
               return (
@@ -126,7 +159,9 @@ export function OverflowMenu({ label, items, className = "" }: Props) {
                 disabled={item.disabled}
                 onClick={() => {
                   item.onClick();
-                  setOpen(false);
+                  if (!item.keepOpen) {
+                    setOpen(false);
+                  }
                 }}
                 className={`tp-overflow-menu__item ${
                   item.tone === "danger" ? "tp-overflow-menu__item--danger" : ""
@@ -144,7 +179,8 @@ export function OverflowMenu({ label, items, className = "" }: Props) {
           >
             {t("common.close")}
           </button>
-        </div>
+          </div>
+        </FloatingPortal>
       ) : null}
     </div>
   );
