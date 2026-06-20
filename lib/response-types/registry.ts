@@ -14,12 +14,34 @@ import type {
   StructuredMultiPartConfig,
   TrueFalseConfig,
 } from "@/lib/response-types/types";
+import type { TranslationPath } from "@/lib/i18n/types";
+
+/** Keys under `responseTypes.descriptions` in i18n files. */
+export type ResponseTypeDescriptionKey =
+  | "multipleChoiceDesc"
+  | "shortAnswerDesc"
+  | "extendedWrittenDesc"
+  | "structuredMultiPartDesc"
+  | "annotateSourceDesc"
+  | "drawDiagramDesc"
+  | "graphDesc"
+  | "photoHandwrittenDesc"
+  | "trueFalseDesc"
+  | "matchingDesc"
+  | "orderingDesc"
+  | "labellingDesc"
+  | "mathInputDesc";
+
+export type ResponseTypeDescriptionPath = Extract<
+  TranslationPath,
+  `responseTypes.descriptions.${ResponseTypeDescriptionKey}`
+>;
 
 export type ResponseTypeMeta = {
   id: ResponseTypeId;
   /** i18n key under responseTypes.{id} */
   labelKey: string;
-  descriptionKey: string;
+  descriptionKey: ResponseTypeDescriptionKey;
   feedbackAnchors: FeedbackAnchor[];
   supportsLiveFeedback: boolean;
   supportsRubric: boolean;
@@ -295,7 +317,9 @@ export function getResponseTypeMeta(type: ResponseTypeId | string): ResponseType
 }
 
 /** i18n path for builder tooltip copy (`responseTypes.descriptions.*`). */
-export function responseTypeDescriptionI18nKey(meta: ResponseTypeMeta): string {
+export function responseTypeDescriptionI18nKey(
+  meta: ResponseTypeMeta,
+): ResponseTypeDescriptionPath {
   return `responseTypes.descriptions.${meta.descriptionKey}`;
 }
 
