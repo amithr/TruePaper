@@ -11,23 +11,28 @@ type SessionApiResponse = {
   profile: ClientSessionData["profile"] | null;
 };
 
+function initialSessionHydrated(initialSession: ClientSessionData | null): boolean {
+  if (initialSession !== null) {
+    return true;
+  }
+  if (typeof document === "undefined") {
+    return false;
+  }
+  return !documentHasSupabaseAuthCookie();
+}
+
 /**
  * Hydrates auth session on static home/join pages. Guests with no Supabase cookie
  * resolve immediately; signed-in users fetch `/api/auth/session` once on the client.
  */
 export function useClientSessionHydration(initialSession: ClientSessionData | null) {
   const [session, setSession] = useState<ClientSessionData | null>(initialSession);
-  const [sessionHydrated, setSessionHydrated] = useState(initialSession !== null);
+  const [sessionHydrated, setSessionHydrated] = useState(() =>
+    initialSessionHydrated(initialSession),
+  );
 
   useEffect(() => {
-    if (initialSession !== null) {
-      setSession(initialSession);
-      setSessionHydrated(true);
-      return;
-    }
-
-    if (!documentHasSupabaseAuthCookie()) {
-      setSessionHydrated(true);
+    if (initialSession !== null || !documentHasSupabaseAuthCookie()) {
       return;
     }
 

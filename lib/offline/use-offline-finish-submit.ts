@@ -18,28 +18,35 @@ type Options = {
   liveSessionId: string | null;
   deviceId: string | null;
   onFinished?: () => void;
+  onPendingFinishRestored?: () => void;
 };
 
 export function useOfflineFinishSubmit({
   liveSessionId,
   deviceId,
   onFinished,
+  onPendingFinishRestored,
 }: Options) {
-  const [pendingFinish, setPendingFinish] = useState(false);
+  const [pendingFinishRaw, setPendingFinishRaw] = useState(false);
+  const pendingFinish = Boolean(liveSessionId && deviceId && pendingFinishRaw);
   const drainInFlightRef = useRef<Promise<boolean> | null>(null);
   const onFinishedRef = useRef(onFinished);
+  const onPendingFinishRestoredRef = useRef(onPendingFinishRestored);
 
   useEffect(() => {
     onFinishedRef.current = onFinished;
   });
 
+  useEffect(() => {
+    onPendingFinishRestoredRef.current = onPendingFinishRestored;
+  });
+
   const refreshPending = useCallback(async (): Promise<boolean> => {
     if (!liveSessionId || !deviceId) {
-      setPendingFinish(false);
       return false;
     }
     const pending = await hasPendingFinish(liveSessionId, deviceId);
-    setPendingFinish(pending);
+    setPendingFinishRaw(pending);
     return pending;
   }, [liveSessionId, deviceId]);
 
@@ -56,7 +63,7 @@ export function useOfflineFinishSubmit({
     const drain = (async () => {
       const result = await drainFinishQueue(liveSessionId, deviceId);
       const stillPending = await hasPendingFinish(liveSessionId, deviceId);
-      setPendingFinish(stillPending);
+      setPendingFinishRaw(stillPending);
       if (result.finished) {
         onFinishedRef.current?.();
       }
@@ -87,7 +94,7 @@ export function useOfflineFinishSubmit({
         answers: input.answers,
         submissionId: input.submissionId,
       });
-      setPendingFinish(true);
+      setPendingFinishRaw(true);
       await registerOfflineBackgroundSync();
       postMessageDrainSync();
       void runDrain();
@@ -96,8 +103,23 @@ export function useOfflineFinishSubmit({
   );
 
   useEffect(() => {
-    void refreshPending();
-  }, [refreshPending]);
+    if (!liveSessionId || !deviceId) {
+      return;
+    }
+    let cancelled = false;
+    void hasPendingFinish(liveSessionId, deviceId).then((pending) => {
+      if (cancelled) {
+        return;
+      }
+      setPendingFinishRaw(pending);
+      if (pending) {
+        onPendingFinishRestoredRef.current?.();
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [liveSessionId, deviceId]);
 
   useEffect(() => {
     if (!pendingFinish || !liveSessionId || !deviceId) {

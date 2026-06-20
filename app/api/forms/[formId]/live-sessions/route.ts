@@ -69,7 +69,8 @@ export async function POST(request: Request, { params }: Params) {
     }
 
     if (result.error?.message?.includes("accept_late_sync")) {
-      const { accept_late_sync: _omit, ...rowWithoutLateSync } = baseRow;
+      const rowWithoutLateSync = { ...baseRow };
+      delete rowWithoutLateSync.accept_late_sync;
       result = await supabase
         .from("form_sessions")
         .insert({ ...rowWithoutLateSync, delivery_mode: deliveryMode })

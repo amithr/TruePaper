@@ -294,6 +294,11 @@ export function getResponseTypeMeta(type: ResponseTypeId | string): ResponseType
   return REGISTRY[key as ResponseTypeId] ?? REGISTRY.extendedWritten;
 }
 
+/** i18n path for builder tooltip copy (`responseTypes.descriptions.*`). */
+export function responseTypeDescriptionI18nKey(meta: ResponseTypeMeta): string {
+  return `responseTypes.descriptions.${meta.descriptionKey}`;
+}
+
 export function listAuthorableResponseTypes(): ResponseTypeMeta[] {
   return [
     REGISTRY.extendedWritten,

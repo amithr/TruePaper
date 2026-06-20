@@ -30,7 +30,7 @@ export function installExamCaptureGuards(options: ExamCaptureGuardOptions): () =
   const { onViolation } = options;
   const cleanups: Array<() => void> = [];
 
-  if (typeof navigator !== "undefined" && navigator.mediaDevices?.getDisplayMedia) {
+  if (typeof navigator !== "undefined" && navigator.mediaDevices) {
     const mediaDevices = navigator.mediaDevices;
     const original = mediaDevices.getDisplayMedia.bind(mediaDevices);
     mediaDevices.getDisplayMedia = async function getDisplayMediaBlocked(

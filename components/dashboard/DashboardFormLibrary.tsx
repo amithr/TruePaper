@@ -15,6 +15,7 @@ import {
   EntityListSearch,
   EntityListToolbar,
 } from "@/components/lists/EntityList";
+import { ConfirmButton } from "@/components/ConfirmButton";
 import { HelpHint } from "@/components/HelpHint";
 import { LoadingBar } from "@/components/LoadingBar";
 import type { OverflowMenuItem } from "@/components/OverflowMenu";
@@ -57,7 +58,6 @@ export function DashboardFormLibrary({ onError }: Props) {
   const [formLibrarySearch, setFormLibrarySearch] = useState("");
   const [saveTemplateFormId, setSaveTemplateFormId] = useState<string | null>(null);
   const [saveTemplateTitle, setSaveTemplateTitle] = useState("");
-  const [deleteArmedFormId, setDeleteArmedFormId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -234,29 +234,28 @@ export function DashboardFormLibrary({ onError }: Props) {
           },
         },
         {
-          type: "button",
-          label:
-            deleteArmedFormId === form.id ? t("common.tapAgain") : t("common.delete"),
-          tone: "danger",
-          disabled: startingFormId === form.id || deletingFormId === form.id,
-          keepOpen: deleteArmedFormId !== form.id,
-          onClick: () => {
-            if (deleteArmedFormId === form.id) {
-              setDeleteArmedFormId(null);
-              void deleteForm(form.id);
-              return;
-            }
-            setDeleteArmedFormId(form.id);
-            window.setTimeout(() => {
-              setDeleteArmedFormId((current) => (current === form.id ? null : current));
-            }, 4000);
-          },
+          type: "custom",
+          key: `delete-${form.id}`,
+          node: (
+            <ConfirmButton
+              tone="danger"
+              label={t("common.delete")}
+              confirmLabel={t("common.tapAgainDelete")}
+              busy={deletingFormId === form.id}
+              busyLabel={t("common.deleting")}
+              disabled={
+                startingFormId === form.id ||
+                (deletingFormId !== null && deletingFormId !== form.id)
+              }
+              onConfirm={() => void deleteForm(form.id)}
+              className="tp-overflow-menu__confirm"
+            />
+          ),
         },
       ];
     },
     [
       acceptLateSyncByForm,
-      deleteArmedFormId,
       deleteForm,
       deletingFormId,
       locale,

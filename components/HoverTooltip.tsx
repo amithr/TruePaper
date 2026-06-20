@@ -14,7 +14,15 @@ import {
   useRole,
   type Placement,
 } from "@floating-ui/react";
-import { useId, useState, type ReactNode } from "react";
+import {
+  Children,
+  cloneElement,
+  isValidElement,
+  useId,
+  useState,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 
 type Props = {
   text: string;
@@ -47,20 +55,34 @@ export function HoverTooltip({ text, placement = "top", className = "", children
   const role = useRole(context, { role: "tooltip" });
   const { getReferenceProps, getFloatingProps } = useInteractions([hover, focus, dismiss, role]);
 
+  const child = Children.only(children);
+  const reference = isValidElement(child) ? (
+    cloneElement(
+      child as ReactElement<Record<string, unknown>>,
+      getReferenceProps({
+        ref: refs.setReference,
+        ...(child.props as Record<string, unknown>),
+        className: [className, (child.props as { className?: string }).className]
+          .filter(Boolean)
+          .join(" "),
+        "aria-describedby": open ? tooltipId : undefined,
+      }),
+    )
+  ) : (
+    <span
+      className={`tp-tooltip-anchor ${className}`.trim()}
+      ref={refs.setReference}
+      {...getReferenceProps({
+        "aria-describedby": open ? tooltipId : undefined,
+      })}
+    >
+      {children}
+    </span>
+  );
+
   return (
     <>
-      <span
-        className={`tp-tooltip-anchor ${className}`.trim()}
-        // Floating UI exposes a stable callback-ref setter (not a `.current`
-        // read), so this is safe despite the react-hooks/refs heuristic.
-        // eslint-disable-next-line react-hooks/refs
-        ref={refs.setReference}
-        {...getReferenceProps({
-          "aria-describedby": open ? tooltipId : undefined,
-        })}
-      >
-        {children}
-      </span>
+      {reference}
       {open ? (
         <FloatingPortal>
           <div

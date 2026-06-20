@@ -299,7 +299,8 @@
       "addOption": "Add option",
       "correctAnswer": "Correct answer (optional)",
       "noCorrectSelected": "No correct answer selected",
-      "addingQuestion": "Adding question…"
+      "addingQuestion": "Adding question…",
+      "addQuestionType": "Add {type}"
     },
     "exam": {
       "previewTitle": "Preview mode",
@@ -721,7 +722,7 @@
       "acceptLateSync": "When on, students can sync answers or submit after the session window closes. Turn off for strict in-class deadlines."
     },
     "builder": {
-      "questionType": "Pick a question type. Multiple choice, true/false and short answer are auto-graded; written and visual types are marked by you.",
+      "questionType": "Click Add (+) on a question type to insert it into your form. Hover a chip for details. Multiple choice, true/false and short answer are auto-graded; written and visual types are marked by you.",
       "points": "Marks awarded for this question. The total updates automatically as you add questions.",
       "correctAnswer": "The option that's marked correct. Set this so the question scores itself the moment a student submits.",
       "acceptedAnswers": "Answers counted as correct. Add common variants and spellings; you can make matching case-insensitive.",
@@ -967,6 +968,21 @@
     "feedback": {
       "partLabel": "Feedback for {part}",
       "annotation": "Teacher marked up your work"
+    },
+    "descriptions": {
+      "extendedWrittenDesc": "Students write a long answer in a text box. You can set word-count targets and grade manually.",
+      "structuredMultiPartDesc": "One prompt split into labelled parts (a, b, c). Each part has its own answer field.",
+      "annotateSourceDesc": "Students read a passage you provide, highlight text, and add margin notes.",
+      "drawDiagramDesc": "Students sketch freehand on a canvas — useful for diagrams, maps, or labels.",
+      "graphDesc": "Students plot points, draw lines, and add labels on a coordinate plane you configure.",
+      "photoHandwrittenDesc": "Students take a photo or upload an image of handwritten work.",
+      "mathInputDesc": "Students enter equations and expressions using a math keypad.",
+      "shortAnswerDesc": "Students type a brief answer. Auto-graded when it matches accepted answers you list.",
+      "multipleChoiceDesc": "Students pick one option from choices you define. Auto-graded when you mark the correct option.",
+      "trueFalseDesc": "Students choose True or False. Auto-graded from the correct answer you set.",
+      "matchingDesc": "Students pair items from two columns — for example terms and definitions.",
+      "orderingDesc": "Students put items in the correct sequence using move up/down controls.",
+      "labellingDesc": "Students assign the correct label to each zone or prompt you define."
     },
     "builder": {
       "answerSettings": "Response settings",

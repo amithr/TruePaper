@@ -34,6 +34,7 @@ const StudentExamQuestion = dynamic(
 import { ExamCaptureWatermark } from "@/components/ExamCaptureWatermark";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { BuilderResponseConfig } from "@/components/response-types/BuilderResponseConfig";
+import { ResponseTypeAddChip } from "@/components/response-types/ResponseTypeAddChip";
 import { SaveTemplateModal } from "@/components/library/SaveTemplateModal";
 import {
   createFreshAnonymousSessionId,
@@ -74,7 +75,7 @@ import { fetchStudentAlreadySubmitted } from "@/lib/fetch-student-submission-sta
 import { fetchStudentExamStatus } from "@/lib/fetch-student-exam-status";
 import { fetchStudentLiveTeacherFeedback } from "@/lib/fetch-student-live-feedback";
 import { hasLiveTeacherFeedbackContent } from "@/lib/live-teacher-feedback";
-import { requestJson, requestJsonWithTimeout } from "@/lib/request-json";
+import { requestJson } from "@/lib/request-json";
 import { stableStringifyStudentAnswers } from "@/lib/student-answers-json";
 import { usePollingRefresh } from "@/lib/use-polling-refresh";
 import { loadLocalAnswers, mergeAnswersLastWrite } from "@/lib/offline/answer-store";
@@ -907,6 +908,10 @@ export default function HomeClient({
       }
     },
   });
+  const onPendingFinishRestored = useCallback(() => {
+    setStatusMessage(t("offline.submitQueued"));
+  }, [t]);
+
   const finishSubmit = useOfflineFinishSubmit({
     liveSessionId: joinedLiveSessionId || null,
     deviceId: anonymousSessionId || null,
@@ -914,6 +919,7 @@ export default function HomeClient({
       void offlineSync.acknowledgeSynced().catch(() => {});
       goToSubmittedPage();
     },
+    onPendingFinishRestored,
   });
   const connectionSnapshot = useMemo(
     (): ConnectionSnapshot => ({
@@ -926,11 +932,6 @@ export default function HomeClient({
     connSnapshotRef.current = connectionSnapshot;
   }, [connectionSnapshot]);
 
-  useEffect(() => {
-    if (finishSubmit.pendingFinish) {
-      setStatusMessage(t("offline.submitQueued"));
-    }
-  }, [finishSubmit.pendingFinish, t]);
   const scheduleOfflineAnswerSync = offlineSync.scheduleSync;
 
   const offlineSyncRef = useLatestRef(offlineSync);
@@ -953,7 +954,10 @@ export default function HomeClient({
     ) {
       return;
     }
-    const syncMeta = heartbeatSyncMeta(connectionSnapshot);
+    const syncMeta = heartbeatSyncMeta({
+      state: connectionSnapshot.state,
+      pendingCount: connectionSnapshot.pendingCount,
+    });
     const key = `${browserOnline ? "online" : "offline"}:${syncMeta.syncState}:${syncMeta.pendingSyncCount}`;
     if (lastSyncHeartbeatKeyRef.current === key) {
       return;
@@ -2749,33 +2753,16 @@ export default function HomeClient({
               className="flex flex-wrap items-center gap-2 border-t border-[var(--tp-border)] pt-6"
             >
               <HelpHint id="builder-question-type" text={t("help.builder.questionType")} />
-              {listAuthorableResponseTypes().map((typeMeta) => {
-                const isAdding = addingQuestionType === typeMeta.id;
-                return (
-                <button
+              {listAuthorableResponseTypes().map((typeMeta) => (
+                <ResponseTypeAddChip
                   key={typeMeta.id}
-                  type="button"
-                  onClick={() => void addQuestion(typeMeta.id)}
+                  typeMeta={typeMeta}
+                  label={responseTypeLabel(typeMeta.id)}
+                  isAdding={addingQuestionType === typeMeta.id}
                   disabled={isMutating}
-                  aria-busy={isAdding}
-                  className={`inline-flex items-center gap-2 ${
-                    typeMeta.id === "extendedWritten" ? "tp-btn-primary" : ui.btnSecondary
-                  }`}
-                >
-                  {isAdding ? (
-                    <>
-                      <span
-                        className="inline-block h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent opacity-80"
-                        aria-hidden
-                      />
-                      <span>{t("home.builder.addingQuestion")}</span>
-                    </>
-                  ) : (
-                    responseTypeLabel(typeMeta.id)
-                  )}
-                </button>
-                );
-              })}
+                  onAdd={() => void addQuestion(typeMeta.id)}
+                />
+              ))}
             </div>
 
             <div className={`${ui.questionList} border-t border-[var(--tp-border)] pt-8`}>
