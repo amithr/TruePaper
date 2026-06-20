@@ -955,6 +955,35 @@ body {
   }
 }
 
+/* Exam watermark — deters leaked screenshots (OS capture cannot be blocked in-browser) */
+.tp-exam-watermark {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.tp-exam-watermark__grid {
+  position: absolute;
+  inset: -35%;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2.5rem 1.5rem;
+  transform: rotate(-24deg);
+  opacity: 0.11;
+}
+
+.tp-exam-watermark__tile {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--tp-text);
+  user-select: none;
+}
+
 /* —— Grading: score ring + score bar —— */
 .tp-score-ring {
   position: relative;

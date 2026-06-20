@@ -31,6 +31,7 @@ const StudentExamQuestion = dynamic(
   () => import("@/components/StudentExamQuestion").then((m) => m.StudentExamQuestion),
   { ssr: false },
 );
+import { ExamCaptureWatermark } from "@/components/ExamCaptureWatermark";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { BuilderResponseConfig } from "@/components/response-types/BuilderResponseConfig";
 import { SaveTemplateModal } from "@/components/library/SaveTemplateModal";
@@ -56,6 +57,8 @@ import {
 } from "@/lib/response-types/registry";
 import { isResponseAnswered } from "@/lib/response-types/answers";
 import { postExamTabLeave, postExamTabLeaveAwait } from "@/lib/exam-tab-leave";
+import { formatExamWatermarkLabel } from "@/lib/exam-capture-protection";
+import { useExamCaptureProtection } from "@/lib/use-exam-capture-protection";
 import { useLatestRef } from "@/lib/use-latest-ref";
 import type { Form, Question, QuestionType, StudentAnswers } from "@/lib/forms";
 import { isValidLiveSessionDisplayName, normalizeLiveSessionDisplayName } from "@/lib/live-session-display-name";
@@ -2143,6 +2146,57 @@ export default function HomeClient({
   const isJoinRoute = guestView === "join";
   const inStudentExam =
     Boolean(joinedSession) && !examFinished && !isBuilderStudentPreview;
+
+  const examCaptureProtectionEnabled = inStudentExam;
+
+  const examWatermarkLabel = useMemo(() => {
+    if (!joinedSession || !activeExamDisplayName) {
+      return "";
+    }
+    return formatExamWatermarkLabel(activeExamDisplayName, joinedSession.liveSessionId);
+  }, [joinedSession, activeExamDisplayName]);
+
+  const onCaptureViolation = useCallback(
+    (kind: "getDisplayMedia" | "printScreen" | "screenshotShortcut") => {
+      if (!joinedSession || !anonymousSessionId || !activeExamDisplayName || examFinished) {
+        return;
+      }
+      if (kind === "getDisplayMedia") {
+        if (tabLeaveSuspensionEnabled(deliveryMode) && !examSuspended) {
+          setExamSuspended(true);
+          setStatusMessage(t("home.status.screenCapturePaused"));
+          if (!tabLeaveReportedRef.current) {
+            tabLeaveReportedRef.current = true;
+            postExamTabLeave(
+              `/api/public/live-sessions/${joinedSession.liveSessionId}/tab-leave`,
+              { deviceId: anonymousSessionId, displayName: activeExamDisplayName },
+              (delivered) => {
+                if (delivered) {
+                  serverTabPauseConfirmedRef.current = true;
+                }
+              },
+            );
+          }
+        } else {
+          setStatusMessage(t("home.status.screenCaptureBlocked"));
+        }
+        return;
+      }
+      setStatusMessage(t("home.status.screenshotShortcut"));
+    },
+    [
+      joinedSession,
+      anonymousSessionId,
+      activeExamDisplayName,
+      examFinished,
+      examSuspended,
+      deliveryMode,
+      t,
+    ],
+  );
+
+  useExamCaptureProtection(examCaptureProtectionEnabled, onCaptureViolation);
+
   useBodyFocusMode(inStudentExam || isJoinRoute);
 
   const teacherPendingDashboardRedirect =
@@ -3136,6 +3190,9 @@ export default function HomeClient({
             onFocusCapture={schedulePointerInteractionHeartbeat}
             {...examProtectionHandlers(Boolean(joinedSession && !examFinished))}
           >
+            {examCaptureProtectionEnabled && examWatermarkLabel ? (
+              <ExamCaptureWatermark label={examWatermarkLabel} />
+            ) : null}
             {isBuilderStudentPreview ? (
               <div className="rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] px-4 py-3 text-sm">
                 <p className="font-medium text-[var(--tp-text)]">{t("home.exam.previewTitle")}</p>

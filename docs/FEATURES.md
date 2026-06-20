@@ -215,6 +215,7 @@ Two complementary, teacher-scoped aids (students never see either):
 ### Take exam
 
 - One question component per type: `components/StudentExamQuestion.tsx` → `StudentResponseDispatcher.tsx`
+- **Anti-leak (best-effort):** copy/paste blocked on exam UI; `navigator.mediaDevices.getDisplayMedia` blocked during joined exams; repeating student watermark (`components/ExamCaptureWatermark.tsx`, `lib/exam-capture-protection.ts`); screenshot shortcut detection (informational). OS-level screenshots cannot be blocked from a browser — see Terms disclaimer.
 - **Autosave:** debounced PUT to `/api/public/live-sessions/[id]/responses` with optional `submissionId` (idempotent).
 - **State poll** every 3s: suspend, finish, hand-raise, window — `lib/use-student-exam-state-poll.ts` → `GET .../state`.
 - **Heartbeat:** typing + offline sync metadata — `POST .../heartbeat`.
@@ -337,6 +338,8 @@ flowchart TD
 | `lib/offline/reachability.ts` | `GET /api/public/ping` reachability checks |
 | `lib/offline/background-sync.ts` | Background Sync registration + SW postMessage |
 | `lib/offline/tab-leave-policy.ts` | Delivery-mode tab-leave grace (live only suspends) |
+| `lib/exam-capture-protection.ts` | Block `getDisplayMedia`, screenshot shortcut detection |
+| `components/ExamCaptureWatermark.tsx` | Repeating student/session watermark during exams |
 | `lib/offline/heartbeat-meta.ts` | Maps connection snapshot → heartbeat fields |
 | `lib/offline/sw-bypass.ts` | SW must not cache API/sync requests |
 | `lib/network-error.ts` | Retryable fetch/submit classification |
