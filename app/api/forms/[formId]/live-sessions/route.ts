@@ -46,12 +46,15 @@ export async function POST(request: Request, { params }: Params) {
 
   for (let attempt = 0; attempt < 24; attempt += 1) {
     const joinCode = generateJoinCode();
-    const baseRow = {
+    const sessionCore = {
       join_code: joinCode,
       form_id: formId,
       created_by: authSession.user.id,
       opens_at: opensAt.toISOString(),
       closes_at: closesAt.toISOString(),
+    };
+    const baseRow = {
+      ...sessionCore,
       accept_late_sync: acceptLateSync,
     };
     let result = await supabase
@@ -69,11 +72,9 @@ export async function POST(request: Request, { params }: Params) {
     }
 
     if (result.error?.message?.includes("accept_late_sync")) {
-      const rowWithoutLateSync = { ...baseRow };
-      delete rowWithoutLateSync.accept_late_sync;
       result = await supabase
         .from("form_sessions")
-        .insert({ ...rowWithoutLateSync, delivery_mode: deliveryMode })
+        .insert({ ...sessionCore, delivery_mode: deliveryMode })
         .select("id, join_code, opens_at, closes_at, delivery_mode")
         .single();
     }
