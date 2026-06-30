@@ -9,6 +9,7 @@ import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { LoadingBar } from "@/components/LoadingBar";
 import { SessionExamRoster } from "@/components/SessionExamRoster";
 import { SessionJoinShare } from "@/components/SessionJoinShare";
+import { TeacherTopBar } from "@/components/TeacherTopBar";
 import {
   countNeedsGrading,
   compareRosterParticipants,
@@ -45,7 +46,6 @@ export default function SessionExamListPage() {
   const [overview, setOverview] = useState<LiveSessionOverviewPayload | null>(null);
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [loadError, setLoadError] = useState("");
-  const [lastOverviewSyncAt, setLastOverviewSyncAt] = useState<number | null>(null);
   const [rosterFilter, setRosterFilter] = useState<GradingRosterFilter>("all");
   const [filterInitialized, setFilterInitialized] = useState(false);
 
@@ -64,7 +64,6 @@ export default function SessionExamListPage() {
         `/api/forms/live-sessions/${liveSessionId}/overview`,
       );
       setOverview(data);
-      setLastOverviewSyncAt(Date.now());
       if (!filterInitialized) {
         const needs = countNeedsGrading(data.participants);
         if (needs > 0) {
@@ -110,19 +109,22 @@ export default function SessionExamListPage() {
   if (!overview) {
     return (
       <div className={ui.page}>
-        <main className={ui.pageMain}>
-          <Breadcrumbs
-            items={[
-              { label: t("nav.dashboard"), href: "/dashboard" },
-              { label: t("nav.liveSession"), href: `/dashboard/sessions/${liveSessionId}` },
-              { label: t("session.examList.title") },
-            ]}
-          />
-          {loadError ? (
-            <p className="mt-6 tp-alert tp-alert-error">{loadError}</p>
-          ) : (
-            <LoadingBar className="mt-6 max-w-md" label={t("loading.studentExams")} />
-          )}
+        <main className={`${ui.pageMain} space-y-6`}>
+          <TeacherTopBar />
+          <div>
+            <Breadcrumbs
+              items={[
+                { label: t("nav.dashboard"), href: "/dashboard" },
+                { label: t("nav.liveSession"), href: `/dashboard/sessions/${liveSessionId}` },
+                { label: t("session.examList.title") },
+              ]}
+            />
+            {loadError ? (
+              <p className="mt-6 tp-alert tp-alert-error">{loadError}</p>
+            ) : (
+              <LoadingBar className="mt-6 max-w-md" label={t("loading.studentExams")} />
+            )}
+          </div>
         </main>
       </div>
     );
@@ -149,6 +151,7 @@ export default function SessionExamListPage() {
   return (
     <div className={ui.page}>
       <main className={`${ui.pageMain} space-y-6`}>
+        <TeacherTopBar />
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             <Breadcrumbs
@@ -169,12 +172,11 @@ export default function SessionExamListPage() {
                   : t("session.liveOpenTimeLeft", { timeLeft: formatCountdown(msLeft) })
                 : t("session.windowClosed")}
             </p>
-            <p className="mt-2 text-xs text-[var(--tp-text-muted)]">
-              {t("session.lastUpdated", {
-                time: lastOverviewSyncAt ? new Date(lastOverviewSyncAt).toLocaleTimeString() : "—",
-              })}
-              {activeCount > 0 ? t("session.roster.workingNow", { count: activeCount }) : null}
-            </p>
+            {activeCount > 0 ? (
+              <p className="mt-2 text-xs text-[var(--tp-text-muted)]">
+                {t("session.roster.workingNow", { count: activeCount }).replace(/^·\s*/, "")}
+              </p>
+            ) : null}
             <div className="mt-3">
               <SessionJoinShare joinCode={s.joinCode} />
             </div>

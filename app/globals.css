@@ -1840,6 +1840,25 @@ body {
   max-width: 100%;
 }
 
+/* Trailing affordance: signals the whole row is clickable, distinct from the
+   nested status/hand controls. Calm by default, nudges right on hover/focus. */
+.tp-roster-row__chevron {
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+  color: var(--tp-text-muted);
+  opacity: 0.55;
+  transition:
+    transform 160ms var(--tp-ease-soft),
+    opacity 160ms var(--tp-ease-soft);
+}
+
+.tp-roster-row--card:hover .tp-roster-row__chevron,
+.tp-roster-row--card:focus-within .tp-roster-row__chevron {
+  opacity: 1;
+  transform: translateX(2px);
+}
+
 .tp-roster-row__name {
   display: block;
   font-size: 0.9375rem;
@@ -4265,4 +4284,519 @@ body {
   background: var(--tp-accent) !important;
   border-color: var(--tp-accent) !important;
   color: #fff !important;
+}
+
+/* —— Queued teacher feedback (FeedbackItem) —— */
+.tp-link--danger {
+  color: var(--tp-danger, #dc2626);
+  text-decoration-color: rgba(220, 38, 38, 0.32);
+}
+.tp-link--danger:hover {
+  color: var(--tp-danger, #b91c1c);
+  text-decoration-color: var(--tp-danger, #dc2626);
+}
+
+.tp-fb-composer {
+  margin-top: 0.875rem;
+  padding-top: 0.875rem;
+  border-top: 1px dashed var(--tp-border);
+}
+
+.tp-fb-list {
+  list-style: none;
+  margin: 0.5rem 0 0.75rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.tp-fb-item {
+  border: 1px solid var(--tp-border);
+  border-radius: var(--tp-radius-sm);
+  background: var(--tp-surface);
+  padding: 0.625rem 0.75rem;
+}
+.tp-fb-item[data-status="failed"] {
+  border-color: var(--tp-warning-border, #fcd34d);
+  background: var(--tp-warning-soft, #fffbeb);
+}
+
+.tp-fb-item__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.tp-fb-author {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--tp-text-secondary);
+}
+
+.tp-fb-status {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--tp-border);
+  color: var(--tp-text-secondary);
+  background: var(--tp-bg-subtle, var(--tp-bg));
+}
+.tp-fb-status--queued,
+.tp-fb-status--uploading {
+  color: var(--tp-text-secondary);
+}
+.tp-fb-status--synced {
+  color: var(--tp-accent);
+  border-color: var(--tp-accent-ring, var(--tp-border));
+}
+.tp-fb-status--delivered {
+  color: #047857;
+  border-color: rgba(4, 120, 87, 0.3);
+  background: rgba(16, 185, 129, 0.08);
+}
+.tp-fb-status--failed {
+  color: #b45309;
+  border-color: rgba(180, 83, 9, 0.35);
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.tp-fb-body {
+  margin: 0.375rem 0 0;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  color: var(--tp-text);
+}
+
+.tp-fb-item__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.375rem;
+  font-size: 0.6875rem;
+  color: var(--tp-text-muted);
+}
+
+.tp-fb-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.tp-fb-error {
+  margin: 0.375rem 0 0;
+  font-size: 0.75rem;
+  color: #b45309;
+}
+
+.tp-fb-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.tp-fb-input-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+.tp-fb-input-row textarea {
+  flex: 1;
+}
+
+/* —— Student feedback notes (calm, count-based) —— */
+.tp-fb-notes {
+  border: 1px solid var(--tp-feedback-border, var(--tp-border));
+  border-radius: var(--tp-radius-sm);
+  background: var(--tp-surface);
+  padding: 0.5rem 0.75rem;
+}
+
+.tp-fb-notes__summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem 0;
+  color: var(--tp-text);
+}
+
+.tp-fb-notes__dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--tp-border-strong, var(--tp-border));
+  flex: none;
+}
+.tp-fb-notes__dot[data-unseen="true"] {
+  background: var(--tp-accent);
+}
+
+.tp-fb-notes__title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.tp-fb-notes__count {
+  margin-left: auto;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--tp-text-secondary);
+  background: var(--tp-bg-subtle, var(--tp-bg));
+  border: 1px solid var(--tp-border);
+  border-radius: 999px;
+  padding: 0.05rem 0.5rem;
+}
+
+.tp-fb-notes__list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.tp-fb-notes__item {
+  border-top: 1px solid var(--tp-border);
+  padding-top: 0.5rem;
+}
+
+.tp-fb-notes__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.6875rem;
+  color: var(--tp-text-muted);
+}
+
+.tp-fb-notes__author {
+  font-weight: 600;
+  color: var(--tp-text-secondary);
+}
+
+.tp-fb-notes__body {
+  margin: 0.25rem 0 0;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  color: var(--tp-text);
+}
+
+.tp-fb-notes__stale {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  color: var(--tp-text-muted);
+  font-style: italic;
+}
+
+/* Ambient sync status indicator (student + teacher) ----------------------- */
+.tp-sync {
+  position: relative;
+  display: inline-flex;
+}
+
+.tp-exam-strip__sync {
+  margin-left: auto;
+}
+
+.tp-sync__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: 1.75rem;
+  padding: 0.125rem 0.375rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--tp-text-secondary);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.tp-sync__btn:hover {
+  background: var(--tp-bg-subtle);
+}
+
+.tp-sync__dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  flex: none;
+  /* Synced default: near-invisible steady dot, no motion. */
+  background: var(--tp-text-muted);
+  opacity: 0.4;
+}
+
+.tp-sync[data-state="queued"] .tp-sync__dot {
+  background: var(--tp-text-secondary);
+  opacity: 0.85;
+}
+
+.tp-sync[data-state="attention"] .tp-sync__dot {
+  background: var(--tp-amber);
+  opacity: 1;
+}
+
+.tp-sync__count {
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--tp-text-secondary);
+}
+
+.tp-sync[data-state="attention"] .tp-sync__count {
+  color: var(--tp-amber);
+}
+
+.tp-sync__panel {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 30;
+  width: max-content;
+  max-width: 16rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--tp-border-strong);
+  border-radius: 0.625rem;
+  background: var(--tp-surface, var(--tp-bg));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.tp-sync__panel-eyebrow,
+.tp-roster-sync__panel-eyebrow {
+  margin: 0 0 0.125rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--tp-text-muted);
+}
+
+.tp-sync__panel-title {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--tp-text);
+}
+
+.tp-sync__panel-body {
+  margin: 0.25rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--tp-text-secondary);
+}
+
+.tp-sync__panel-meta {
+  margin: 0.25rem 0 0;
+  font-size: 0.75rem;
+  color: var(--tp-text-muted);
+}
+
+.tp-sync__retry {
+  margin-top: 0.5rem;
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.875rem;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--tp-border-strong);
+  border-radius: 0.5rem;
+  background: var(--tp-bg-subtle);
+  color: var(--tp-text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tp-sync__retry:hover {
+  border-color: var(--tp-amber);
+}
+
+/* Teacher roster-level "who has unsynced work" summary -------------------- */
+.tp-roster-sync {
+  position: relative;
+  display: inline-flex;
+}
+
+.tp-roster-sync__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: 1.75rem;
+  padding: 0.125rem 0.625rem;
+  border: 1px solid var(--tp-border-strong);
+  border-radius: 999px;
+  background: var(--tp-bg-subtle);
+  color: var(--tp-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tp-roster-sync__icon {
+  width: 0.875rem;
+  height: 0.875rem;
+  flex: none;
+  color: var(--tp-text-muted);
+}
+
+.tp-roster-sync__dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  flex: none;
+  background: var(--tp-amber);
+}
+
+.tp-roster-sync__panel {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  z-index: 30;
+  width: max-content;
+  max-width: 18rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--tp-border-strong);
+  border-radius: 0.625rem;
+  background: var(--tp-surface, var(--tp-bg));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.tp-roster-sync__panel-title {
+  margin: 0 0 0.375rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--tp-text);
+}
+
+.tp-roster-sync__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.tp-roster-sync__name {
+  font-size: 0.8125rem;
+  color: var(--tp-text-secondary);
+}
+
+.tp-roster-sync__hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem;
+  color: var(--tp-text-muted);
+}
+
+/* Inactivity heatmap (teacher-only, subtle) ------------------------------- */
+/* Deliberately calm: slight dimming + a muted left accent. Never red, never a
+   public callout — a student glancing at a shared screen shouldn't read it. */
+.tp-roster-row[data-activity="soft"] {
+  opacity: 0.74;
+}
+
+.tp-roster-row[data-activity="strong"] {
+  opacity: 0.62;
+  border-left: 2px solid color-mix(in srgb, var(--tp-amber) 45%, var(--tp-border-strong));
+}
+
+.tp-roster-row[data-activity]:hover,
+.tp-roster-row[data-activity]:focus-within {
+  opacity: 1;
+}
+
+.tp-roster-inactive {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.0625rem 0.375rem;
+  border-radius: 999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--tp-text-muted);
+  background: var(--tp-bg-subtle);
+}
+
+.tp-roster-inactive[data-level="strong"] {
+  color: color-mix(in srgb, var(--tp-amber) 70%, var(--tp-text-secondary));
+}
+
+/* Per-session inactivity threshold control -------------------------------- */
+.tp-roster-activity-cfg {
+  position: relative;
+  display: inline-flex;
+}
+
+.tp-roster-activity-cfg__btn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.75rem;
+  padding: 0.125rem 0.625rem;
+  border: 1px solid var(--tp-border-strong);
+  border-radius: 999px;
+  background: var(--tp-bg-subtle);
+  color: var(--tp-text-secondary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.tp-roster-activity-cfg__panel {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  left: 0;
+  z-index: 30;
+  width: max-content;
+  max-width: 16rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--tp-border-strong);
+  border-radius: 0.625rem;
+  background: var(--tp-surface, var(--tp-bg));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.tp-roster-activity-cfg__title {
+  margin: 0 0 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--tp-text);
+}
+
+.tp-roster-activity-cfg__field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.375rem;
+  font-size: 0.8125rem;
+  color: var(--tp-text-secondary);
+}
+
+.tp-roster-activity-cfg__input {
+  width: 3.5rem;
+  padding: 0.1875rem 0.375rem;
+  border: 1px solid var(--tp-border-strong);
+  border-radius: 0.375rem;
+  background: var(--tp-bg);
+  color: var(--tp-text);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.tp-roster-activity-cfg__hint {
+  margin: 0.375rem 0 0;
+  font-size: 0.6875rem;
+  color: var(--tp-text-muted);
+  line-height: 1.4;
 }

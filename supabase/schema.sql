@@ -142,6 +142,8 @@ create table if not exists public.live_session_presence (
   anonymous_session_id text not null,
   last_activity_at timestamptz,
   last_typing_at timestamptz,
+  -- Bumped on EVERY heartbeat (incl. idle keepalives) to detect silent disconnects.
+  last_seen_at timestamptz,
   pending_sync_count integer not null default 0,
   sync_state text not null default 'synced'
     check (sync_state in ('synced', 'pending', 'offline')),
@@ -190,13 +192,14 @@ security definer
 set search_path = public
 as $$
   insert into public.live_session_presence as p (
-    live_session_id, anonymous_session_id, last_activity_at, last_typing_at
+    live_session_id, anonymous_session_id, last_activity_at, last_typing_at, last_seen_at
   )
   values (
     p_live_session_id,
     p_device_id,
     case when coalesce(p_interaction, true) then timezone('utc', now()) else null end,
-    case when coalesce(p_is_typing, false) then timezone('utc', now()) else null end
+    case when coalesce(p_is_typing, false) then timezone('utc', now()) else null end,
+    timezone('utc', now())
   )
   on conflict (live_session_id, anonymous_session_id) do update
   set
@@ -207,7 +210,8 @@ as $$
     last_typing_at = case
       when coalesce(p_is_typing, false) then timezone('utc', now())
       else p.last_typing_at
-    end;
+    end,
+    last_seen_at = timezone('utc', now());
 $$;
 
 create or replace function public.update_updated_at_column()

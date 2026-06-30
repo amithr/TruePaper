@@ -12,6 +12,16 @@ export const LIVE_TYPING_INDICATOR_MS = 8000;
 /** No pointer/hover activity and no typing within this window counts as idle. */
 export const LIVE_INTERACTION_IDLE_MS = 45000;
 
+/** Cadence of the student's idle presence keepalive (interaction:false heartbeat). */
+export const LIVE_PRESENCE_KEEPALIVE_MS = 25000;
+
+/**
+ * No heartbeat at all (not even a keepalive) within this window means we believe
+ * the student is disconnected — distinct from merely inactive. ≈3 missed
+ * keepalives, so a couple of dropped requests don't false-positive.
+ */
+export const LIVE_PRESENCE_STALE_MS = 75000;
+
 export type ParticipantStatusInput = {
   suspendedAt: string | null;
   finishedAt: string | null;

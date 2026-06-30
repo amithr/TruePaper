@@ -66,7 +66,7 @@ self.addEventListener("fetch", (event) => {
 
 function openOfflineDb() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(OFFLINE_DB, 2);
+    const req = indexedDB.open(OFFLINE_DB, 3);
     req.onerror = () => reject(req.error);
     req.onsuccess = () => resolve(req.result);
   });
@@ -129,6 +129,27 @@ async function drainFinishItem(item) {
   return finishRes.ok;
 }
 
+async function drainFeedbackItem(item) {
+  const res = await fetch(
+    `/api/forms/live-sessions/${item.liveSessionId}/participants/${encodeURIComponent(
+      item.studentDeviceId,
+    )}/feedback-items`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: item.id,
+        questionId: item.questionId,
+        body: item.body,
+        createdAt: new Date(item.createdAt).toISOString(),
+        responseVersionTag: item.responseVersionTag,
+        anchor: item.anchor,
+      }),
+    },
+  );
+  return res.ok;
+}
+
 async function drainOfflineQueues() {
   let db;
   try {
@@ -153,6 +174,28 @@ async function drainOfflineQueues() {
     try {
       if (await drainFinishItem(item)) {
         await idbDelete(db, "finish_queue", item.key);
+      }
+    } catch {
+      /* retry on next sync */
+    }
+  }
+
+  // Teacher feedback: lower priority than answers/finish. Best-effort booster
+  // only — the in-page engine owns backoff and the "failed" surface, so we skip
+  // items already flagged failed and never re-mark here.
+  let feedbackItems = [];
+  try {
+    feedbackItems = await idbGetAll(db, "feedback_queue");
+  } catch {
+    feedbackItems = [];
+  }
+  for (const item of feedbackItems) {
+    if (item.status === "failed") {
+      continue;
+    }
+    try {
+      if (await drainFeedbackItem(item)) {
+        await idbDelete(db, "feedback_queue", item.id);
       }
     } catch {
       /* retry on next sync */

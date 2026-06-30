@@ -412,20 +412,41 @@
       "syncOnline": "Online"
     },
     "codeLabel": "Code {joinCode}",
+    "joinCodeLabel": "Join code",
+    "statusLive": "Live — open",
     "liveOpenNoLimit": "Live session open · No time limit",
     "liveOpenTimeLeft": "Live session open · Time left {timeLeft}",
-    "windowClosed": "This session window is closed.",
+    "windowClosed": "Session closed",
     "lastUpdated": "Last updated {time}",
     "refreshAria": "Refresh",
     "moreActions": "More session actions",
     "loadingSession": "Loading session",
+    "stats": {
+      "joined": "Joined",
+      "working": "Working",
+      "submitted": "To grade",
+      "graded": "Graded",
+      "timeLeft": "Time left",
+      "noLimit": "No limit",
+      "closed": "Closed"
+    },
     "openClassDisplay": "Open class display for projector (new tab)",
+    "openClassDisplayBtn": "Class display",
     "downloadAllPdf": "Download all exams (PDF)",
     "downloadAllPdfTitle": "Download a single PDF with every student's exam, feedback, and score",
     "downloadAllPdfShort": "Download all (PDF)",
     "pdf": "PDF",
     "downloadStudentPdfTitle": "Download this student's exam, feedback, and score as a PDF",
     "downloadStudentPdfTitleShort": "Download this student's exam as PDF",
+    "activity": {
+      "configLabel": "Inactivity {soft}/{strong}m",
+      "title": "Flag students with no activity for…",
+      "softLabel": "Slowing down (min)",
+      "strongLabel": "Looks stuck (min)",
+      "hint": "Only you see this. Offline students aren't flagged — just disconnected.",
+      "inactiveLabel": "{minutes}m idle",
+      "inactiveTitle": "No activity for about {minutes} minutes"
+    },
     "roster": {
       "title": "Students in this session",
       "description": "Status and activity for each student device in this live session. The list refreshes automatically.",
@@ -872,7 +893,67 @@
   },
   "feedback": {
     "title": "Teacher feedback",
-    "placeholder": "Your teacher can leave comments here as you work. Check back in a moment."
+    "placeholder": "Your teacher can leave comments here as you work. Check back in a moment.",
+    "composer": {
+      "title": "Feedback to student",
+      "placeholder": "Write a comment… (delivers even if you're offline)",
+      "add": "Add comment",
+      "you": "You",
+      "editLabel": "Edit comment",
+      "retry": "Retry",
+      "failedHint": "This comment couldn't be delivered. Retry or edit it — it won't be lost.",
+      "failedBanner": "{count} feedback comment(s) couldn't be delivered. Open the question to retry.",
+      "status": {
+        "queued": "Queued",
+        "uploading": "Sending",
+        "failed": "Failed",
+        "synced": "Sent",
+        "delivered": "Delivered"
+      }
+    },
+    "notes": {
+      "title": "Feedback from your teacher",
+      "newCount": "{count} new",
+      "onQuestion": "on question {number}",
+      "versionChanged": "You changed this answer after this comment was written."
+    }
+  },
+  "sync": {
+    "summary": {
+      "synced": "Saved",
+      "queued": "{count} waiting to save",
+      "attention": "Needs attention"
+    },
+    "items": {
+      "responses": "your answers",
+      "submission": "your submission",
+      "commentsOne": "1 comment",
+      "commentsOther": "{count} comments"
+    },
+    "age": {
+      "now": "just now",
+      "seconds": "under a minute ago",
+      "minutes": "{value} min ago",
+      "hours": "{value} hr ago"
+    },
+    "detail": {
+      "allSaved": "Everything is saved.",
+      "separator": ", ",
+      "oldest": "Oldest: {age}",
+      "retry": "Retry",
+      "keepTrying": "We'll keep trying automatically.",
+      "keepSaving": "We'll keep saving automatically.",
+      "keepSendingTeacher": "We'll keep sending automatically."
+    },
+    "roster": {
+      "summary": "{count} need a check",
+      "title": "Students with unsynced work",
+      "hint": "Their work is safe on their device and will sync when their connection returns.",
+      "scope": "Students' work"
+    },
+    "context": {
+      "yourFeedback": "Your feedback"
+    }
   },
   "responseTypes": {
     "multipleChoice": {

@@ -23,6 +23,7 @@ function participant(
     textWordCount: 0,
     lastActivityAt: null,
     lastTypingAt: null,
+    lastSeenAt: null,
     syncState: "synced",
     pendingSyncCount: 0,
     handRaiseQuestionId: null,

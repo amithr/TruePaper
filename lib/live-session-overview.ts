@@ -31,6 +31,8 @@ export type LiveSessionOverviewParticipant = {
   textWordCount: number;
   lastActivityAt: string | null;
   lastTypingAt: string | null;
+  /** Last heartbeat of any kind (incl. idle keepalive) — detects silent disconnects. */
+  lastSeenAt: string | null;
   /** Whether saved answers are synced to the server. */
   syncState: "synced" | "pending" | "offline";
   pendingSyncCount: number;
@@ -43,4 +45,6 @@ export type LiveSessionOverviewParticipant = {
 export type LiveSessionOverviewPayload = {
   session: LiveSessionOverviewSession;
   participants: LiveSessionOverviewParticipant[];
+  /** ISO server timestamp at response time — lets the client correct clock skew. */
+  serverNow: string;
 };

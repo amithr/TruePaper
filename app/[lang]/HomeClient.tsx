@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import dynamic from "next/dynamic";
 
-import { ConnectionIndicator } from "@/components/ConnectionIndicator";
+import { SyncStatusIndicator } from "@/components/SyncStatusIndicator";
 import { HelpHint } from "@/components/HelpHint";
 import { JoinCodeInput } from "@/components/JoinCodeInput";
 import { useBodyFocusMode } from "@/lib/use-body-focus-mode";
@@ -32,6 +32,7 @@ const StudentExamQuestion = dynamic(
   { ssr: false },
 );
 import { ExamCaptureWatermark } from "@/components/ExamCaptureWatermark";
+import { StudentFeedbackNotes } from "@/components/StudentFeedbackNotes";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { BuilderResponseConfig } from "@/components/response-types/BuilderResponseConfig";
 import { ResponseTypeAddChip } from "@/components/response-types/ResponseTypeAddChip";
@@ -84,8 +85,9 @@ import { isAirAlertEnabled } from "@/lib/offline/config";
 import type { DeliveryMode } from "@/lib/offline/config";
 import { sessionAllowsAnswerSync } from "@/lib/offline/delivery-mode";
 import { heartbeatSyncMeta } from "@/lib/offline/heartbeat-meta";
+import { LIVE_PRESENCE_KEEPALIVE_MS } from "@/lib/participant-status";
+import { LiveCountdown } from "@/components/LiveCountdown";
 import { cacheExamSession, loadCachedExamSession } from "@/lib/offline/session-cache";
-import { studentConnectionDisplayState } from "@/lib/student-connection-display-state";
 import type { ConnectionSnapshot } from "@/lib/offline/types";
 import { newSubmissionId } from "@/lib/offline/sync-queue";
 import { isRetryableNetworkError } from "@/lib/network-error";
@@ -98,6 +100,7 @@ import {
 } from "@/lib/offline/tab-leave-policy";
 import { useOfflineExamSync } from "@/lib/offline/use-offline-exam-sync";
 import { useOfflineFinishSubmit } from "@/lib/offline/use-offline-finish-submit";
+import { useStudentSyncStatus } from "@/lib/use-student-sync-status";
 import { useBrowserOnline } from "@/lib/use-browser-online";
 import { useClientSessionHydration } from "@/lib/use-client-session-hydration";
 import { useStudentExamRealtime } from "@/lib/use-student-exam-realtime";
@@ -488,7 +491,6 @@ export default function HomeClient({
           nowTick <= new Date(closesAtForStudent).getTime() + 500)
       : false;
 
-  const studentMsLeft = closesAtForStudent ? new Date(closesAtForStudent).getTime() - nowTick : 0;
 
   const scheduleTypingHeartbeat = useCallback(() => {
     if (
@@ -585,9 +587,60 @@ export default function HomeClient({
     if (!joinedSession && !teacherLiveBanner) {
       return;
     }
-    const id = window.setInterval(() => setNowTick(Date.now()), 1000);
+    // Visible countdowns now self-tick in <LiveCountdown>, so this top-level tick
+    // only drives session open/closed gating — a coarser cadence keeps the large
+    // student screen from re-rendering every second while idle/reading.
+    const id = window.setInterval(() => setNowTick(Date.now()), 3000);
     return () => window.clearInterval(id);
   }, [joinedSession, teacherLiveBanner]);
+
+  // Idle presence keepalive: a low-frequency heartbeat that updates last_seen_at
+  // WITHOUT touching last_activity_at (interaction:false), so the teacher roster
+  // can tell a present-but-thinking student from a silently dropped connection.
+  useEffect(() => {
+    if (
+      !joinedSession ||
+      !anonymousSessionId ||
+      !activeExamDisplayName ||
+      !sessionOpen ||
+      examSuspended ||
+      examFinished
+    ) {
+      return;
+    }
+    const liveSessionId = joinedSession.liveSessionId;
+    const deviceId = anonymousSessionId;
+    const displayName = activeExamDisplayName;
+    const sendKeepalive = () => {
+      void (async () => {
+        try {
+          const syncMeta = heartbeatSyncMeta(connSnapshotRef.current);
+          await fetch(`/api/public/live-sessions/${liveSessionId}/heartbeat`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              deviceId,
+              displayName,
+              isTyping: false,
+              interaction: false,
+              ...syncMeta,
+            }),
+          });
+        } catch {
+          /* offline / transient — next tick retries */
+        }
+      })();
+    };
+    const id = window.setInterval(sendKeepalive, LIVE_PRESENCE_KEEPALIVE_MS);
+    return () => window.clearInterval(id);
+  }, [
+    joinedSession,
+    anonymousSessionId,
+    activeExamDisplayName,
+    sessionOpen,
+    examSuspended,
+    examFinished,
+  ]);
 
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -937,10 +990,11 @@ export default function HomeClient({
   const offlineSyncRef = useLatestRef(offlineSync);
   const answerSyncEnabledRef = useLatestRef(answerSyncEnabled);
   const browserOnline = useBrowserOnline();
-  const studentConnectionState = useMemo(
-    () => studentConnectionDisplayState(browserOnline, connectionSnapshot),
-    [browserOnline, connectionSnapshot],
-  );
+  const studentSyncStatus = useStudentSyncStatus({
+    pendingResponses: connectionSnapshot.pendingCount,
+    pendingFinish: connectionSnapshot.pendingFinish,
+    struggling: !connectionSnapshot.serverReachable,
+  });
   const lastSyncHeartbeatKeyRef = useRef("");
 
   useEffect(() => {
@@ -2113,6 +2167,14 @@ export default function HomeClient({
     );
   }, [studentExamForm]);
 
+  const studentExamQuestionNumberById = useMemo(() => {
+    const map: Record<string, number> = {};
+    studentExamQuestions.forEach((question, index) => {
+      map[question.id] = index + 1;
+    });
+    return map;
+  }, [studentExamQuestions]);
+
   const showLiveTeacherFeedback =
     Boolean(joinedSession) &&
     (isLiveTeacherFeedbackEnabled || hasLiveTeacherFeedbackContent(liveTeacherFeedback));
@@ -2239,9 +2301,6 @@ export default function HomeClient({
     !joinedSession &&
     !isBuilderStudentPreview &&
     ((!isTeacher) || (isTeacher && mode === "student"));
-  const teacherBannerMsLeft = teacherLiveBanner
-    ? new Date(teacherLiveBanner.closesAt).getTime() - nowTick
-    : 0;
   const teacherBannerNoTimeLimit = teacherLiveBanner
     ? isNoTimeLimitSession(teacherLiveBanner.opensAt, teacherLiveBanner.closesAt)
     : false;
@@ -2564,11 +2623,16 @@ export default function HomeClient({
                 {teacherLiveBanner.joinCode}
               </span>{" "}
               ·{" "}
-              {teacherBannerNoTimeLimit
+              {teacherBannerNoTimeLimit || !teacherLiveBanner
                 ? t("common.noTimeLimit")
-                : t("home.teacher.timeLeft", {
-                    timeLeft: formatCountdown(teacherBannerMsLeft),
-                  })}
+                : (
+                    <LiveCountdown
+                      closesAt={teacherLiveBanner.closesAt}
+                      render={(msLeft) =>
+                        t("home.teacher.timeLeft", { timeLeft: formatCountdown(msLeft) })
+                      }
+                    />
+                  )}
             </p>
             <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm">
               <Link
@@ -3265,7 +3329,14 @@ export default function HomeClient({
                         <path d="M12 7v5l3 2" />
                       </svg>
                       <span className="font-mono text-base">
-                        {formatCountdown(studentMsLeft)}
+                        {closesAtForStudent ? (
+                          <LiveCountdown
+                            closesAt={closesAtForStudent}
+                            render={(msLeft) => formatCountdown(msLeft)}
+                          />
+                        ) : (
+                          formatCountdown(0)
+                        )}
                       </span>
                     </>
                   ) : (
@@ -3306,6 +3377,13 @@ export default function HomeClient({
                     </div>
                   </div>
                 ) : null}
+                {!isBuilderStudentPreview ? (
+                  <SyncStatusIndicator
+                    status={studentSyncStatus}
+                    viewer="student"
+                    className="tp-exam-strip__sync"
+                  />
+                ) : null}
               </div>
             ) : null}
 
@@ -3315,6 +3393,15 @@ export default function HomeClient({
                 <p className="mt-1 text-[var(--tp-text-secondary)]">{studentExamForm.description}</p>
               ) : null}
             </header>
+
+            {!isBuilderStudentPreview && joinedSession ? (
+              <StudentFeedbackNotes
+                liveSessionId={joinedLiveSessionId || null}
+                deviceId={anonymousSessionId || null}
+                enabled={showLiveTeacherFeedback}
+                questionNumberById={studentExamQuestionNumberById}
+              />
+            ) : null}
 
             {studentExamQuestions.length === 0 ? (
               <p className="rounded-lg border border-dashed border-[var(--tp-border-strong)] p-4 text-[var(--tp-text-secondary)]">
@@ -3403,14 +3490,6 @@ export default function HomeClient({
             {!isBuilderStudentPreview ? (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex flex-wrap items-center gap-3">
-                {joinedSession ? (
-                  <ConnectionIndicator
-                    state={studentConnectionState}
-                    pendingCount={connectionSnapshot.pendingCount}
-                    pendingFinish={connectionSnapshot.pendingFinish}
-                    serverReachable={connectionSnapshot.serverReachable}
-                  />
-                ) : null}
                 <p
                   ref={autosaveStatusElRef}
                   data-testid="student-autosave-status"

@@ -4,19 +4,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { BUILDER_TOUR_PENDING_KEY } from "@/lib/onboarding-tour-key";
 
-import { BrandMark } from "@/components/BrandMark";
-import { HelpTipsToggle } from "@/components/HelpTipsToggle";
-import { LanguageToggle } from "@/components/LanguageToggle";
 import { DashboardFormLibrary } from "@/components/dashboard/DashboardFormLibrary";
 import { DashboardLazySection } from "@/components/dashboard/DashboardLazySection";
 import { DashboardPastSessions } from "@/components/dashboard/DashboardPastSessions";
 import { DashboardRunningSessions } from "@/components/dashboard/DashboardRunningSessions";
+import { TeacherTopBar } from "@/components/TeacherTopBar";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
-import { LocaleLink, useLocaleRouter } from "@/lib/i18n/client";
 import { dashboardWelcomeName } from "@/lib/dashboard-welcome";
 import type { SuspendedStudentRow, TeacherSessionSummary } from "@/lib/teacher-sessions";
 import { ui } from "@/lib/ui";
-import { requestJson } from "@/lib/request-json";
 
 export type DashboardTeacherUser = {
   id: string;
@@ -45,7 +41,6 @@ export function TeacherDashboard({
   initialSuspensions,
   tourCompleted = true,
 }: Props) {
-  const router = useLocaleRouter();
   const t = useTranslations();
   const [loadError, setLoadError] = useState("");
 
@@ -94,12 +89,6 @@ export function TeacherDashboard({
     };
   }, [tourCompleted, t]);
 
-  const logout = async () => {
-    await requestJson<{ ok: true }>("/api/auth/logout", { method: "POST" });
-    router.replace("/");
-    router.refresh();
-  };
-
   const scrollToSection = (sectionId: "running-sessions" | "past-sessions" | "form-library") => {
     if (typeof document === "undefined") {
       return;
@@ -108,50 +97,11 @@ export function TeacherDashboard({
   };
 
   const name = dashboardWelcomeName(profile, user.email);
-  const avatarSeed = (name || user.email || "T").trim().charAt(0) || "T";
 
   return (
     <div className={ui.page}>
       <main className={`${ui.pageMain} space-y-6`}>
-        <header className="flex flex-wrap items-center justify-between gap-3">
-          <BrandMark />
-          <div className="flex items-center gap-2">
-            <HelpTipsToggle />
-            <LanguageToggle />
-            <LocaleLink
-              href="/join"
-              className={`${ui.btnSecondary} hidden sm:inline-flex`}
-              aria-label={t("dashboard.studentJoinPageAria")}
-            >
-              <svg
-                aria-hidden
-                className="h-4 w-4"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M3 12h12" />
-                <path d="m11 6 6 6-6 6" />
-              </svg>
-              {t("nav.studentJoin")}
-            </LocaleLink>
-            <button
-              type="button"
-              onClick={() => void logout()}
-              className="tp-pill"
-              aria-label={t("dashboard.logOutAria")}
-              title={t("common.logOut")}
-            >
-              <span aria-hidden className="tp-avatar">
-                {avatarSeed}
-              </span>
-              <span className="hidden text-sm sm:inline">{t("common.logOut")}</span>
-            </button>
-          </div>
-        </header>
+        <TeacherTopBar />
 
         <section data-tour="welcome" className="tp-card-accent p-6 sm:p-8 tp-anim-fade-up">
           <p className={ui.sectionTitle}>{t("dashboard.eyebrow")}</p>

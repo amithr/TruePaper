@@ -16,7 +16,12 @@ import {
 } from "@/components/response-types/TeacherResponseWatch";
 import { ScoreRing } from "@/components/ScoreMeter";
 import { StudentReviewShare } from "@/components/StudentReviewShare";
+import { TeacherFeedbackComposer } from "@/components/TeacherFeedbackComposer";
 import { TeacherStudentRejoinShare } from "@/components/TeacherStudentRejoinShare";
+import { TeacherTopBar } from "@/components/TeacherTopBar";
+import { useOfflineFeedback } from "@/lib/offline/use-offline-feedback";
+import { useFeedbackSyncStatus } from "@/lib/offline/use-feedback-sync-status";
+import { SyncStatusIndicator } from "@/components/SyncStatusIndicator";
 import {
   gradingStateFor,
   isFullyGraded,
@@ -94,6 +99,15 @@ export default function WatchStudentExamPage() {
   const deviceIdNorm = deviceId.toLowerCase();
 
   const [snapshot, setSnapshot] = useState<SnapshotJson | null>(null);
+  const feedback = useOfflineFeedback({
+    liveSessionId: liveSessionId || null,
+    deviceId: deviceIdNorm || null,
+    enabled: snapshot?.form.liveTeacherFeedbackEnabled === true,
+  });
+  const feedbackSync = useFeedbackSyncStatus({
+    liveSessionId: liveSessionId || null,
+    enabled: Boolean(liveSessionId),
+  });
   const [loadError, setLoadError] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
   const [nowTick, setNowTick] = useState(() => Date.now());
@@ -649,23 +663,26 @@ export default function WatchStudentExamPage() {
   if (!snapshot) {
     return (
       <div className="min-h-screen bg-[var(--tp-bg)] py-8 text-[var(--tp-text)] sm:py-10">
-        <main className="mx-auto w-full max-w-3xl px-4 sm:px-6">
-          <Breadcrumbs
-            items={[
-              { label: t("nav.dashboard"), href: "/dashboard" },
-              ...(liveSessionId
-                ? [{ label: t("nav.liveSession"), href: `/dashboard/sessions/${liveSessionId}` }]
-                : []),
-              { label: t("nav.studentExam") },
-            ]}
-          />
-          {loadError ? (
-            <p className="mt-6 tp-alert tp-alert-error">
-              {loadError}
-            </p>
-          ) : (
-            <LoadingBar className="mt-6 max-w-md" label={t("loading.studentExam")} />
-          )}
+        <main className="mx-auto w-full max-w-3xl space-y-6 px-4 sm:px-6">
+          <TeacherTopBar />
+          <div>
+            <Breadcrumbs
+              items={[
+                { label: t("nav.dashboard"), href: "/dashboard" },
+                ...(liveSessionId
+                  ? [{ label: t("nav.liveSession"), href: `/dashboard/sessions/${liveSessionId}` }]
+                  : []),
+                { label: t("nav.studentExam") },
+              ]}
+            />
+            {loadError ? (
+              <p className="mt-6 tp-alert tp-alert-error">
+                {loadError}
+              </p>
+            ) : (
+              <LoadingBar className="mt-6 max-w-md" label={t("loading.studentExam")} />
+            )}
+          </div>
         </main>
       </div>
     );
@@ -766,7 +783,8 @@ export default function WatchStudentExamPage() {
   return (
     <div className="relative min-h-screen bg-[var(--tp-bg)] py-6 text-[var(--tp-text)] sm:py-8">
       <main className="mx-auto w-full max-w-3xl space-y-5 px-4 sm:px-6">
-        <div className="flex items-start justify-between gap-3">
+        <TeacherTopBar />
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <Breadcrumbs
               items={[
@@ -790,7 +808,15 @@ export default function WatchStudentExamPage() {
               {t("session.watch.device", { deviceId: maskDeviceId(st.anonymousSessionId) })}
             </p>
           </div>
-          <OverflowMenu label={t("session.watch.moreActions")} items={overflowItems} />
+          <div className="flex items-center gap-2">
+            <SyncStatusIndicator
+              status={feedbackSync.status}
+              viewer="teacher"
+              contextLabel={t("sync.context.yourFeedback")}
+              onRetry={() => void feedbackSync.retry()}
+            />
+            <OverflowMenu label={t("session.watch.moreActions")} items={overflowItems} />
+          </div>
         </div>
 
         {st.finished ? (
@@ -926,6 +952,11 @@ export default function WatchStudentExamPage() {
         </p>
         {loadError ? (
           <p className={ui.alertError}>{loadError}</p>
+        ) : null}
+        {feedback.failedCount > 0 ? (
+          <p className={ui.alertWarning} role="alert">
+            {t("feedback.composer.failedBanner", { count: feedback.failedCount })}
+          </p>
         ) : null}
         {statusMessage ? (
           <p className="tp-alert tp-alert-success border px-4 py-3 text-sm text-emerald-900">
@@ -1207,6 +1238,22 @@ export default function WatchStudentExamPage() {
                       void persistCanvasAnnotation(questionId, strokes);
                     }}
                   />
+
+                  {snapshot.form.liveTeacherFeedbackEnabled ? (
+                    <TeacherFeedbackComposer
+                      items={feedback.itemsByQuestionId.get(question.id) ?? []}
+                      onSend={(body) =>
+                        feedback.sendFeedback({
+                          questionId: question.id,
+                          body,
+                          responseVersionTag: snapshot.updatedAt,
+                        })
+                      }
+                      onEdit={feedback.editFeedback}
+                      onDelete={feedback.deleteFeedback}
+                      onRetry={feedback.retryFeedback}
+                    />
+                  ) : null}
                 </article>
                 );
               })}

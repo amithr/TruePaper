@@ -1,5 +1,8 @@
 "use client";
 
+import { ChevronRight, Hand } from "lucide-react";
+import { memo } from "react";
+
 import { scoreTier } from "@/lib/exam-grades";
 import type { StudentAnswers } from "@/lib/forms";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
@@ -16,6 +19,13 @@ import {
 import { HelpHint } from "@/components/HelpHint";
 import { RosterWifiIcon, rosterConnectionSyncState } from "@/components/RosterWifiIcon";
 import type { LiveParticipantUiStatus } from "@/lib/participant-status";
+import {
+  DEFAULT_ROSTER_ACTIVITY_THRESHOLDS,
+  deriveRosterActivity,
+  inactiveMinutes,
+  type RosterActivity,
+  type RosterActivityThresholds,
+} from "@/lib/roster-activity";
 import { focusRing } from "@/lib/ui";
 
 type Props = {
@@ -25,6 +35,10 @@ type Props = {
   onOpenExam: (deviceId: string, questionId?: string | null) => void;
   onResumeStudent?: (deviceId: string) => void;
   resumeBusyDeviceId?: string | null;
+  activityThresholds?: RosterActivityThresholds;
+  sessionOpen?: boolean;
+  /** Coarse (≈20s) clock so activity recomputes cheaply, not every render. */
+  activityNowMs?: number;
 };
 
 function statusBadgeClass(status: LiveParticipantUiStatus): string {
@@ -64,14 +78,16 @@ function StatusChip({
 function ConnectionWifiIndicator({
   participant: p,
   t,
+  nowMs,
 }: {
   participant: LiveSessionOverviewParticipant;
   t: ReturnType<typeof useTranslations>;
+  nowMs: number;
 }) {
   if (p.finishedAt || p.gradedAt) {
     return null;
   }
-  const syncState = rosterConnectionSyncState(p);
+  const syncState = rosterConnectionSyncState(p, nowMs);
   const label =
     syncState === "offline"
       ? t("session.status.syncOffline")
@@ -148,13 +164,33 @@ function rosterSubtitle(
   return "";
 }
 
-function RosterRow({
+function InactivityHint({ activity, t }: { activity: RosterActivity; t: ReturnType<typeof useTranslations> }) {
+  if (activity.level !== "soft" && activity.level !== "strong") {
+    return null;
+  }
+  const mins = inactiveMinutes(activity.inactiveMs);
+  return (
+    <span
+      className="tp-roster-inactive"
+      data-level={activity.level}
+      data-testid="roster-inactive-hint"
+      title={t("session.activity.inactiveTitle", { minutes: mins })}
+    >
+      {t("session.activity.inactiveLabel", { minutes: mins })}
+    </span>
+  );
+}
+
+const RosterRow = memo(function RosterRow({
   previewQuestions,
   participant: p,
   liveDraftsByDevice,
   onOpenExam,
   onResumeStudent,
   resumeBusyDeviceId,
+  activityThresholds,
+  sessionOpen,
+  activityNowMs,
 }: {
   previewQuestions: RosterPreviewQuestion[];
   participant: LiveSessionOverviewParticipant;
@@ -162,8 +198,12 @@ function RosterRow({
   onOpenExam: (deviceId: string, questionId?: string | null) => void;
   onResumeStudent?: (deviceId: string) => void;
   resumeBusyDeviceId?: string | null;
+  activityThresholds: RosterActivityThresholds;
+  sessionOpen: boolean;
+  activityNowMs: number;
 }) {
   const t = useTranslations();
+  const activity = deriveRosterActivity(p, activityThresholds, sessionOpen, activityNowMs);
   const { scoreTierMessage } = useScoreCopy();
   const deviceNorm = p.anonymousSessionId.toLowerCase();
   const liveDraft = liveDraftsByDevice[deviceNorm];
@@ -198,7 +238,7 @@ function RosterRow({
               </span>
             </div>
             <div className="tp-roster-row__statuses">
-              <ConnectionWifiIndicator participant={p} t={t} />
+              <ConnectionWifiIndicator participant={p} t={t} nowMs={activityNowMs} />
               <RosterStatusBadge participant={p} t={t} />
             </div>
           </div>
@@ -222,6 +262,7 @@ function RosterRow({
     <div
       role="link"
       tabIndex={0}
+      data-activity={activity.level === "none" ? undefined : activity.level}
       className={`tp-roster-row tp-roster-row--card ${focusRing}`}
       onClick={() => open()}
       onKeyDown={(event) => {
@@ -271,20 +312,22 @@ function RosterRow({
                   open(p.handRaiseQuestionId);
                 }}
               >
-                ✋
+                <Hand aria-hidden className="h-4 w-4" />
               </button>
             ) : null}
             {handRaised ? (
               <HelpHint id="roster-hand-raise" text={t("help.roster.handRaise")} />
             ) : null}
-            <ConnectionWifiIndicator participant={p} t={t} />
+            <InactivityHint activity={activity} t={t} />
+            <ConnectionWifiIndicator participant={p} t={t} nowMs={activityNowMs} />
             <RosterStatusBadge participant={p} t={t} />
+            <ChevronRight aria-hidden className="tp-roster-row__chevron" />
           </div>
         </div>
       </div>
     </div>
   );
-}
+});
 
 export function SessionExamRoster({
   previewQuestions,
@@ -293,7 +336,14 @@ export function SessionExamRoster({
   onOpenExam,
   onResumeStudent,
   resumeBusyDeviceId,
+  activityThresholds = DEFAULT_ROSTER_ACTIVITY_THRESHOLDS,
+  sessionOpen = true,
+  activityNowMs,
 }: Props) {
+  // 0 keeps the heatmap inert (no flags) when no clock is supplied; the live
+  // session page always passes a quantized clock. Avoids an impure Date.now()
+  // in render.
+  const nowMs = activityNowMs ?? 0;
   return (
     <div className="tp-roster-list tp-roster-list--cards tp-roster-list--flat">
       {participants.map((p) => (
@@ -305,6 +355,9 @@ export function SessionExamRoster({
           onOpenExam={onOpenExam}
           onResumeStudent={onResumeStudent}
           resumeBusyDeviceId={resumeBusyDeviceId}
+          activityThresholds={activityThresholds}
+          sessionOpen={sessionOpen}
+          activityNowMs={nowMs}
         />
       ))}
     </div>

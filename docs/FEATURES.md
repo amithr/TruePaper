@@ -147,14 +147,20 @@ flowchart LR
 - Delete closed session: `DELETE .../`
 - Join share UI: `components/SessionJoinShare.tsx`
 - Public projector board (no answers): `app/[lang]/live/[joinCode]/page.tsx` + `GET /api/public/live-board`
+- **Shared teacher chrome:** `components/TeacherTopBar.tsx` — persistent brand + global actions (help/language toggles, student-join shortcut, logout) reused on the dashboard, session, watch, and exam-list screens so the top bar never disappears as the teacher drills in. Per-page actions (feedback sync, class display, overflow ⋯) live in the page header below it.
+- **Session header + overview strip (session page):** a single status line (live/closed `tp-status` pill) under breadcrumbs/title; an overview card surfacing the **join code + QR/share** prominently alongside a stat strip (joined / working / to-grade / graded / time-left, `tp-stat-value`/`tp-stat-label`). "Open class display" is an inline secondary button; only rare/destructive actions (download all PDF, save template, stop/delete) stay in the overflow menu.
 
 ### Monitor students
 
 - Roster: `components/SessionExamRoster.tsx` — presence, typing, sync badges, suspensions, hand raises; flat divider rows (`tp-roster-list--flat`)
+- **Inactivity heatmap (teacher-only, client-side):** subtle per-tile treatment for students with no activity for N minutes. Derived entirely from the already-polled overview timestamps (`lastActivityAt`/`lastTypingAt`/`lastSeenAt`) via `lib/roster-activity.ts` (`deriveRosterActivity`) — zero added network calls; recomputes on a quantized ~20s clock. "Activity" = any interaction heartbeat (pointer/hover/focus + typing). Offline **and silently-disconnected** students are **suppressed** (distinct from inactive) so blackouts don't read as mass disengagement. Subtle dim + muted amber accent + small "Nm idle" label; never red, never a public callout. Per-session thresholds (default 4/9 min) stored locally on the teacher's device: `lib/use-roster-activity-thresholds.ts`, control `components/RosterActivityThresholds.tsx`.
+- **Presence keepalive (silent-disconnect detection):** the student client sends a low-frequency idle keepalive heartbeat (`interaction:false`, every `LIVE_PRESENCE_KEEPALIVE_MS`≈25s) that bumps `live_session_presence.last_seen_at` without resetting the activity timer. When `last_seen_at` goes stale (> `LIVE_PRESENCE_STALE_MS`≈75s) the roster treats the student as disconnected — the wifi dot shows offline (`rosterConnectionSyncState(p, nowMs)`) and the inactivity heatmap is suppressed — so a dropped connection is never mistaken for disengagement. Constants in `lib/participant-status.ts`.
+  - **Clock-skew safe:** the overview payload carries `serverNow`; the teacher page computes `serverNow − Date.now()` once per poll and offsets its local clock (`activityNowMs`) so staleness is judged against the same server clock as `last_seen_at`, immune to a misset teacher device clock.
 - Watch one student: `app/[lang]/dashboard/sessions/[liveSessionId]/watch/[deviceId]/page.tsx`
 - Snapshot API: `GET .../participants/[deviceId]/exam-snapshot`
-- Live feedback: `PATCH .../participants/[deviceId]/live-feedback`
+- Live feedback (online-only, single mutable value per question): `PATCH .../participants/[deviceId]/live-feedback`
 - Structured feedback keys: `PATCH .../participants/[deviceId]/feedback-key`
+- **Queued feedback (offline-capable, `FeedbackItem`)**: timestamped, per-author text comments that queue locally and upload in the background. Composer per question in the watch page (`components/TeacherFeedbackComposer.tsx`); queue + drain in `lib/offline/use-offline-feedback.ts`. Edit/delete while still queued mutate the local row directly; failed uploads are surfaced (never dropped). API: `PUT/GET .../participants/[deviceId]/feedback-items`, `DELETE .../feedback-items/[feedbackId]`. See [Offline sync](#offline-sync--pwa).
 
 ### Suspensions & tab leave
 
@@ -195,7 +201,7 @@ Two complementary, teacher-scoped aids (students never see either):
 - **Ambient help hints** — subtle `ⓘ` tooltips on dashboard / builder / session / watch / roster controls.
   - Primitive: `components/HelpHint.tsx` (Floating UI; hover/focus/tap, ESC to close, `aria-describedby`).
   - Device-local on/off pref: `lib/help-prefs.ts` (versioned `localStorage`, `CustomEvent` broadcast) + hook `lib/use-help-prefs.ts`.
-  - Toggle control: `components/HelpTipsToggle.tsx` (in the dashboard header). Default **on**.
+  - Toggle control: `components/HelpTipsToggle.tsx` (in the shared `TeacherTopBar`, present on all teacher screens). Default **on**.
   - Copy: `help.*` namespace in `messages/{en,uk}.json`.
 - **First-login guided tour** — auto-runs **once**, never behind an opt-in.
   - Driver: `driver.js` via `lib/onboarding-tour.ts` (dynamic-imported; two segments — dashboard `data-tour` anchors then builder anchors, handed off through `sessionStorage` key in `lib/onboarding-tour-key.ts`).
@@ -221,7 +227,8 @@ Two complementary, teacher-scoped aids (students never see either):
 - **Heartbeat:** typing + offline sync metadata — `POST .../heartbeat`.
 - **Live teacher feedback:** polled — `GET .../feedback`.
 - **Raise hand:** `POST .../raise-hand` — `components/RaiseHandButton.tsx`.
-- **Connection UI:** `components/ConnectionIndicator.tsx`, `components/StudentAutosaveBanner.tsx`.
+- **Connection UI:** `components/StudentAutosaveBanner.tsx`. (`components/ConnectionIndicator.tsx` is legacy/retained for tests; the live student/teacher signal is now the unified sync indicator below.)
+- **Sync status indicator (unified):** `components/SyncStatusIndicator.tsx` — one ambient, 3-state signal (`synced` / `queued` / `attention`) shown to students (in the exam strip) and teachers (session + watch headers). State derives purely from local queue contents via `lib/sync-status.ts` (`deriveSyncStatus`), never from a standalone online flag. Student status: `lib/use-student-sync-status.ts` (answer + finish queues). Teacher status: `lib/offline/use-feedback-sync-status.ts` (session-wide feedback queue; also keeps draining + offers Retry). Reactive cross-route updates via `lib/sync-status-events.ts`. Teacher roster-level "who has unsynced work": `components/RosterSyncSummary.tsx` (derived from the polled overview presence, no extra round-trip). The two teacher sync signals are disambiguated: the header indicator is scoped "Your feedback" (`SyncStatusIndicator` `contextLabel`), the roster summary "Students' work" (people icon). Roster rows carry a trailing chevron + hover affordance to signal row-level clickability vs. nested controls; the hand-raise glyph is a lucide `Hand` SVG (not an emoji).
 
 ### Resume after device loss
 
@@ -273,10 +280,21 @@ stateDiagram-v2
 
 - High-frequency data in `live_session_presence` (since `20260530090000_scale_polling_presence.sql`).
 - Heartbeat carries: `interaction` (keepalive vs engagement), `pendingSyncCount`, `syncState`.
+- Timestamps: `last_activity_at` (interaction only), `last_typing_at` (typing only), `last_seen_at` (every heartbeat incl. idle keepalive — for silent-disconnect detection).
 - Client derives UI status — `lib/participant-status.ts`:
   - **Typing** if heartbeat ≤ 8s with interaction
   - **Idle** if ≥ 45s without interaction
-  - **Offline / pending sync** from heartbeat sync fields
+  - **Offline / pending sync** from heartbeat sync fields, or stale `last_seen_at` (≥ `LIVE_PRESENCE_STALE_MS`)
+
+### Performance & scale (live session monitoring)
+
+The teacher roster is the hottest read path (polled + realtime, per session). Key optimizations:
+
+- **Stateless HTTP broadcasts** — server-side "refresh" notifications (`lib/broadcast-live-session-overview.ts` → `broadcastLiveSessionOverviewRefresh`) post to Supabase Realtime's HTTP API (`/realtime/v1/api/broadcast`) instead of doing a websocket `channel.subscribe()` handshake per call. Avoids per-write realtime connection churn from serverless routes.
+- **Coalesced refetch** — the teacher page funnels its 3s poll + realtime pushes through `useCoalescedCallback` (`lib/use-coalesced-callback.ts`): no concurrent fetches, ≤ 1 fetch per `OVERVIEW_MIN_REFRESH_MS` (1.2s), bursts collapse into one trailing run.
+- **Conditional GET (ETag/304)** — `overview` route hashes a cheap fingerprint of everything the payload depends on (`lib/overview-fingerprint.ts`; answer content captured via each row's `updated_at`, status freshness bounded by `OVERVIEW_STATUS_BUCKET_MS` = 10s). Unchanged polls return `304` (skips answer parsing + payload build server-side; client skips re-render). `X-Server-Now` header returned on 200 and 304 for clock-skew correction.
+- **Roster render** — `RosterRow` is `React.memo`; `displayedParticipants`/`previewQuestions` and the roster callbacks are memoized so the 20-row grid doesn't re-render on the 1s countdown tick (only on real data / 20s heatmap-bucket changes).
+- **Student screen** — visible countdowns self-tick in `components/LiveCountdown.tsx`; the large `HomeClient` top-level tick is coarse (3s, gating only) so an idle/reading student doesn't re-render the whole screen every second.
 
 ### Delivery modes (`form_sessions.delivery_mode`)
 
@@ -329,6 +347,15 @@ flowchart TD
 | `lib/offline/finish-queue.ts` | Pending finish rows in IDB (`finish_queue` store) |
 | `lib/offline/finish-engine.ts` | Finish drain with backoff |
 | `lib/offline/finish-transport.ts` | Bounded PUT + POST `/finish` |
+| `lib/offline/feedback-queue.ts` | Teacher feedback rows in IDB (`feedback_queue` store); edit/remove-while-queued |
+| `lib/offline/feedback-engine.ts` | Feedback drain (same backoff); flags exhausted/rejected items `failed`, never drops |
+| `lib/offline/feedback-transport.ts` | Idempotent `PUT .../feedback-items` upload |
+| `lib/offline/use-offline-feedback.ts` | Teacher feedback queue hook (watch page) + server merge for delivery status |
+| `lib/use-student-feedback-items.ts` | Student feedback poll + delivery confirm (calm, count-based) |
+| `lib/sync-status.ts` | Pure `deriveSyncStatus` (synced/queued/attention) + coarse `relativeAge` from local queue facts |
+| `lib/sync-status-events.ts` | In-tab queue-change signal so the indicator updates reactively across routes |
+| `lib/use-student-sync-status.ts` | Student unified sync status from answer + finish queue facts (no IDB/network on hot path) |
+| `lib/offline/use-feedback-sync-status.ts` | Teacher unified sync status from session-wide feedback queue; drains + Retry |
 | `lib/offline/answer-store.ts` | Local answers + per-question revisions |
 | `lib/offline/sync-queue.ts` | Pending answer sync rows in IDB |
 | `lib/offline/sync-engine.ts` | Answer drain with backoff + jitter |
@@ -362,10 +389,11 @@ flowchart TD
 - Reload while offline → answers restored from IDB (E2E: `e2e/offline-sync.spec.ts`).
 - **Exam submit** — on retryable failure, queued in `finish_queue` and retried automatically.
 - **Pre-join** — join code + display name restored from IDB draft after refresh.
+- **Teacher feedback** — a teacher can leave a text comment on a student response with no connection; it persists in `feedback_queue` (IDB) across app close / restart and uploads in the background on reconnect. `created_at` is client-side and authoritative for ordering/display (students never see "future" feedback); `synced_at`/`delivered_at` are bookkeeping only. Failed uploads retry with backoff and, if exhausted, are flagged `failed` and surfaced to the teacher — feedback is never silently dropped. Audio/voice memos are **deferred** (the schema reserves `type='voice'` + `audio_*` columns). Version anchoring: response-level — the response's `updated_at` is captured at write time, and the student sees a calm "you changed this answer after this comment" flag if it later differs (anchored to the version it was written against). IDB schema is now `DB_VERSION = 3`.
 
 ### Still requires network
 
-- **Live teacher feedback** — requires polling (degrades gracefully).
+- **Live teacher feedback (legacy `live_teacher_feedback`)** — requires polling (degrades gracefully). The newer queued `FeedbackItem` path **works offline** for the teacher (see above).
 - **Raise hand** — requires network.
 - **Initial join / register** — requires network (join draft + session cache help after first visit).
 
@@ -487,6 +515,7 @@ Run migrations in **filename order**. Latest migration wins for RPC definitions.
 | `live_session_presence` | Heartbeat / typing / sync metadata |
 | `answer_sync_submissions` | Idempotent submission dedupe ledger |
 | `profiles` | Auth users (teachers); `onboarding_tour_completed_at` gates first-login tour |
+| `feedback_items` | Queued teacher feedback (per-author, `created_at` authoritative, `synced_at`/`delivered_at` bookkeeping; `type='voice'` reserved) |
 | Library tables | Orgs, templates (see `20260605140000`) |
 
 ### Important RPCs (SECURITY DEFINER, anon client)
@@ -501,6 +530,9 @@ Run migrations in **filename order**. Latest migration wins for RPC definitions.
 | `upsert_live_session_heartbeat` | Presence + sync fields |
 | `get_live_session_overview` | Teacher roster |
 | `get_live_session_public_board` | Projector counts |
+| `upsert_feedback_item` / `retract_feedback_item` | Teacher: idempotent queued feedback upsert / soft-retract |
+| `get_session_feedback_items` / `get_student_feedback_items` | Teacher / student feedback reads (ordered by `created_at`) |
+| `confirm_feedback_items_delivered` | Student: mark feedback delivered |
 
 ### Migration index (newest last)
 
@@ -561,6 +593,8 @@ Run migrations in **filename order**. Latest migration wins for RPC definitions.
 | `20260605250000_live_feedback_all_question_types.sql` | Feedback all types |
 | `20260605260000_restore_mc_autograde_on_finish.sql` | MC autograde on finish |
 | `20260607120000_onboarding_tour.sql` | `profiles.onboarding_tour_completed_at` flag |
+| `20260630120000_feedback_items.sql` | `feedback_items` table + upsert/retract/read/deliver RPCs (queued teacher feedback) |
+| `20260630130000_presence_last_seen.sql` | `live_session_presence.last_seen_at` + keepalive write in `touch_live_session_presence` (silent-disconnect detection) |
 
 </details>
 
@@ -608,8 +642,10 @@ PATCH, DELETE — edit / delete question.
 | `DELETE /participants/[deviceId]` | Remove student |
 | `GET /participants/[deviceId]/exam-pdf` | One student PDF |
 | `GET /participants/[deviceId]/exam-snapshot` | Watch view snapshot |
-| `PATCH /participants/[deviceId]/live-feedback` | Live feedback text |
+| `PATCH /participants/[deviceId]/live-feedback` | Live feedback text (online-only) |
 | `PATCH /participants/[deviceId]/feedback-key` | Structured feedback |
+| `PUT/GET /participants/[deviceId]/feedback-items` | Upsert / list queued `FeedbackItem`s (idempotent on id) |
+| `DELETE /participants/[deviceId]/feedback-items/[feedbackId]` | Retract a synced feedback item |
 | `PATCH /participants/[deviceId]/grades` | Manual grades |
 | `POST /participants/[deviceId]/mark-graded` | Mark grading done |
 | `POST /participants/[deviceId]/review-link` | Review share token |
@@ -630,7 +666,9 @@ PATCH, DELETE — edit / delete question.
 | `GET /live-sessions/[id]/state` | Slim state poll |
 | `POST /live-sessions/[id]/finish` | Submit exam |
 | `POST /live-sessions/[id]/tab-leave` | Suspend |
-| `GET /live-sessions/[id]/feedback` | Read teacher feedback |
+| `GET /live-sessions/[id]/feedback` | Read teacher feedback (legacy live) |
+| `GET /live-sessions/[id]/feedback-items` | Read queued teacher feedback (`FeedbackItem`s) |
+| `POST /live-sessions/[id]/feedback-items/delivered` | Confirm feedback receipt (delivery bookkeeping) |
 | `POST /live-sessions/[id]/raise-hand` | Hand raise |
 | `GET /live-sessions/[id]/realtime-token` | Realtime JWT (legacy) |
 | `GET /review/[token]` | Public review |
@@ -657,6 +695,7 @@ Dashboard session summaries.
 | Student answer hydration | `lib/student-exam-answer-hydration.ts` |
 | Join / resume codes | `lib/join-code.ts`, `lib/resume-code.ts` |
 | Roster status | `lib/participant-status.ts` |
+| Inactivity heatmap | `lib/roster-activity.ts`, `lib/use-roster-activity-thresholds.ts` |
 | Session window | `lib/session-window.ts` |
 | Forms domain types | `lib/forms.ts` |
 | DB row mappers | `lib/forms-api.ts` |
@@ -677,6 +716,8 @@ Dashboard session summaries.
 | Hook / module | Interval / trigger | Purpose |
 |---------------|-------------------|---------|
 | `useOfflineExamSync` | debounce + online/pagehide | Answer sync queue |
+| `useOfflineFeedback` | enqueue + online/poll (8s) | Teacher queued feedback drain + delivery merge |
+| `useStudentFeedbackItems` | 8s (visible) | Student queued-feedback poll + delivery confirm |
 | `useStudentExamStatePoll` | 3s | Suspend, finish, hand-raise |
 | `useLiveSessionOverviewRefresh` | polling | Teacher roster |
 | `useLiveSessionAnswerDrafts` | polling | Teacher watch drafts |
@@ -701,6 +742,9 @@ npm run test:coverage
 - Config: `vitest.config.ts`, setup: `vitest.setup.ts`
 - Helpers: `lib/test/fixtures.ts`, `mock-supabase.ts`, `mock-server.ts`
 - Coverage thresholds ~50% on core `lib/` modules
+- Queued feedback: `lib/offline/feedback-queue.test.ts`, `lib/offline/feedback-engine.test.ts`, `lib/feedback-items.test.ts`
+- Sync indicator: `lib/sync-status.test.ts` (state derivation + relative-age buckets)
+- Inactivity heatmap: `lib/roster-activity.test.ts` (level derivation, offline suppression, threshold clamping)
 
 ### Playwright (E2E)
 
@@ -781,4 +825,4 @@ Requires `.env.local`: `E2E_TEACHER_EMAIL`, `E2E_TEACHER_PASSWORD`, Supabase URL
 - Duplicate README setup steps here (link to `README.md` for install/deploy basics).
 - Document every component — only entry points and non-obvious wiring.
 
-*Last reviewed: 2026-06-12 (entity list UI standardization).*
+*Last reviewed: 2026-06-30 (live-session monitoring performance: HTTP broadcasts, coalesced refetch, overview ETag/304, memoized roster, self-ticking countdowns).*

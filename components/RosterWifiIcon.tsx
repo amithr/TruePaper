@@ -1,5 +1,7 @@
 "use client";
 
+import { LIVE_PRESENCE_STALE_MS } from "@/lib/participant-status";
+
 type Props = {
   syncState: "synced" | "pending" | "offline";
   label: string;
@@ -49,12 +51,24 @@ export function RosterWifiIcon({ syncState, label }: Props) {
 
 export function rosterConnectionSyncState(
   participant: Pick<
-    { syncState: "synced" | "pending" | "offline"; pendingSyncCount: number },
-    "syncState" | "pendingSyncCount"
+    {
+      syncState: "synced" | "pending" | "offline";
+      pendingSyncCount: number;
+      lastSeenAt?: string | null;
+    },
+    "syncState" | "pendingSyncCount" | "lastSeenAt"
   >,
+  nowMs = 0,
 ): "synced" | "pending" | "offline" {
   if (participant.syncState === "offline") {
     return "offline";
+  }
+  // Silent disconnect: no heartbeat (even idle keepalive) recently. Only applied
+  // when a clock is supplied and last_seen exists (post-migration); else skipped.
+  if (nowMs > 0 && participant.lastSeenAt) {
+    if (nowMs - new Date(participant.lastSeenAt).getTime() > LIVE_PRESENCE_STALE_MS) {
+      return "offline";
+    }
   }
   if (participant.syncState === "pending" || participant.pendingSyncCount > 0) {
     return "pending";

@@ -1,7 +1,13 @@
 const DB_NAME = "truepaper-offline-v1";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
-export type StoreName = "answers" | "sync_queue" | "session_cache" | "meta" | "finish_queue";
+export type StoreName =
+  | "answers"
+  | "sync_queue"
+  | "session_cache"
+  | "meta"
+  | "finish_queue"
+  | "feedback_queue";
 
 type UpgradeCallback = (db: IDBDatabase) => void;
 
@@ -34,6 +40,11 @@ function openDb(onUpgrade?: UpgradeCallback): Promise<IDBDatabase> {
         }
         if (!db.objectStoreNames.contains("finish_queue")) {
           db.createObjectStore("finish_queue", { keyPath: "key" });
+        }
+        if (!db.objectStoreNames.contains("feedback_queue")) {
+          const fq = db.createObjectStore("feedback_queue", { keyPath: "id" });
+          fq.createIndex("by_session", ["liveSessionId", "studentDeviceId"], { unique: false });
+          fq.createIndex("by_created", "createdAt", { unique: false });
         }
         onUpgrade?.(db);
       };

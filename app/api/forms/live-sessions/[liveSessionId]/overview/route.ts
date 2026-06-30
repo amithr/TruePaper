@@ -1,8 +1,15 @@
+import { createHash } from "node:crypto";
+
 import { NextResponse } from "next/server";
 
 import { countAnsweredQuestions } from "@/lib/count-answered-questions";
 import { parseQuestionGrades, sumEarnedPoints, sumPossiblePoints } from "@/lib/exam-grades";
 import { isMissingColumnError } from "@/lib/is-missing-db-column";
+import {
+  OVERVIEW_STATUS_BUCKET_MS,
+  overviewFingerprint,
+  type OverviewFingerprintPresence,
+} from "@/lib/overview-fingerprint";
 import {
   liveSessionRosterPreview,
   rosterPreviewQuestionIds,
@@ -36,6 +43,7 @@ type PresenceOverviewRow = {
   anonymous_session_id: string | null;
   last_activity_at: string | null;
   last_typing_at: string | null;
+  last_seen_at?: string | null;
   sync_state?: string | null;
   pending_sync_count?: number | null;
   hand_raise_question_id?: string | null;
@@ -50,7 +58,7 @@ function sessionWindowOpen(opensAt: string, closesAt: string, nowMs: number): bo
   return nowMs >= new Date(opensAt).getTime() && nowMs <= new Date(closesAt).getTime();
 }
 
-export async function GET(_request: Request, { params }: Params) {
+export async function GET(request: Request, { params }: Params) {
   const { liveSessionId } = await params;
   const supabase = await createSupabaseServerClient();
   const session = await getSessionUser(supabase);
@@ -135,6 +143,7 @@ export async function GET(_request: Request, { params }: Params) {
     {
       lastActivityAt: string | null;
       lastTypingAt: string | null;
+      lastSeenAt: string | null;
       syncState: "synced" | "pending" | "offline";
       pendingSyncCount: number;
       handRaiseQuestionId: string | null;
@@ -144,7 +153,7 @@ export async function GET(_request: Request, { params }: Params) {
   const presencePrimary = await supabase
     .from("live_session_presence")
     .select(
-      "anonymous_session_id, last_activity_at, last_typing_at, sync_state, pending_sync_count, hand_raise_question_id, hand_raised_at",
+      "anonymous_session_id, last_activity_at, last_typing_at, last_seen_at, sync_state, pending_sync_count, hand_raise_question_id, hand_raised_at",
     )
     .eq("live_session_id", liveSessionId);
 
@@ -154,23 +163,30 @@ export async function GET(_request: Request, { params }: Params) {
     : false;
   const presenceMissingSync =
     presencePrimary.error && isMissingColumnError(presencePrimary.error, "sync_state");
+  const presenceMissingLastSeen =
+    presencePrimary.error && isMissingColumnError(presencePrimary.error, "last_seen_at");
+  const presenceNeedsRetry =
+    Boolean(presenceMissingSync) || Boolean(presenceMissingHand) || Boolean(presenceMissingLastSeen);
+
+  // Retry with progressively fewer columns for DBs that predate a migration.
+  const reducedPresenceSelect = presenceMissingSync
+    ? "anonymous_session_id, last_activity_at, last_typing_at"
+    : presenceMissingHand
+      ? "anonymous_session_id, last_activity_at, last_typing_at, sync_state, pending_sync_count"
+      : "anonymous_session_id, last_activity_at, last_typing_at, sync_state, pending_sync_count, hand_raise_question_id, hand_raised_at";
 
   const presenceRows = (
-    presenceMissingSync || presenceMissingHand
+    presenceNeedsRetry
       ? (
           await supabase
             .from("live_session_presence")
-            .select(
-              presenceMissingHand
-                ? "anonymous_session_id, last_activity_at, last_typing_at, sync_state, pending_sync_count"
-                : "anonymous_session_id, last_activity_at, last_typing_at",
-            )
+            .select(reducedPresenceSelect)
             .eq("live_session_id", liveSessionId)
         ).data
       : presencePrimary.data
   ) as PresenceOverviewRow[] | null;
 
-  if (!presencePrimary.error || presenceMissingSync || presenceMissingHand) {
+  if (!presencePrimary.error || presenceNeedsRetry) {
     for (const p of presenceRows ?? []) {
       const device = p.anonymous_session_id?.toLowerCase();
       if (device) {
@@ -182,6 +198,7 @@ export async function GET(_request: Request, { params }: Params) {
         presenceByDevice.set(device, {
           lastActivityAt: p.last_activity_at ?? null,
           lastTypingAt: p.last_typing_at ?? null,
+          lastSeenAt: typeof p.last_seen_at === "string" ? p.last_seen_at : null,
           syncState,
           pendingSyncCount: Math.max(0, Number(p.pending_sync_count) || 0),
           handRaiseQuestionId:
@@ -211,6 +228,53 @@ export async function GET(_request: Request, { params }: Params) {
   const textQuestionIds = rosterPreviewQuestionIds(previewQuestions);
   const questionTotal = questionIds.length;
   const pointsPossible = sumPossiblePoints(questions);
+
+  // Conditional GET: if nothing that affects the payload changed since the
+  // client's last fetch, skip parsing answers + building participants entirely.
+  const serverNowIso = new Date(nowMs).toISOString();
+  const questionsSig = [...questions]
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .map((q) => `${q.id}:${q.points}:${q.type}`)
+    .join(",");
+  const fingerprintPresence = new Map<string, OverviewFingerprintPresence>();
+  for (const [device, pres] of presenceByDevice) {
+    fingerprintPresence.set(device, {
+      syncState: pres.syncState,
+      pendingSyncCount: pres.pendingSyncCount,
+      lastActivityAt: pres.lastActivityAt,
+      lastTypingAt: pres.lastTypingAt,
+      lastSeenAt: pres.lastSeenAt,
+      handRaiseQuestionId: pres.handRaiseQuestionId,
+      handRaisedAt: pres.handRaisedAt,
+    });
+  }
+  const canonical = overviewFingerprint({
+    windowOpen,
+    questionsSig,
+    timeBucket: Math.floor(nowMs / OVERVIEW_STATUS_BUCKET_MS),
+    rows: (rows ?? []).map((r) => ({
+      anonymousSessionId: r.anonymous_session_id ?? null,
+      displayName: (r.student_display_name as string | null | undefined) ?? null,
+      updatedAt: r.updated_at ?? null,
+      suspendedAt: r.suspended_at ?? null,
+      finishedAt: r.finished_at ?? null,
+      gradedAt: (r.text_graded_at as string | null | undefined) ?? null,
+    })),
+    presenceByDevice: fingerprintPresence,
+  });
+  const etag = `"${createHash("sha1").update(canonical).digest("base64")}"`;
+
+  if (request.headers.get("if-none-match") === etag) {
+    return new NextResponse(null, {
+      status: 304,
+      headers: {
+        ETag: etag,
+        // Still refresh the client's server-clock offset on a 304.
+        "X-Server-Now": serverNowIso,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
 
   const participants = (rows ?? []).map((r) => {
     const suspendedAt = r.suspended_at as string | null;
@@ -245,6 +309,7 @@ export async function GET(_request: Request, { params }: Params) {
       textWordCount,
       lastActivityAt,
       lastTypingAt,
+      lastSeenAt: pres?.lastSeenAt ?? null,
       syncState,
       pendingSyncCount,
       handRaiseQuestionId: pres?.handRaiseQuestionId ?? null,
@@ -253,19 +318,31 @@ export async function GET(_request: Request, { params }: Params) {
     };
   });
 
-  return NextResponse.json({
-    session: {
-      id: fs.id,
-      joinCode: fs.join_code,
-      opensAt: fs.opens_at,
-      closesAt: fs.closes_at,
-      formId: fs.form_id,
-      formTitle: formTitle?.trim() || "Form",
-      sessionOpen: windowOpen,
-      questionTotal,
-      textQuestionIds,
-      previewQuestions,
+  return NextResponse.json(
+    {
+      session: {
+        id: fs.id,
+        joinCode: fs.join_code,
+        opensAt: fs.opens_at,
+        closesAt: fs.closes_at,
+        formId: fs.form_id,
+        formTitle: formTitle?.trim() || "Form",
+        sessionOpen: windowOpen,
+        questionTotal,
+        textQuestionIds,
+        previewQuestions,
+      },
+      participants,
+      // Authoritative server clock so the teacher's client can correct for local
+      // clock skew when judging presence staleness (last_seen_at is server time).
+      serverNow: serverNowIso,
     },
-    participants,
-  });
+    {
+      headers: {
+        ETag: etag,
+        "X-Server-Now": serverNowIso,
+        "Cache-Control": "no-store",
+      },
+    },
+  );
 }

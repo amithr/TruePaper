@@ -19,6 +19,16 @@ export const SYNC_POLL_INTERVAL_MS = 8_000;
 /** Poll interval while a finish submit is queued (ms). */
 export const FINISH_POLL_INTERVAL_MS = 6_000;
 
+/** Poll interval while teacher feedback is queued (ms). */
+export const FEEDBACK_POLL_INTERVAL_MS = 8_000;
+
+/**
+ * Retryable upload attempts before a feedback item is surfaced to the teacher as
+ * failed. We never silently drop feedback — after this it stays in the queue
+ * flagged `failed` until the teacher retries or deletes it.
+ */
+export const FEEDBACK_MAX_ATTEMPTS = 8;
+
 /** Random delay before reconnect drain after `online` (ms). */
 export const ONLINE_RECONNECT_JITTER_MS = 3_000;
 
