@@ -2148,7 +2148,14 @@ export default function HomeClient({
       setStatusMessage(t("home.status.inLiveSession"));
       void clearJoinDraft();
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : t("home.errors.joinSession"));
+      // Safari often surfaces failed fetches as "Load failed" — map to a clear join hint.
+      setStatusMessage(
+        isRetryableNetworkError(error)
+          ? t("home.errors.joinNetwork")
+          : error instanceof Error
+            ? error.message
+            : t("home.errors.joinSession"),
+      );
     } finally {
       setIsJoiningSession(false);
     }

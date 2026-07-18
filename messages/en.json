@@ -439,6 +439,7 @@
       "submitExam": "Could not submit the exam.",
       "submitTimeout": "Submitting timed out. Check your connection and tap Submit again.",
       "joinSession": "Could not join that session.",
+      "joinNetwork": "Could not reach the server to join. Check the Wi‑Fi connection and try again.",
       "rejoinExam": "Could not rejoin that exam."
     },
     "validation": {

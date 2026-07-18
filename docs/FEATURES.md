@@ -406,7 +406,7 @@ flowchart TD
 ### PWA
 
 - `public/manifest.json` — installable shell
-- `public/sw.js` — caches app shell; drains IDB queues on Background Sync / `DRAIN_OFFLINE_SYNC` message; **bypasses** `/api/*`, non-GET, RSC/action requests
+- `public/sw.js` — caches app shell (`/`, `/{lang}`, `/{lang}/join`, submitted pages); drains IDB queues on Background Sync / `DRAIN_OFFLINE_SYNC` message; **bypasses** `/api/*`, non-GET, RSC/action requests
 - Registered in `components/ServiceWorkerRegistration.tsx`
 
 ### Teacher: accept late sync

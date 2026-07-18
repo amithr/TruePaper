@@ -1,5 +1,17 @@
-const CACHE = "truepaper-shell-v2";
-const SHELL_URLS = ["/", "/en", "/uk"];
+const CACHE = "truepaper-shell-v3";
+// Student join lives at /join (not /). Pre-cache those shells so a refresh
+// while briefly offline doesn't become a browser "couldn't load" page after
+// the student has already registered on the teacher's roster.
+const SHELL_URLS = [
+  "/",
+  "/en",
+  "/uk",
+  "/join",
+  "/en/join",
+  "/uk/join",
+  "/en/join/submitted",
+  "/uk/join/submitted",
+];
 const OFFLINE_DB = "truepaper-offline-v1";
 const OFFLINE_SYNC_TAG = "truepaper-offline-sync";
 

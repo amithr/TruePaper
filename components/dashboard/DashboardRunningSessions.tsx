@@ -133,7 +133,7 @@ export function DashboardRunningSessions({
     if (!origin) {
       return;
     }
-    const link = buildStudentJoinUrl(origin, joinCode);
+    const link = buildStudentJoinUrl(origin, joinCode, { locale });
     if (!link) {
       return;
     }

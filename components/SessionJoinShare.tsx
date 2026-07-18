@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import QRCode from "react-qr-code";
 
 import { copyToClipboard } from "@/lib/copy-to-clipboard";
-import { useTranslations } from "@/lib/i18n/I18nProvider";
+import { useLocale, useTranslations } from "@/lib/i18n/I18nProvider";
 import { buildStudentJoinUrl } from "@/lib/student-join-url";
 
 type Props = {
@@ -86,16 +86,17 @@ export function SessionJoinShare({
   variant = "full",
 }: Props) {
   const t = useTranslations();
+  const locale = useLocale();
   const [copied, setCopied] = useState<"link" | "code" | null>(null);
   const [showQrPanel, setShowQrPanel] = useState(false);
   const [origin] = useState(() =>
     typeof window !== "undefined" ? window.location.origin : "",
   );
 
-  const qrUrl = useMemo(() => (origin ? buildStudentJoinUrl(origin, joinCode) : ""), [
-    origin,
-    joinCode,
-  ]);
+  const qrUrl = useMemo(
+    () => (origin ? buildStudentJoinUrl(origin, joinCode, { locale }) : ""),
+    [origin, joinCode, locale],
+  );
 
   const flashCopied = useCallback((kind: "link" | "code") => {
     setCopied(kind);
@@ -106,7 +107,7 @@ export function SessionJoinShare({
     if (!origin) {
       return;
     }
-    const link = buildStudentJoinUrl(origin, joinCode);
+    const link = buildStudentJoinUrl(origin, joinCode, { locale });
     if (!link) {
       return;
     }
@@ -114,7 +115,7 @@ export function SessionJoinShare({
     if (ok) {
       flashCopied("link");
     }
-  }, [origin, joinCode, flashCopied]);
+  }, [origin, joinCode, locale, flashCopied]);
 
   const onCopyCode = useCallback(async () => {
     const ok = await copyToClipboard(joinCode);
