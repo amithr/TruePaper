@@ -217,7 +217,6 @@ export function FormLibraryRow({
           type="button"
           data-row-action
           disabled={starting}
-          // eslint-disable-next-line react-hooks/refs -- Floating UI callback ref setter
           ref={(node) => {
             startButtonRef.current = node;
             refs.setReference(node);

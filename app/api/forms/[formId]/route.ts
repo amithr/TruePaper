@@ -28,19 +28,31 @@ export async function PATCH(request: Request, { params }: Params) {
 
   const { formId } = await params;
   const body = (await request.json()) as UpdateFormBody;
-  const title = body.title?.trim();
-  const description = body.description?.trim();
 
-  if (!title) {
-    return NextResponse.json({ error: "Title is required." }, { status: 400 });
+  const patch: {
+    title?: string;
+    description?: string;
+    live_teacher_feedback_enabled?: boolean;
+  } = {};
+
+  // Partial PATCH: only validate/update fields the client actually sent.
+  // (Start-session toggles live feedback without re-sending title.)
+  if (body.title !== undefined) {
+    const title = body.title.trim();
+    if (!title) {
+      return NextResponse.json({ error: "Title is required." }, { status: 400 });
+    }
+    patch.title = title;
   }
-
-  const patch: { title: string; description: string; live_teacher_feedback_enabled?: boolean } = {
-    title,
-    description: description ?? "",
-  };
+  if (body.description !== undefined) {
+    patch.description = body.description.trim();
+  }
   if (typeof body.liveTeacherFeedbackEnabled === "boolean") {
     patch.live_teacher_feedback_enabled = body.liveTeacherFeedbackEnabled;
+  }
+
+  if (Object.keys(patch).length === 0) {
+    return NextResponse.json({ error: "No updates provided." }, { status: 400 });
   }
 
   const { data, error } = await supabase

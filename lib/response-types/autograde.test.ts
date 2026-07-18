@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import { serializeResponseValue } from "@/lib/response-types/answers";
 import { autogradeEarnedPoints, hasAutogradeKey } from "@/lib/response-types/autograde";
-import type { Question } from "@/lib/forms";
 import { makeQuestion } from "@/lib/test/question-fixtures";
 
 describe("hasAutogradeKey", () => {

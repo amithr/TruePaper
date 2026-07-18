@@ -6,6 +6,7 @@ import {
   flip,
   offset,
   shift,
+  size,
   useFloating,
 } from "@floating-ui/react";
 import { useEffect, useId, useRef } from "react";
@@ -42,7 +43,18 @@ export function BuilderTypePicker({
     open,
     onOpenChange,
     placement: "top-start",
-    middleware: [offset(10), flip({ padding: 8 }), shift({ padding: 8 })],
+    middleware: [
+      offset(10),
+      flip({ padding: 8 }),
+      shift({ padding: 8 }),
+      size({
+        apply({ rects, elements }) {
+          Object.assign(elements.floating.style, {
+            width: `${rects.reference.width}px`,
+          });
+        },
+      }),
+    ],
     whileElementsMounted: autoUpdate,
   });
 
@@ -74,7 +86,6 @@ export function BuilderTypePicker({
     <div className="tp-builder-picker" data-tour="add-question">
       <button
         type="button"
-        // eslint-disable-next-line react-hooks/refs -- Floating UI callback ref setter
         ref={(node) => {
           buttonRef.current = node;
           refs.setReference(node);
@@ -112,7 +123,7 @@ export function BuilderTypePicker({
             role="dialog"
             aria-label={t("home.builder.addQuestion")}
             className="tp-builder-picker__panel"
-            style={{ ...floatingStyles, width: buttonRef.current?.offsetWidth || undefined }}
+            style={floatingStyles}
             onClick={(event) => event.stopPropagation()}
           >
             <div className="tp-builder-picker__grid">

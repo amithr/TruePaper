@@ -8,7 +8,7 @@ import {
   shift,
   useFloating,
 } from "@floating-ui/react";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { focusRing } from "@/lib/ui";
@@ -64,12 +64,15 @@ export function OverflowMenu({
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const controlled = openProp !== undefined;
   const open = controlled ? openProp : uncontrolledOpen;
-  const setOpen = (next: boolean) => {
-    if (!controlled) {
-      setUncontrolledOpen(next);
-    }
-    onOpenChange?.(next);
-  };
+  const setOpen = useCallback(
+    (next: boolean) => {
+      if (!controlled) {
+        setUncontrolledOpen(next);
+      }
+      onOpenChange?.(next);
+    },
+    [controlled, onOpenChange],
+  );
   const menuId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -104,7 +107,7 @@ export function OverflowMenu({
       document.removeEventListener("mousedown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [open]);
+  }, [open, setOpen]);
 
   if (items.length === 0) {
     return null;
