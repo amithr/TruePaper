@@ -7,7 +7,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 
 import { SyncStatusIndicator } from "@/components/SyncStatusIndicator";
-import { HelpHint } from "@/components/HelpHint";
 import { JoinCodeInput } from "@/components/JoinCodeInput";
 import { useBodyFocusMode } from "@/lib/use-body-focus-mode";
 import { BUILDER_TOUR_PENDING_KEY } from "@/lib/onboarding-tour-key";
@@ -34,8 +33,18 @@ const StudentExamQuestion = dynamic(
 import { ExamCaptureWatermark } from "@/components/ExamCaptureWatermark";
 import { StudentFeedbackNotes } from "@/components/StudentFeedbackNotes";
 import { LanguageToggle } from "@/components/LanguageToggle";
-import { BuilderResponseConfig } from "@/components/response-types/BuilderResponseConfig";
-import { ResponseTypeAddChip } from "@/components/response-types/ResponseTypeAddChip";
+import { FormAssetImage } from "@/components/FormAssetImage";
+import { FormAssetImageEditor } from "@/components/FormAssetImageEditor";
+import { OverflowMenu } from "@/components/OverflowMenu";
+import { BuilderTypePicker } from "@/components/builder/BuilderTypePicker";
+import { BuilderQuestionFields } from "@/components/builder/BuilderQuestionFields";
+import { QuestionTypeBadge } from "@/components/response-types/QuestionTypeBadge";
+import {
+  buildSummaryTokens,
+  countAutogradableQuestions,
+  type BuilderPanelKey,
+} from "@/lib/builder/summary-tokens";
+import { typeBadgeFamily } from "@/lib/response-types/builder-groups";
 import { SaveTemplateModal } from "@/components/library/SaveTemplateModal";
 import {
   createFreshAnonymousSessionId,
@@ -44,6 +53,7 @@ import {
   persistAnonymousSessionId,
 } from "@/lib/anonymous-session";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
+import type { TranslationPath } from "@/lib/i18n/types";
 import { useScoreCopy } from "@/lib/i18n/score-copy";
 import { deferEffect } from "@/lib/defer-effect";
 import {
@@ -52,11 +62,7 @@ import {
   type TeacherHomeIntent,
 } from "@/lib/home-url-intent";
 import { mergePendingBuilderForm, peekPendingBuilderForm } from "@/lib/pending-builder-form";
-import {
-  listAuthorableResponseTypes,
-  parseResponseConfig,
-  questionSupportsLiveFeedback,
-} from "@/lib/response-types/registry";
+import { questionSupportsLiveFeedback } from "@/lib/response-types/registry";
 import { isResponseAnswered } from "@/lib/response-types/answers";
 import { postExamTabLeave, postExamTabLeaveAwait } from "@/lib/exam-tab-leave";
 import { formatExamWatermarkLabel } from "@/lib/exam-capture-protection";
@@ -269,39 +275,6 @@ export default function HomeClient({
   const t = useTranslations();
   const { formatPointsScore } = useScoreCopy();
   useAutoUkrainianHome();
-  const responseTypeLabel = (type: QuestionType): string => {
-    switch (type) {
-      case "multipleChoice":
-        return t("responseTypes.multipleChoice.label");
-      case "shortAnswer":
-        return t("responseTypes.shortAnswer.label");
-      case "extendedWritten":
-      case "text":
-        return t("responseTypes.extendedWritten.label");
-      case "structuredMultiPart":
-        return t("responseTypes.structuredMultiPart.label");
-      case "annotateSource":
-        return t("responseTypes.annotateSource.label");
-      case "drawDiagram":
-        return t("responseTypes.drawDiagram.label");
-      case "graph":
-        return t("responseTypes.graph.label");
-      case "photoHandwritten":
-        return t("responseTypes.photoHandwritten.label");
-      case "trueFalse":
-        return t("responseTypes.trueFalse.label");
-      case "matching":
-        return t("responseTypes.matching.label");
-      case "ordering":
-        return t("responseTypes.ordering.label");
-      case "labelling":
-        return t("responseTypes.labelling.label");
-      case "mathInput":
-        return t("responseTypes.mathInput.label");
-      default:
-        return t("responseTypes.extendedWritten.label");
-    }
-  };
   /** False until client has read `window.location` (SSR/hydration safe). */
   const [urlSynced, setUrlSynced] = useState(false);
   const [homePageIntent, setHomePageIntent] = useState<TeacherHomeIntent>("none");
@@ -383,6 +356,17 @@ export default function HomeClient({
     | { kind: "question"; questionId: string; title: string }
     | null
   >(null);
+  const [builderDetailsOpen, setBuilderDetailsOpen] = useState(true);
+  const [builderPickerOpen, setBuilderPickerOpen] = useState(false);
+  const [builderInsertAt, setBuilderInsertAt] = useState<number | null>(null);
+  const [builderOpenPanel, setBuilderOpenPanel] = useState<{
+    questionId: string;
+    panel: BuilderPanelKey;
+  } | null>(null);
+  const [builderOpenMenuId, setBuilderOpenMenuId] = useState<string | null>(null);
+  const [builderDragId, setBuilderDragId] = useState<string | null>(null);
+  const builderAutosaveTimerRef = useRef<number | undefined>(undefined);
+  const builderPromptFocusIdRef = useRef<string | null>(null);
   /** Join / rejoin in flight — separate from teacher builder and exam save mutations. */
   const [isJoiningSession, setIsJoiningSession] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -1805,6 +1789,53 @@ export default function HomeClient({
     };
   }, []);
 
+
+  /** Collapse form details once the form has a real title. */
+  useEffect(() => {
+    if (!activeForm) {
+      return;
+    }
+    const untitled = !activeForm.title.trim() || activeForm.title.trim() === "Untitled Form";
+    deferEffect(() => {
+      setBuilderDetailsOpen(untitled);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when switching forms
+  }, [activeFormId]);
+
+  /** Debounced autosave for builder edits. */
+  useEffect(() => {
+    if (mode !== "teacher" || !isTeacher || !activeForm || !builderHasUnsavedChanges) {
+      return;
+    }
+    if (builderAutosaveTimerRef.current !== undefined) {
+      window.clearTimeout(builderAutosaveTimerRef.current);
+    }
+    builderAutosaveTimerRef.current = window.setTimeout(() => {
+      builderAutosaveTimerRef.current = undefined;
+      void saveBuilderForm();
+    }, 800);
+    return () => {
+      if (builderAutosaveTimerRef.current !== undefined) {
+        window.clearTimeout(builderAutosaveTimerRef.current);
+        builderAutosaveTimerRef.current = undefined;
+      }
+    };
+  }, [activeForm, builderHasUnsavedChanges, isTeacher, mode, saveBuilderForm]);
+
+  useEffect(() => {
+    const id = builderPromptFocusIdRef.current;
+    if (!id || !activeForm) {
+      return;
+    }
+    const el = document.querySelector<HTMLTextAreaElement>(
+      `textarea[data-builder-prompt="${id}"]`,
+    );
+    if (el) {
+      el.focus();
+      builderPromptFocusIdRef.current = null;
+    }
+  }, [activeForm?.questions.length, activeForm]);
+
   /** Warn the teacher if they try to leave/close the tab with unsaved builder changes. */
   useEffect(() => {
     if (!builderHasUnsavedChanges || mode !== "teacher" || !isTeacher) {
@@ -1818,7 +1849,20 @@ export default function HomeClient({
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, [builderHasUnsavedChanges, mode, isTeacher]);
 
-  const addQuestion = async (type: QuestionType) => {
+  const persistQuestionOrder = async (formId: string, questions: Question[]) => {
+    const questionIds = questions.map((q) => q.id);
+    await requestJson<{ ok: true }>(`/api/forms/${formId}/questions/reorder`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ questionIds }),
+    });
+    updateActiveForm((form) => ({
+      ...form,
+      questions: questions.map((q, index) => ({ ...q, displayOrder: index })),
+    }));
+  };
+
+  const addQuestion = async (type: QuestionType, insertAt: number | null = null) => {
     if (!activeForm) {
       return;
     }
@@ -1826,9 +1870,8 @@ export default function HomeClient({
     setIsMutating(true);
     setAddingQuestionType(type);
     setStatusMessage("");
+    setBuilderPickerOpen(false);
     try {
-      // Flush any pending edits to existing questions/details before adding a new one
-      // so that the next save isn't asked to PATCH a question that hasn't been created yet.
       if (builderHasUnsavedChanges) {
         const ok = await saveBuilderForm();
         if (!ok) {
@@ -1843,19 +1886,109 @@ export default function HomeClient({
           body: JSON.stringify({ type }),
         },
       );
+      const current = latestActiveFormRef.current?.questions ?? activeForm.questions;
+      const nextQuestions = [...current];
+      const at =
+        insertAt === null || insertAt < 0 || insertAt > nextQuestions.length
+          ? nextQuestions.length
+          : insertAt;
+      nextQuestions.splice(at, 0, data.question);
       updateActiveForm((form) => ({
         ...form,
-        questions: [...form.questions, data.question],
+        questions: nextQuestions.map((q, index) => ({ ...q, displayOrder: index })),
       }));
       setPersistedBuilderQuestionJsonById((prev) => ({
         ...prev,
         [data.question.id]: serializeBuilderQuestion(data.question),
       }));
+      if (at < nextQuestions.length - 1) {
+        await persistQuestionOrder(activeForm.id, nextQuestions);
+      }
+      builderPromptFocusIdRef.current = data.question.id;
+      setBuilderInsertAt(null);
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : t("home.errors.addQuestion"));
     } finally {
       setAddingQuestionType(null);
       setIsMutating(false);
+    }
+  };
+
+  const duplicateQuestion = async (questionId: string) => {
+    if (!activeForm) {
+      return;
+    }
+    const source = activeForm.questions.find((q) => q.id === questionId);
+    if (!source) {
+      return;
+    }
+    setIsMutating(true);
+    setStatusMessage("");
+    try {
+      if (builderHasUnsavedChanges) {
+        const ok = await saveBuilderForm();
+        if (!ok) {
+          return;
+        }
+      }
+      const data = await requestJson<{ question: Question }>(
+        `/api/forms/${activeForm.id}/questions`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            type: source.type,
+            prompt: source.prompt,
+            options: source.options,
+            correctAnswer: source.correctAnswer,
+            points: source.points,
+            responseConfig: source.responseConfig,
+          }),
+        },
+      );
+      const current = latestActiveFormRef.current?.questions ?? activeForm.questions;
+      const sourceIndex = current.findIndex((q) => q.id === questionId);
+      const nextQuestions = [...current];
+      const insertAt = sourceIndex < 0 ? nextQuestions.length : sourceIndex + 1;
+      nextQuestions.splice(insertAt, 0, data.question);
+      updateActiveForm((form) => ({
+        ...form,
+        questions: nextQuestions.map((q, index) => ({ ...q, displayOrder: index })),
+      }));
+      setPersistedBuilderQuestionJsonById((prev) => ({
+        ...prev,
+        [data.question.id]: serializeBuilderQuestion(data.question),
+      }));
+      await persistQuestionOrder(activeForm.id, nextQuestions);
+      builderPromptFocusIdRef.current = data.question.id;
+      setBuilderOpenMenuId(null);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : t("home.errors.addQuestion"));
+    } finally {
+      setIsMutating(false);
+    }
+  };
+
+  const reorderQuestionsByDrag = async (fromId: string, toId: string) => {
+    if (!activeForm || fromId === toId) {
+      return;
+    }
+    const current = [...activeForm.questions];
+    const fromIndex = current.findIndex((q) => q.id === fromId);
+    const toIndex = current.findIndex((q) => q.id === toId);
+    if (fromIndex < 0 || toIndex < 0) {
+      return;
+    }
+    const [moved] = current.splice(fromIndex, 1);
+    current.splice(toIndex, 0, moved!);
+    updateActiveForm((form) => ({
+      ...form,
+      questions: current.map((q, index) => ({ ...q, displayOrder: index })),
+    }));
+    try {
+      await persistQuestionOrder(activeForm.id, current);
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : t("home.errors.saveForm"));
     }
   };
 
@@ -2313,7 +2446,7 @@ export default function HomeClient({
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className={ui.sectionTitle}>{t("home.join.eyebrow")}</p>
-          <h2 className="mt-1 text-2xl font-bold tracking-tight">{t("home.join.title")}</h2>
+          <h2 className="mt-1 text-2xl font-semibold tracking-tight">{t("home.join.title")}</h2>
         </div>
         <div className="flex shrink-0 items-start gap-2">
           {session && !isTeacher ? (
@@ -2520,11 +2653,11 @@ export default function HomeClient({
           </div>
         ) : null}
         {session && isTeacher && !isJoinRoute ? (
-          <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
+          <div className="tp-builder-header mb-6 flex flex-wrap items-center justify-between gap-4">
             <div className="min-w-0 flex-1">
               <Link
                 href="/dashboard"
-                className={`inline-flex items-center gap-1.5 text-sm font-medium text-[var(--tp-text-secondary)] hover:text-[var(--tp-text)] ${focusRing}`}
+                className={`inline-flex items-center gap-1.5 text-[13px] font-medium text-[#64748b] hover:text-[#334155] ${focusRing}`}
               >
                 <svg
                   aria-hidden
@@ -2540,71 +2673,81 @@ export default function HomeClient({
                 </svg>
                 {t("home.teacher.dashboardLink")}
               </Link>
-              <h1 className="mt-2 text-2xl font-bold tracking-tight">
-                {isBuilderStudentPreview ? t("home.teacher.previewTitle") : t("home.teacher.builderTitle")}
-              </h1>
-              <p className="mt-1 text-sm text-[var(--tp-text-secondary)]">
+              <h1 className="mt-1 text-2xl font-semibold tracking-tight">
                 {isBuilderStudentPreview
-                  ? t("home.teacher.previewSubtitle")
-                  : t("home.teacher.builderSubtitle")}
-              </p>
+                  ? t("home.teacher.previewTitle")
+                  : t("home.teacher.builderTitle")}
+              </h1>
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              {session ? (
-                <div
-                  role="tablist"
-                  className="inline-flex items-center rounded-full border border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] p-1"
+            {!isBuilderStudentPreview && activeForm ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <span
+                  className="tp-builder-autosave"
+                  data-tour="builder-autosave"
+                  data-state={
+                    builderSaveStatus === "saving" || builderHasUnsavedChanges
+                      ? "saving"
+                      : builderSaveStatus === "error"
+                        ? "error"
+                        : "saved"
+                  }
+                  role="status"
+                  aria-live="polite"
                 >
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={mode === "teacher"}
-                    onClick={() => setMode("teacher")}
-                    className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
-                      mode === "teacher"
-                        ? "bg-[var(--tp-surface)] text-[var(--tp-text)] shadow-sm"
-                        : "text-[var(--tp-text-secondary)] hover:text-[var(--tp-text)]"
-                    }`}
+                  <span aria-hidden className="tp-builder-autosave__dot" />
+                  {builderSaveStatus === "saving"
+                    ? t("home.builder.saving")
+                    : builderSaveStatus === "error"
+                      ? builderSaveError || t("home.builder.saveFailed")
+                      : builderHasUnsavedChanges
+                        ? t("home.builder.saving")
+                        : t("home.builder.savedJustNow")}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setMode("student")}
+                  className={`tp-builder-preview-btn ${focusRing}`}
+                >
+                  <svg
+                    aria-hidden
+                    className="h-4 w-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
                   >
-                    {t("home.teacher.modeTeacher")}
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={mode === "student"}
-                    onClick={() => setMode("student")}
-                    className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
-                      mode === "student"
-                        ? "bg-[var(--tp-surface)] text-[var(--tp-text)] shadow-sm"
-                        : "text-[var(--tp-text-secondary)] hover:text-[var(--tp-text)]"
-                    }`}
-                  >
-                    {t("home.teacher.modeStudent")}
-                  </button>
-                </div>
-              ) : null}
+                    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                  {t("home.builder.previewAsStudent")}
+                </button>
+                <OverflowMenu
+                  label={t("home.builder.moreActions")}
+                  showClose={false}
+                  items={[
+                    {
+                      type: "button",
+                      label: t("templateLibrary.save.action"),
+                      onClick: () =>
+                        setSaveTemplateTarget({
+                          kind: "form",
+                          title: activeForm.title || t("common.untitledForm"),
+                        }),
+                    },
+                  ]}
+                />
+              </div>
+            ) : isBuilderStudentPreview ? (
               <button
                 type="button"
-                onClick={() => void logout()}
-                disabled={isMutating}
-                className={`${ui.btnGhost} ${focusRing} disabled:opacity-50`}
-                aria-label={t("common.logOut")}
-                title={t("common.logOut")}
+                onClick={() => setMode("teacher")}
+                className={`${ui.btnSecondary} ${focusRing}`}
               >
-                <svg
-                  aria-hidden
-                  className="h-4 w-4"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M16 17l5-5-5-5M21 12H9M13 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7" />
-                </svg>
+                {t("home.teacher.modeTeacher")}
               </button>
-            </div>
+            ) : null}
           </div>
         ) : null}
 
@@ -2677,241 +2820,225 @@ export default function HomeClient({
             </p>
           </div>
         ) : showTeacherTools && activeForm ? (
-          <section className="space-y-8">
-            <div className="sticky top-2 z-10 flex flex-wrap items-center justify-between gap-3 rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-[var(--tp-surface)]/95 px-4 py-2.5 text-sm shadow-sm backdrop-blur-sm">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className={ui.sectionTitle}>{t("home.builder.eyebrow")}</p>
-                {builderSaveStatus === "saving" ? (
-                  <span
-                    className="tp-save-indicator"
-                    data-state="saving"
-                    role="status"
-                    aria-live="polite"
-                  >
-                    <span aria-hidden className="tp-save-dot" />
-                    <span>{t("home.builder.saving")}</span>
-                  </span>
-                ) : builderSaveStatus === "saved" && !builderHasUnsavedChanges ? (
-                  <span
-                    className="tp-save-indicator"
-                    data-state="saved"
-                    role="status"
-                    aria-live="polite"
-                  >
-                    <span aria-hidden className="tp-save-dot" />
-                    <span>{t("home.builder.saved")}</span>
-                  </span>
-                ) : builderSaveStatus === "error" ? (
-                  <span
-                    className="tp-save-indicator"
-                    data-state="error"
-                    role="alert"
-                  >
-                    <span aria-hidden className="tp-save-dot" />
-                    <span>{builderSaveError || t("home.builder.saveFailed")}</span>
-                  </span>
-                ) : builderHasUnsavedChanges ? (
-                  <span className="tp-save-indicator" data-state="saving">
-                    <span aria-hidden className="tp-save-dot" />
-                    <span>{t("home.builder.unsavedChanges")}</span>
-                  </span>
-                ) : null}
-              </div>
-              <button
-                type="button"
-                data-tour="save-form"
-                onClick={() => void saveBuilderForm()}
-                disabled={
-                  builderSaveStatus === "saving" ||
-                  isMutating ||
-                  (!builderHasUnsavedChanges && builderSaveStatus !== "error")
-                }
-                className={`${ui.btnPrimary} disabled:opacity-50`}
-                aria-busy={builderSaveStatus === "saving"}
-              >
-                <svg
-                  aria-hidden
-                  className="h-4 w-4"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-                  <polyline points="17 21 17 13 7 13 7 21" />
-                  <polyline points="7 3 7 8 15 8" />
-                </svg>
-                {builderSaveStatus === "saving"
-                  ? t("home.builder.saving")
-                  : t("home.builder.saveForm")}
-              </button>
-              {activeForm ? (
+          <section className="tp-builder-shell space-y-5">
+            <div className="tp-builder-details">
+              {builderDetailsOpen ? (
+                <div className="space-y-3" onClick={(e) => e.stopPropagation()}>
+                  <label className="block text-[12.5px] font-semibold text-[#64748b]">
+                    {t("home.builder.formTitle")}
+                    <input
+                      type="text"
+                      data-tour="form-title"
+                      value={activeForm.title}
+                      onChange={(event) =>
+                        updateActiveForm((form) => ({ ...form, title: event.target.value }))
+                      }
+                      className="tp-builder-details__title-input"
+                    />
+                  </label>
+                  <label className="block text-[12.5px] font-semibold text-[#64748b]">
+                    {t("home.builder.formDescription")}{" "}
+                    <span className="font-normal text-[#94a3b8]">
+                      — {t("home.builder.descriptionHint")}
+                    </span>
+                    <textarea
+                      value={activeForm.description}
+                      onChange={(event) =>
+                        updateActiveForm((form) => ({
+                          ...form,
+                          description: event.target.value,
+                        }))
+                      }
+                      className="tp-builder-details__desc-input"
+                      rows={3}
+                    />
+                  </label>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <FormAssetImageEditor
+                      formId={activeForm.id}
+                      target="description"
+                      imagePath={activeForm.descriptionImagePath}
+                      disabled={isMutating}
+                      onPathChange={(path) =>
+                        updateActiveForm((form) => ({ ...form, descriptionImagePath: path }))
+                      }
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setBuilderDetailsOpen(false)}
+                      className={`tp-builder-details__done ${focusRing}`}
+                    >
+                      {t("home.builder.doneDetails")}
+                    </button>
+                  </div>
+                </div>
+              ) : (
                 <button
                   type="button"
-                  onClick={() =>
-                    setSaveTemplateTarget({
-                      kind: "form",
-                      title: activeForm.title || t("common.untitledForm"),
-                    })
-                  }
-                  className={ui.btnSecondary}
+                  className="tp-builder-details__collapsed"
+                  onClick={() => setBuilderDetailsOpen(true)}
                 >
-                  {t("templateLibrary.save.action")}
+                  <div className="min-w-0">
+                    <div className="tp-builder-details__collapsed-title">
+                      {activeForm.title || t("common.untitledForm")}
+                    </div>
+                    {activeForm.description.trim() ? (
+                      <div className="tp-builder-details__collapsed-desc">
+                        {activeForm.description}
+                      </div>
+                    ) : null}
+                  </div>
+                  <span className="tp-builder-details__edit">{t("home.builder.editDetails")}</span>
                 </button>
-              ) : null}
+              )}
             </div>
-            <div className="space-y-3">
-              <label className="block text-sm font-medium">
-                {t("home.builder.formTitle")}
-                <input
-                  type="text"
-                  data-tour="form-title"
-                  value={activeForm.title}
-                  onChange={(event) =>
-                    updateActiveForm((form) => ({ ...form, title: event.target.value }))
-                  }
-                  className="tp-input"
-                />
-              </label>
 
-              <label className="block text-sm font-medium">
-                {t("home.builder.formDescription")}
-                <textarea
-                  value={activeForm.description}
-                  onChange={(event) =>
-                    updateActiveForm((form) => ({ ...form, description: event.target.value }))
-                  }
-                  className="tp-input"
-                  rows={3}
-                />
-              </label>
-
-              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] px-3 py-3 text-sm">
-                <input
-                  type="checkbox"
-                  checked={activeForm.liveTeacherFeedbackEnabled}
-                  onChange={(event) =>
-                    updateActiveForm((form) => ({
-                      ...form,
-                      liveTeacherFeedbackEnabled: event.target.checked,
-                    }))
-                  }
-                  className="mt-0.5"
-                />
+            <div className="tp-builder-summary">
+              <div className="tp-builder-summary__meta">
+                <strong>
+                  {activeForm.questions.length === 1
+                    ? t("home.builder.summaryQuestionsOne", { n: activeForm.questions.length })
+                    : t("home.builder.summaryQuestionsOther", { n: activeForm.questions.length })}
+                </strong>
+                <span className="tp-builder-summary__sep" aria-hidden>
+                  ·
+                </span>
                 <span>
-                  <span className="font-medium text-[var(--tp-text)]">{t("home.builder.liveFeedbackLabel")}</span>
-                  <span className="mt-0.5 block text-[var(--tp-text-secondary)]">
-                    {t("home.builder.liveFeedbackDesc")}
-                  </span>
+                  {t("home.builder.summaryPoints", {
+                    n: activeForm.questions.reduce((sum, q) => sum + q.points, 0),
+                  })}
                 </span>
-                <span data-tour="live-feedback" className="mt-0.5">
-                  <HelpHint id="builder-live-feedback" text={t("help.builder.liveFeedback")} />
+                <span className="tp-builder-summary__sep" aria-hidden>
+                  ·
                 </span>
-              </label>
+                <span>
+                  {t("home.builder.summaryAutograde", {
+                    n: countAutogradableQuestions(activeForm.questions),
+                    total: activeForm.questions.length,
+                  })}
+                </span>
+              </div>
+              <span className="tp-builder-summary__hint">{t("home.builder.dragToReorder")}</span>
             </div>
 
-            <div
-              data-tour="add-question"
-              className="flex flex-wrap items-center gap-2 border-t border-[var(--tp-border)] pt-6"
-            >
-              <HelpHint id="builder-question-type" text={t("help.builder.questionType")} />
-              {listAuthorableResponseTypes().map((typeMeta) => (
-                <ResponseTypeAddChip
-                  key={typeMeta.id}
-                  typeMeta={typeMeta}
-                  label={responseTypeLabel(typeMeta.id)}
-                  isAdding={addingQuestionType === typeMeta.id}
-                  disabled={isMutating}
-                  onAdd={() => void addQuestion(typeMeta.id)}
-                />
-              ))}
-            </div>
-
-            <div className={`${ui.questionList} border-t border-[var(--tp-border)] pt-8`}>
+            <div className="tp-builder-question-list">
               {activeForm.questions.length === 0 && !addingQuestionType ? (
                 <p className={ui.empty}>{t("home.builder.emptyQuestions")}</p>
-              ) : (
-                activeForm.questions.map((question, index) => (
-                  <article key={question.id} className={ui.questionCardNested}>
-                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--tp-border)] pb-4">
-                      <h3 className="text-sm font-semibold text-[var(--tp-text-secondary)]">
-                        {t("home.builder.questionN", { n: index + 1 })}
-                      </h3>
-                      <div className="flex flex-wrap gap-3">
+              ) : null}
+              {activeForm.questions.map((question, index) => {
+                const tokens = buildSummaryTokens(question);
+                const family = typeBadgeFamily(question.type);
+                const panelKey =
+                  builderOpenPanel?.questionId === question.id
+                    ? builderOpenPanel.panel
+                    : null;
+                return (
+                  <div key={question.id}>
+                    <article
+                      className="tp-builder-card"
+                      draggable={false}
+                      onDragOver={(event) => {
+                        if (builderDragId) {
+                          event.preventDefault();
+                        }
+                      }}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        if (builderDragId) {
+                          void reorderQuestionsByDrag(builderDragId, question.id);
+                          setBuilderDragId(null);
+                        }
+                      }}
+                    >
+                      <div className="tp-builder-card__header">
                         <button
                           type="button"
-                          onClick={() =>
-                            setSaveTemplateTarget({
-                              kind: "question",
-                              questionId: question.id,
-                              title: question.prompt || t("common.untitledQuestion"),
-                            })
-                          }
-                          className="text-sm font-medium text-[var(--tp-accent)]"
+                          className="tp-builder-card__drag"
+                          title={t("home.builder.dragHandle")}
+                          draggable
+                          onDragStart={() => setBuilderDragId(question.id)}
+                          onDragEnd={() => setBuilderDragId(null)}
+                          aria-label={t("home.builder.dragHandle")}
                         >
-                          {t("templateLibrary.save.action")}
+                          <svg aria-hidden viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor">
+                            <path d="M4 7h16v2H4V7zm0 4h16v2H4v-2zm0 4h16v2H4v-2z" />
+                          </svg>
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => void removeQuestion(question.id)}
-                          disabled={isMutating}
-                          className="text-sm font-medium text-red-600"
-                        >
-                          {t("home.builder.remove")}
-                        </button>
+                        <span className="tp-builder-card__num">{index + 1}</span>
+                        <QuestionTypeBadge
+                          type={question.type}
+                          className={`tp-builder-type-badge tp-builder-type-badge--${family}`}
+                        />
+                        <div className="tp-builder-card__spacer" />
+                        <div className="tp-builder-card__tokens">
+                          {tokens.map((token) => {
+                            const active = panelKey === token.key;
+                            return (
+                              <button
+                                key={`${question.id}-${token.key}-${token.labelKey}`}
+                                type="button"
+                                className={`tp-builder-token ${focusRing}`}
+                                data-active={active ? "true" : undefined}
+                                onClick={() => {
+                                  setBuilderOpenMenuId(null);
+                                  setBuilderPickerOpen(false);
+                                  setBuilderOpenPanel((prev) =>
+                                    prev?.questionId === question.id && prev.panel === token.key
+                                      ? null
+                                      : { questionId: question.id, panel: token.key },
+                                  );
+                                }}
+                              >
+                                {t(
+                                  `home.builder.tokens.${token.labelKey}` as TranslationPath,
+                                  token.values ?? {},
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <OverflowMenu
+                          label={t("home.builder.moreActions")}
+                          showClose={false}
+                          open={builderOpenMenuId === question.id}
+                          onOpenChange={(open) => {
+                            setBuilderOpenMenuId(open ? question.id : null);
+                            if (open) {
+                              setBuilderPickerOpen(false);
+                              setBuilderOpenPanel(null);
+                            }
+                          }}
+                          items={[
+                            {
+                              type: "button",
+                              label: t("home.builder.duplicate"),
+                              disabled: isMutating,
+                              onClick: () => void duplicateQuestion(question.id),
+                            },
+                            {
+                              type: "button",
+                              label: t("home.builder.addImage"),
+                              onClick: () => {
+                                setBuilderOpenPanel({
+                                  questionId: question.id,
+                                  panel: "image",
+                                });
+                              },
+                            },
+                            { type: "divider", key: `div-${question.id}` },
+                            {
+                              type: "button",
+                              label: t("home.builder.deleteEllipsis"),
+                              tone: "danger",
+                              disabled: isMutating,
+                              onClick: () => void removeQuestion(question.id),
+                            },
+                          ]}
+                        />
                       </div>
-                    </div>
-
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-6">
-                      <aside
-                        className={`${ui.questionScoring} order-first w-full shrink-0 sm:max-w-[11rem] lg:order-2 lg:w-40`}
-                      >
-                        <p className={`${ui.sectionTitle} flex items-center gap-1`}>
-                          {t("home.builder.scoring")}
-                          {index === 0 ? (
-                            <HelpHint id="builder-points" text={t("help.builder.points")} />
-                          ) : null}
-                        </p>
-                        <label className={`${ui.label} mt-2 block`}>
-                          {t("home.builder.points")}
-                          <div className="mt-1.5 flex items-center gap-2">
-                            <input
-                              type="number"
-                              data-tour={index === 0 ? "question-points" : undefined}
-                              min={1}
-                              max={1000}
-                              value={question.points}
-                              onChange={(event) =>
-                                updateActiveForm((form) => ({
-                                  ...form,
-                                  questions: form.questions.map((formQuestion) =>
-                                    formQuestion.id === question.id
-                                      ? {
-                                          ...formQuestion,
-                                          points: Math.max(
-                                            1,
-                                            Math.min(1000, Number(event.target.value) || 1),
-                                          ),
-                                        }
-                                      : formQuestion,
-                                  ),
-                                }))
-                              }
-                              className={ui.pointsInput}
-                              aria-label={t("home.builder.pointsAria", { n: index + 1 })}
-                            />
-                            <span className="text-sm font-medium text-[var(--tp-text-muted)]">{t("home.builder.pts")}</span>
-                          </div>
-                        </label>
-                      </aside>
-
-                      <div className="min-w-0 flex-1 space-y-4 lg:order-1">
-                        <label className={ui.label}>
-                          {t("home.builder.prompt")}
-                      <input
-                        type="text"
+                      <textarea
+                        rows={2}
+                        data-builder-prompt={question.id}
                         value={question.prompt}
                         onChange={(event) =>
                           updateActiveForm((form) => ({
@@ -2923,303 +3050,36 @@ export default function HomeClient({
                             ),
                           }))
                         }
-                        className={ui.input}
+                        className="tp-builder-card__prompt"
+                        aria-label={t("home.builder.prompt")}
                       />
-                    </label>
-
-                        {question.type === "multipleChoice" ? (
-                          <div className="space-y-2">
-                        {question.options.map((option, optionIndex) => (
-                          <label
-                            key={`${question.id}-option-${optionIndex}`}
-                            className="block text-sm"
-                          >
-                            {t("home.builder.optionN", { n: optionIndex + 1 })}
-                            <input
-                              type="text"
-                              value={option}
-                              onChange={(event) =>
-                                updateActiveForm((form) => ({
-                                  ...form,
-                                  questions: form.questions.map((formQuestion) => {
-                                    if (formQuestion.id !== question.id) {
-                                      return formQuestion;
-                                    }
-
-                                    return {
-                                      ...formQuestion,
-                                      options: formQuestion.options.map((currentOption, i) =>
-                                        i === optionIndex ? event.target.value : currentOption,
-                                      ),
-                                      correctAnswer:
-                                        formQuestion.correctAnswer &&
-                                        formQuestion.options.some(
-                                          (existingOption, i) =>
-                                            i !== optionIndex && existingOption === formQuestion.correctAnswer,
-                                        )
-                                          ? formQuestion.correctAnswer
-                                          : formQuestion.options[optionIndex] === formQuestion.correctAnswer
-                                            ? event.target.value
-                                            : formQuestion.correctAnswer,
-                                    };
-                                  }),
-                                }))
-                              }
-                              className="tp-input"
-                            />
-                          </label>
-                        ))}
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updateActiveForm((form) => ({
-                              ...form,
-                              questions: form.questions.map((formQuestion) => {
-                                if (formQuestion.id !== question.id) {
-                                  return formQuestion;
-                                }
-
-                                return {
-                                  ...formQuestion,
-                                  options: [
-                                    ...formQuestion.options,
-                                    t("home.builder.optionN", {
-                                      n: formQuestion.options.length + 1,
-                                    }),
-                                  ],
-                                };
-                              }),
-                            }))
-                          }
-                          className={ui.btnPrimary}
-                        >
-                          {t("home.builder.addOption")}
-                        </button>
-                        <label className="block text-sm font-medium" data-tour={index === 0 ? "correct-answer" : undefined}>
-                          <span className="inline-flex items-center gap-1">
-                            {t("home.builder.correctAnswer")}
-                            {index === 0 ? (
-                              <HelpHint id="builder-correct-answer" text={t("help.builder.correctAnswer")} />
-                            ) : null}
-                          </span>
-                          <select
-                            value={question.correctAnswer ?? ""}
-                            onChange={(event) =>
-                              updateActiveForm((form) => ({
-                                ...form,
-                                questions: form.questions.map((formQuestion) =>
-                                  formQuestion.id === question.id
-                                    ? {
-                                        ...formQuestion,
-                                        correctAnswer: event.target.value || null,
-                                      }
-                                    : formQuestion,
-                                ),
-                              }))
-                            }
-                            className="tp-input"
-                          >
-                            <option value="">{t("home.builder.noCorrectSelected")}</option>
-                            {question.options.map((option, optionIndex) => (
-                              <option key={`${question.id}-correct-${optionIndex}`} value={option}>
-                                {option || t("home.builder.optionN", { n: optionIndex + 1 })}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                          </div>
-                        ) : null}
-                        {(question.type === "extendedWritten" || question.type === "text" || question.type === "shortAnswer") ? (
-                          <div className="space-y-2 rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] p-3">
-                            <p className={ui.sectionTitle}>{t("responseTypes.builder.answerSettings")}</p>
-                            {question.type !== "shortAnswer" ? (
-                              <div className="grid gap-2 sm:grid-cols-2">
-                                <label className="text-sm">
-                                  {t("responseTypes.builder.minWords")}
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    value={Number((question.responseConfig as { minWords?: number }).minWords ?? 0)}
-                                    onChange={(event) =>
-                                      updateActiveForm((form) => ({
-                                        ...form,
-                                        questions: form.questions.map((formQuestion) =>
-                                          formQuestion.id === question.id
-                                            ? {
-                                                ...formQuestion,
-                                                responseConfig: {
-                                                  ...parseResponseConfig(formQuestion.type, formQuestion.responseConfig),
-                                                  minWords: Math.max(0, Number(event.target.value) || 0),
-                                                },
-                                              }
-                                            : formQuestion,
-                                        ),
-                                      }))
-                                    }
-                                    className="tp-input"
-                                  />
-                                </label>
-                                <label className="text-sm">
-                                  {t("responseTypes.builder.targetWords")}
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    value={Number((question.responseConfig as { targetWords?: number }).targetWords ?? 0)}
-                                    onChange={(event) =>
-                                      updateActiveForm((form) => ({
-                                        ...form,
-                                        questions: form.questions.map((formQuestion) =>
-                                          formQuestion.id === question.id
-                                            ? {
-                                                ...formQuestion,
-                                                responseConfig: {
-                                                  ...parseResponseConfig(formQuestion.type, formQuestion.responseConfig),
-                                                  targetWords: Math.max(0, Number(event.target.value) || 0),
-                                                },
-                                              }
-                                            : formQuestion,
-                                        ),
-                                      }))
-                                    }
-                                    className="tp-input"
-                                  />
-                                </label>
-                              </div>
-                            ) : (
-                              <label className="text-sm">
-                                <span className="inline-flex items-center gap-1">
-                                  {t("responseTypes.builder.acceptedAnswers")}
-                                  {index === 0 ? (
-                                    <HelpHint id="builder-accepted-answers" text={t("help.builder.acceptedAnswers")} />
-                                  ) : null}
-                                </span>
-                                <input
-                                  type="text"
-                                  value={((question.responseConfig as { acceptedAnswers?: string[] }).acceptedAnswers ?? []).join(", ")}
-                                  onChange={(event) =>
-                                    updateActiveForm((form) => ({
-                                      ...form,
-                                      questions: form.questions.map((formQuestion) =>
-                                        formQuestion.id === question.id
-                                          ? {
-                                              ...formQuestion,
-                                              responseConfig: {
-                                                ...parseResponseConfig(formQuestion.type, formQuestion.responseConfig),
-                                                acceptedAnswers: event.target.value
-                                                  .split(",")
-                                                  .map((v) => v.trim())
-                                                  .filter(Boolean),
-                                              },
-                                            }
-                                          : formQuestion,
-                                      ),
-                                    }))
-                                  }
-                                  className="tp-input"
-                                  placeholder={t("responseTypes.builder.acceptedAnswersPlaceholder")}
-                                />
-                              </label>
-                            )}
-                          </div>
-                        ) : null}
-                        {question.type === "structuredMultiPart" ? (
-                          <div className="space-y-2 rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] p-3">
-                            <p className={ui.sectionTitle}>{t("responseTypes.builder.parts")}</p>
-                            {(question.responseConfig as { parts?: Array<{ id: string; label: string; prompt?: string }> }).parts?.map((part, partIndex) => (
-                              <div key={`${question.id}-part-${part.id}`} className="grid gap-2 sm:grid-cols-2">
-                                <input
-                                  type="text"
-                                  value={part.label}
-                                  onChange={(event) =>
-                                    updateActiveForm((form) => ({
-                                      ...form,
-                                      questions: form.questions.map((formQuestion) =>
-                                        formQuestion.id === question.id
-                                          ? {
-                                              ...formQuestion,
-                                              responseConfig: {
-                                                ...parseResponseConfig(formQuestion.type, formQuestion.responseConfig),
-                                                parts: ((parseResponseConfig(formQuestion.type, formQuestion.responseConfig) as { parts: Array<{ id: string; label: string; prompt?: string }> }).parts ?? []).map((p, i) =>
-                                                  i === partIndex ? { ...p, label: event.target.value } : p,
-                                                ),
-                                              },
-                                            }
-                                          : formQuestion,
-                                      ),
-                                    }))
-                                  }
-                                  className="tp-input"
-                                />
-                                <input
-                                  type="text"
-                                  value={part.prompt ?? ""}
-                                  onChange={(event) =>
-                                    updateActiveForm((form) => ({
-                                      ...form,
-                                      questions: form.questions.map((formQuestion) =>
-                                        formQuestion.id === question.id
-                                          ? {
-                                              ...formQuestion,
-                                              responseConfig: {
-                                                ...parseResponseConfig(formQuestion.type, formQuestion.responseConfig),
-                                                parts: ((parseResponseConfig(formQuestion.type, formQuestion.responseConfig) as { parts: Array<{ id: string; label: string; prompt?: string }> }).parts ?? []).map((p, i) =>
-                                                  i === partIndex ? { ...p, prompt: event.target.value } : p,
-                                                ),
-                                              },
-                                            }
-                                          : formQuestion,
-                                      ),
-                                    }))
-                                  }
-                                  className="tp-input"
-                                  placeholder={t("responseTypes.builder.partPrompt")}
-                                />
-                              </div>
-                            ))}
-                          </div>
-                        ) : null}
-                        {question.type === "annotateSource" ? (
-                          <label className={ui.label}>
-                            {t("responseTypes.builder.sourcePassage")}
-                            <textarea
-                              rows={5}
-                              value={String((question.responseConfig as { passageText?: string }).passageText ?? "")}
-                              onChange={(event) =>
-                                updateActiveForm((form) => ({
-                                  ...form,
-                                  questions: form.questions.map((formQuestion) =>
-                                    formQuestion.id === question.id
-                                      ? {
-                                          ...formQuestion,
-                                          responseConfig: {
-                                            ...parseResponseConfig(formQuestion.type, formQuestion.responseConfig),
-                                            passageText: event.target.value,
-                                          },
-                                        }
-                                      : formQuestion,
-                                  ),
-                                }))
-                              }
-                              className="tp-input"
-                            />
-                          </label>
-                        ) : null}
-                        {index === 0 &&
-                        question.type !== "multipleChoice" &&
-                        question.type !== "extendedWritten" &&
-                        question.type !== "text" &&
-                        question.type !== "shortAnswer" ? (
-                          <HelpHint id="builder-response-config" text={t("help.builder.responseConfig")} />
-                        ) : null}
-                        <BuilderResponseConfig question={question} updateActiveForm={updateActiveForm} />
-                      </div>
-                    </div>
-                  </article>
-                ))
-              )}
+                      <BuilderQuestionFields
+                        formId={activeForm.id}
+                        question={question}
+                        index={index}
+                        openPanel={panelKey}
+                        isMutating={isMutating}
+                        updateActiveForm={updateActiveForm}
+                      />
+                    </article>
+                    <button
+                      type="button"
+                      className="tp-builder-insert"
+                      onClick={() => {
+                        setBuilderInsertAt(index + 1);
+                        setBuilderPickerOpen(true);
+                        setBuilderOpenMenuId(null);
+                        setBuilderOpenPanel(null);
+                      }}
+                    >
+                      <span>{t("home.builder.insertHere")}</span>
+                    </button>
+                  </div>
+                );
+              })}
               {addingQuestionType ? (
                 <article
-                  className={`${ui.questionCardNested} flex items-center justify-center gap-3 py-10 text-sm text-[var(--tp-text-secondary)]`}
+                  className="tp-builder-card flex items-center justify-center gap-3 py-10 text-sm text-[var(--tp-text-secondary)]"
                   role="status"
                   aria-live="polite"
                 >
@@ -3230,6 +3090,21 @@ export default function HomeClient({
                   {t("home.builder.addingQuestion")}
                 </article>
               ) : null}
+              <BuilderTypePicker
+                open={builderPickerOpen}
+                onOpenChange={(open) => {
+                  setBuilderPickerOpen(open);
+                  if (!open) {
+                    setBuilderInsertAt(null);
+                  } else {
+                    setBuilderOpenMenuId(null);
+                    setBuilderOpenPanel(null);
+                  }
+                }}
+                disabled={isMutating}
+                addingType={addingQuestionType}
+                onSelect={(type) => void addQuestion(type, builderInsertAt)}
+              />
             </div>
           </section>
         ) : studentExamForm && !showTeacherTools ? (
@@ -3388,9 +3263,16 @@ export default function HomeClient({
             ) : null}
 
             <header>
-              <h2 className="text-2xl font-bold">{studentExamForm.title || t("common.untitledForm")}</h2>
+              <h2 className="text-2xl font-semibold">{studentExamForm.title || t("common.untitledForm")}</h2>
               {studentExamForm.description ? (
                 <p className="mt-1 text-[var(--tp-text-secondary)]">{studentExamForm.description}</p>
+              ) : null}
+              {studentExamForm.descriptionImagePath ? (
+                <FormAssetImage
+                  path={studentExamForm.descriptionImagePath}
+                  alt={t("home.exam.descriptionImageAlt")}
+                  className="mt-3 overflow-hidden rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-white"
+                />
               ) : null}
             </header>
 

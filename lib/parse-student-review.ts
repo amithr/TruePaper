@@ -11,6 +11,7 @@ export type StudentReviewQuestion = Question & {
 export type StudentReviewPayload = {
   formTitle: string;
   formDescription: string;
+  descriptionImagePath: string | null;
   displayName: string;
   finished: boolean;
   graded: boolean;
@@ -40,6 +41,10 @@ function parseQuestions(raw: unknown): StudentReviewQuestion[] {
       return {
         id: String(o.id ?? ""),
         prompt: String(o.prompt ?? ""),
+        promptImagePath:
+          typeof o.promptImagePath === "string" && o.promptImagePath.trim()
+            ? o.promptImagePath.trim()
+            : null,
         type,
         options,
         correctAnswer: null,
@@ -66,6 +71,10 @@ export function parseStudentReviewPayload(raw: unknown): StudentReviewPayload | 
   return {
     formTitle: typeof o.formTitle === "string" ? o.formTitle : "Form",
     formDescription: typeof o.formDescription === "string" ? o.formDescription : "",
+    descriptionImagePath:
+      typeof o.descriptionImagePath === "string" && o.descriptionImagePath.trim()
+        ? o.descriptionImagePath.trim()
+        : null,
     displayName: typeof o.displayName === "string" ? o.displayName : "",
     finished: o.finished === true,
     graded: o.graded === true,

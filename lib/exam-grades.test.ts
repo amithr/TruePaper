@@ -18,6 +18,7 @@ import type { Question } from "@/lib/forms";
 const mcQuestion: Question = {
   id: "q1",
   prompt: "Pick one",
+  promptImagePath: null,
   type: "multipleChoice",
   options: ["A", "B"],
   correctAnswer: "B",
@@ -113,20 +114,29 @@ describe("questionScoreTone", () => {
 });
 
 describe("gradingStateFor", () => {
-  const text: Pick<Question, "id" | "type" | "correctAnswer"> = {
+  const text: Pick<Question, "id" | "type" | "correctAnswer" | "responseConfig"> = {
     id: "t1",
     type: "text",
     correctAnswer: null,
+    responseConfig: {},
   };
-  const mcWithKey: Pick<Question, "id" | "type" | "correctAnswer"> = {
+  const mcWithKey: Pick<Question, "id" | "type" | "correctAnswer" | "responseConfig"> = {
     id: "m1",
     type: "multipleChoice",
     correctAnswer: "B",
+    responseConfig: {},
   };
-  const mcNoKey: Pick<Question, "id" | "type" | "correctAnswer"> = {
+  const mcNoKey: Pick<Question, "id" | "type" | "correctAnswer" | "responseConfig"> = {
     id: "m2",
     type: "multipleChoice",
     correctAnswer: null,
+    responseConfig: {},
+  };
+  const mathWithKey: Pick<Question, "id" | "type" | "correctAnswer" | "responseConfig"> = {
+    id: "math1",
+    type: "mathInput",
+    correctAnswer: null,
+    responseConfig: { acceptedAnswers: ["7.35"] },
   };
 
   it("is 'needs-grading' when earned is null/undefined", () => {
@@ -136,6 +146,10 @@ describe("gradingStateFor", () => {
 
   it("is 'auto' for MC with an answer key", () => {
     expect(gradingStateFor(mcWithKey, 5)).toBe("auto");
+  });
+
+  it("is 'auto' for math input with accepted answers", () => {
+    expect(gradingStateFor(mathWithKey, 3)).toBe("auto");
   });
 
   it("is 'graded' for text or MC without a key", () => {

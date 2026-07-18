@@ -3,6 +3,7 @@ import { parseResponseValue } from "@/lib/response-types/answers";
 import type {
   LabellingConfig,
   MatchingConfig,
+  MathInputConfig,
   OrderingConfig,
   ShortAnswerConfig,
   TrueFalseConfig,
@@ -25,6 +26,10 @@ export function hasAutogradeKey(question: Pick<Question, "type" | "correctAnswer
   }
   if (type === "shortAnswer") {
     const accepted = (config as ShortAnswerConfig).acceptedAnswers ?? [];
+    return accepted.some((a) => a.trim().length > 0);
+  }
+  if (type === "mathInput") {
+    const accepted = (config as MathInputConfig).acceptedAnswers ?? [];
     return accepted.some((a) => a.trim().length > 0);
   }
   if (type === "matching") {
@@ -73,6 +78,19 @@ export function autogradeEarnedPoints(
     }
     const caseSensitive = config.caseSensitive ?? false;
     const student = normalizeText(value.text, caseSensitive);
+    const match = accepted.some((a) => normalizeText(a, caseSensitive) === student);
+    return match ? maxPts : 0;
+  }
+
+  if (type === "mathInput" && value.type === "mathInput") {
+    const config = question.responseConfig as MathInputConfig;
+    const accepted = config.acceptedAnswers ?? [];
+    const finalAnswer = value.answer.trim() || (value.latex ?? "").trim();
+    if (!finalAnswer || accepted.length === 0) {
+      return 0;
+    }
+    const caseSensitive = config.caseSensitive ?? false;
+    const student = normalizeText(finalAnswer, caseSensitive);
     const match = accepted.some((a) => normalizeText(a, caseSensitive) === student);
     return match ? maxPts : 0;
   }

@@ -20,16 +20,17 @@
 9. [Grading & review](#grading--review)
 10. [Template library](#template-library)
 11. [i18n, legal, chrome](#i18n-legal-chrome)
-12. [List UI (entity lists)](#list-ui-entity-lists)
-13. [Database & migrations](#database--migrations)
-14. [API routes](#api-routes)
-15. [Key files map](#key-files-map)
-16. [Client runtime (hooks, polling, broadcast)](#client-runtime-hooks-polling-broadcast)
-17. [Testing](#testing)
-18. [Environment variables](#environment-variables)
-19. [Deployment notes](#deployment-notes)
-20. [Agent conventions & pitfalls](#agent-conventions--pitfalls)
-21. [Keeping this doc current](#keeping-this-doc-current)
+12. [Typography](#typography)
+13. [List UI (entity lists)](#list-ui-entity-lists)
+14. [Database & migrations](#database--migrations)
+15. [API routes](#api-routes)
+16. [Key files map](#key-files-map)
+17. [Client runtime (hooks, polling, broadcast)](#client-runtime-hooks-polling-broadcast)
+18. [Testing](#testing)
+19. [Environment variables](#environment-variables)
+20. [Deployment notes](#deployment-notes)
+21. [Agent conventions & pitfalls](#agent-conventions--pitfalls)
+22. [Keeping this doc current](#keeping-this-doc-current)
 
 ---
 
@@ -126,6 +127,8 @@ flowchart LR
 
 - `app/[lang]/dashboard/page.tsx` → `components/dashboard/TeacherDashboard.tsx`
 - Running sessions, past sessions, form library sections — all use the **flat entity list** pattern (`docs/LISTS.md`, `components/lists/EntityList.tsx`, CSS `tp-entity-list-*` in `app/globals.css`).
+- **Running sessions rows:** large click-to-copy join-code chip, QR icon (`SessionJoinShare` `qrIcon` variant), waiting state when nobody has joined (no zero-count chips), funnel status pills when active, labeled countdown + progress bar, primary **Open →** to the roster, and Stop session under ⋯. Manual Refresh control removed (list still polls).
+- **Form library rows** show identity (avatar, 2-line title, question count, last run, auto-grade coverage) with a **Start** popover (duration / delivery / late sync) and a lean ⋯ menu (copy start link, save template, delete). Session setup is no longer repeated inline on every row. Summary payload from `GET /api/forms?summary=1` includes `lastRunAt`, `autogradeCount`, and `lastSessionDefaults`.
 - Session list API: `GET /api/teacher/sessions`
 - **Quick-start link:** per-form bookmarkable URL (`/dashboard/forms/[formId]/start?…`) copied from each form row's overflow menu (⋯); opening it (while logged in as the form owner) auto-creates a live session with the encoded duration/delivery settings and redirects to the session roster. Builder: `lib/form-start-link.ts`, page `app/[lang]/dashboard/forms/[formId]/start/page.tsx`.
 
@@ -133,10 +136,13 @@ flowchart LR
 
 - Primary surface: `app/[lang]/HomeClient.tsx` (teacher intent / mode)
 - CRUD: `GET/POST /api/forms`, `PATCH/DELETE /api/forms/[formId]`
-- Questions: `POST /api/forms/[formId]/questions`, `PATCH/DELETE /api/questions/[questionId]`
-- Response type config UI: `components/response-types/BuilderResponseConfig.tsx`
-- Unsaved builder state: `lib/pending-builder-form.ts`
-- **AI exam import:** teacher downloads a Markdown authoring guide (`GET /api/forms/ai-template`), feeds it to ChatGPT/Claude with their content, then uploads the generated JSON (`POST /api/forms/import`) to create an editable form. Parser/guide builder: `lib/ai-exam-import.ts`. UI: download link + "Import exam" upload in `components/dashboard/DashboardFormLibrary.tsx`.
+- Questions: `POST /api/forms/[formId]/questions`, `PATCH/DELETE /api/questions/[questionId]`, reorder via `POST /api/forms/[formId]/questions/reorder`
+- **Redesigned chrome:** autosave indicator (debounced ~800ms), Preview as student, collapsible form details, summary strip (count / points / auto-grade), identity question cards with summary tokens that expand image/response/scoring panels, between-card insert, categorized **Add question** picker (`components/builder/BuilderTypePicker.tsx`). Live teacher feedback moved to the form-library Start popover.
+- Shared teacher question chrome on watch: number + type badge (`TeacherQuestionHeader`).
+- Response type config UI: `components/response-types/BuilderResponseConfig.tsx` / `BuilderQuestionFields.tsx`
+- Unsaved builder state: `lib/pending-builder-form.ts` (open-after-create stash); builder edits autosave to the API
+- **Prompt / description images:** teachers can attach one image to the form description and one image to each question prompt. Files are compressed client-side, uploaded to the public Supabase Storage bucket `form-assets`, and stored as paths on `forms.description_image_path` / `questions.prompt_image_path`. Upload/remove: `POST|DELETE /api/forms/[formId]/assets`. Helpers: `lib/form-assets.ts`; UI: `FormAssetImageEditor.tsx` / `FormAssetImage.tsx`. Students see images on join/resume/exam, review, and teacher watch. AI import and template library do not round-trip images yet.
+- **AI exam import:** teacher opens **AI guide** (popup with steps) or **Import exam** (popup), downloads a Markdown authoring guide (`GET /api/forms/ai-template`), feeds it to ChatGPT/Claude with their content, then uploads the generated JSON (`POST /api/forms/import`). The guide includes a task→type chooser (e.g. calculations → `mathInput` / `photoHandwritten`), rules for readable prompt wording, and instructions not to describe diagrams or put teacher notes / mark schemes in student-facing fields. Parser/guide: `lib/ai-exam-import.ts`. Modals: `AiGuideModal.tsx`, `ImportExamModal.tsx` in the form library.
 
 ### Start & manage live sessions
 
@@ -181,7 +187,7 @@ flowchart LR
 - Mark complete: `POST .../participants/[deviceId]/mark-graded`
 - Single PDF: `GET .../participants/[deviceId]/exam-pdf`
 - Bundle PDF: `GET .../exam-bundle-pdf`
-- Logic: `lib/exam-grades.ts`, `lib/exam-pdf.ts`
+- Logic: `lib/exam-grades.ts`, `lib/exam-pdf.ts`, fonts `lib/exam-pdf-fonts.ts` (IBM Plex)
 
 ### Review share links
 
@@ -405,7 +411,7 @@ flowchart TD
 
 ### Teacher: accept late sync
 
-- Form library checkbox → `POST /api/forms/{formId}/live-sessions` body `acceptLateSync` → `form_sessions.accept_late_sync` (default `true`).
+- Form library Start popover → `POST /api/forms/{formId}/live-sessions` body `acceptLateSync` → `form_sessions.accept_late_sync` (default `true`).
 - Quick-start link query `lateSync=0` when disabled — `lib/form-start-link.ts`.
 
 ### Air alert (optional)
@@ -433,7 +439,7 @@ flowchart TD
 | `matching` | `MatchingResponder.tsx` | Yes | Yes |
 | `ordering` | `OrderingResponder.tsx` | Yes | Yes |
 | `labelling` | `LabellingResponder.tsx` | Yes | Yes |
-| `mathInput` | `MathInputResponder.tsx` | Yes | Yes |
+| `mathInput` | `MathInputResponder.tsx` | Yes (final answer vs `acceptedAnswers`; workings unscored) | Yes |
 
 Dispatcher: `components/response-types/StudentResponseDispatcher.tsx`  
 Teacher watch: `components/response-types/TeacherResponseWatch.tsx`  
@@ -443,7 +449,7 @@ Registry & rubrics: `lib/response-types/registry.ts`, `feedback.ts`, `autograde.
 
 ## Grading & review
 
-- **On finish:** MC / objective types autograded — `lib/response-types/autograde.ts`, restored in `20260605260000_restore_mc_autograde_on_finish.sql`.
+- **On finish:** `autograde_mc_for_response` (SQL) writes `text_grades` for `multipleChoice`, `shortAnswer`, `trueFalse`, and `mathInput` (final answer vs `response_config.acceptedAnswers`). Client mirror: `lib/response-types/autograde.ts`. Matching/ordering/labelling still need teacher grades unless keys are applied manually. Restored/extended from `20260605260000_restore_mc_autograde_on_finish.sql` + `20260718130000_autograde_short_math_tf.sql`.
 - **Manual:** teacher sets text grades via grades API → `lib/exam-grades.ts`.
 - **Tiers / score copy:** `lib/i18n/score-copy.ts`, `components/ScoreMeter.tsx`.
 - **Review page:** token-based public read — `lib/parse-student-review.ts`.
@@ -478,6 +484,23 @@ Registry & rubrics: `lib/response-types/registry.ts`, `feedback.ts`, `autograde.
 
 - `components/ConditionalSiteChrome.tsx` — hides header/footer in exam focus mode
 - `components/SiteFooter.tsx`, `components/BrandMark.tsx`
+
+---
+
+## Typography
+
+App-wide **IBM Plex** (Sans + Mono), loaded via `next/font/google` in `app/[lang]/layout.tsx` (self-hosted at build; subsets `latin` + `cyrillic` for `en`/`uk`).
+
+| Token / class | Role |
+|---------------|------|
+| `--font-plex-sans` / `--font-sans-stack` | UI + human-written content |
+| `--font-plex-mono` / `--font-mono-stack` | Join/resume codes, countdowns, `.tp-stat-value`, points |
+| Weights | **400 / 500 / 600 only** (no 700+) |
+| Student exam prompts | `.tp-exam-prompt` — ~18px, lh 1.6, max-width ~65ch |
+| Buttons / chips | Sans **500** |
+| Live numbers | `font-variant-numeric: tabular-nums` on `.tp-code`, `.tp-countdown`, `.tp-stat-value` |
+
+PDF exports embed the same faces from `@ibm/plex` woff via `lib/exam-pdf-fonts.ts` (used by `lib/exam-pdf.ts`); body text ≥12pt.
 
 ---
 
@@ -537,7 +560,7 @@ Run migrations in **filename order**. Latest migration wins for RPC definitions.
 ### Migration index (newest last)
 
 <details>
-<summary>All 52 migrations — click to expand</summary>
+<summary>All 54 migrations — click to expand</summary>
 
 | File | Summary |
 |------|---------|
@@ -595,6 +618,8 @@ Run migrations in **filename order**. Latest migration wins for RPC definitions.
 | `20260607120000_onboarding_tour.sql` | `profiles.onboarding_tour_completed_at` flag |
 | `20260630120000_feedback_items.sql` | `feedback_items` table + upsert/retract/read/deliver RPCs (queued teacher feedback) |
 | `20260630130000_presence_last_seen.sql` | `live_session_presence.last_seen_at` + keepalive write in `touch_live_session_presence` (silent-disconnect detection) |
+| `20260718120000_form_question_images.sql` | `forms.description_image_path`, `questions.prompt_image_path`, `form-assets` storage bucket + RLS; join/resume/review RPCs include image paths |
+| `20260718130000_autograde_short_math_tf.sql` | Finish autograde also scores `shortAnswer`, `trueFalse`, `mathInput` from `response_config` |
 
 </details>
 
@@ -620,6 +645,7 @@ Run migrations in **filename order**. Latest migration wins for RPC definitions.
 | GET | `/forms/ai-template` | Download AI exam authoring guide (Markdown, public) |
 | POST | `/forms/import` | Create form + questions from AI-generated JSON |
 | PATCH/DELETE | `/forms/[formId]` | Update / delete |
+| POST/DELETE | `/forms/[formId]/assets` | Upload / remove description or question prompt image (`form-assets` bucket) |
 | POST | `/forms/[formId]/questions` | Add question |
 | GET/PUT | `/forms/[formId]/responses` | Authenticated responses (non-live legacy) |
 | POST | `/forms/[formId]/live-sessions` | Start session |
@@ -687,6 +713,7 @@ Dashboard session summaries.
 
 | Concern | Start here |
 |---------|------------|
+| Form / question images | `lib/form-assets.ts`, `components/FormAssetImage*.tsx`, `app/api/forms/[formId]/assets/` |
 | Student + teacher exam UI | `app/[lang]/HomeClient.tsx` |
 | Client session hydration (static home) | `lib/use-client-session-hydration.ts` |
 | Supabase auth cookie detection | `lib/supabase/auth-cookie.ts` |
@@ -708,6 +735,7 @@ Dashboard session summaries.
 | URL intent (join/resume deep links) | `lib/home-url-intent.ts` |
 | Form quick-start links | `lib/form-start-link.ts`, `lib/start-live-session.ts` |
 | Flat entity lists (UI) | `docs/LISTS.md`, `components/lists/EntityList.tsx` |
+| Typography (IBM Plex) | `app/[lang]/layout.tsx`, `app/globals.css`, `lib/exam-pdf-fonts.ts` |
 
 ---
 
@@ -745,6 +773,7 @@ npm run test:coverage
 - Queued feedback: `lib/offline/feedback-queue.test.ts`, `lib/offline/feedback-engine.test.ts`, `lib/feedback-items.test.ts`
 - Sync indicator: `lib/sync-status.test.ts` (state derivation + relative-age buckets)
 - Inactivity heatmap: `lib/roster-activity.test.ts` (level derivation, offline suppression, threshold clamping)
+- Math input + objective autograde: `lib/response-types/autograde.test.ts`, `answers.test.ts`, `autograde-migration.test.ts`, `MathInputResponder.test.tsx`, `StudentResponseDispatcher.test.tsx`, `BuilderResponseConfig.test.tsx`, `TeacherResponseWatch.test.tsx`
 
 ### Playwright (E2E)
 
@@ -825,4 +854,4 @@ Requires `.env.local`: `E2E_TEACHER_EMAIL`, `E2E_TEACHER_PASSWORD`, Supabase URL
 - Duplicate README setup steps here (link to `README.md` for install/deploy basics).
 - Document every component — only entry points and non-obvious wiring.
 
-*Last reviewed: 2026-06-30 (live-session monitoring performance: HTTP broadcasts, coalesced refetch, overview ETag/304, memoized roster, self-ticking countdowns).*
+*Last reviewed: 2026-07-18 (IBM Plex typography system; mathInput autograde).*

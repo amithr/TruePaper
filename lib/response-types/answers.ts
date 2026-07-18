@@ -155,10 +155,23 @@ export function parseResponseValue(
 
   if (normalized === "mathInput") {
     const parsed = parseJsonWire<MathInputValue>(text, "mathInput");
-    if (parsed && typeof parsed.latex === "string") {
-      return { type: "mathInput", latex: parsed.latex };
+    if (parsed) {
+      const hasWorking = typeof parsed.working === "string";
+      const hasAnswer = typeof parsed.answer === "string";
+      const legacyLatex = typeof parsed.latex === "string" ? parsed.latex : "";
+      if (hasWorking || hasAnswer) {
+        return {
+          type: "mathInput",
+          working: hasWorking ? parsed.working : "",
+          answer: hasAnswer ? parsed.answer : "",
+        };
+      }
+      // Legacy single-field `{ latex }` — treat as final answer (that was the only input).
+      if (legacyLatex || parsed.type === "mathInput") {
+        return { type: "mathInput", working: "", answer: legacyLatex };
+      }
     }
-    return { type: "mathInput", latex: text };
+    return { type: "mathInput", working: "", answer: text };
   }
 
   if (normalized === "shortAnswer") {
@@ -229,7 +242,8 @@ export function serializeResponseValue(value: ResponseValue): string {
     case "mathInput":
       return JSON.stringify({
         type: "mathInput",
-        latex: value.latex,
+        working: value.working,
+        answer: value.answer,
       });
     default:
       return "";
@@ -250,8 +264,10 @@ export function previewResponseText(
       break;
     case "shortAnswer":
     case "extendedWritten":
+      text = value.text;
+      break;
     case "mathInput":
-      text = value.type === "mathInput" ? value.latex : value.text;
+      text = value.answer.trim() || value.working;
       break;
     case "structuredMultiPart":
       text = Object.values(value.parts).join(" ");
@@ -316,8 +332,9 @@ export function isResponseAnswered(
       return value.choice.trim().length > 0;
     case "shortAnswer":
     case "extendedWritten":
+      return value.text.trim().length > 0;
     case "mathInput":
-      return (value.type === "mathInput" ? value.latex : value.text).trim().length > 0;
+      return value.answer.trim().length > 0 || value.working.trim().length > 0;
     case "structuredMultiPart":
       return Object.values(value.parts).some((part) => part.trim().length > 0);
     case "annotateSource":

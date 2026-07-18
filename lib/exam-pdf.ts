@@ -2,6 +2,7 @@ import PDFDocument from "pdfkit";
 
 import { formatPointsScore } from "@/lib/exam-grades";
 import type { Form, Question } from "@/lib/forms";
+import { PDF_BODY_SIZE, PDF_FONT, registerExamPdfFonts } from "@/lib/exam-pdf-fonts";
 import type { ExamPdfSession, ExamPdfStudent } from "@/lib/exam-pdf-load";
 
 const PAGE_MARGIN = 56;
@@ -104,14 +105,18 @@ function writeKeyValueRow(doc: ExamPdfDoc, pairs: Array<[string, string]>): void
   let maxBottom = startY;
   pairs.forEach(([label, value], index) => {
     const x = PAGE_MARGIN + index * colWidth;
+    const valueFont =
+      label === "Join code" || label === "Session code"
+        ? PDF_FONT.monoSemiBold
+        : PDF_FONT.regular;
     doc
-      .font("Helvetica-Bold")
+      .font(PDF_FONT.semibold)
       .fontSize(8)
       .fillColor(COLOR_MUTED)
       .text(label.toUpperCase(), x, startY, { width: colWidth - 8 });
     doc
-      .font("Helvetica")
-      .fontSize(11)
+      .font(valueFont)
+      .fontSize(PDF_BODY_SIZE)
       .fillColor(COLOR_TEXT)
       .text(value || "—", x, doc.y, { width: colWidth - 8 });
     if (doc.y > maxBottom) {
@@ -126,7 +131,7 @@ function writeKeyValueRow(doc: ExamPdfDoc, pairs: Array<[string, string]>): void
 function badge(doc: ExamPdfDoc, label: string, color: string): void {
   const padX = 8;
   const padY = 3;
-  doc.font("Helvetica-Bold").fontSize(9);
+  doc.font(PDF_FONT.semibold).fontSize(9);
   const labelWidth = doc.widthOfString(label);
   const width = labelWidth + padX * 2;
   const height = 16;
@@ -144,11 +149,11 @@ function badge(doc: ExamPdfDoc, label: string, color: string): void {
 }
 
 function questionHeader(doc: ExamPdfDoc, question: Question, index: number, earned: number | null): void {
-  doc.font("Helvetica-Bold").fontSize(12).fillColor(COLOR_TEXT);
+  doc.font(PDF_FONT.semibold).fontSize(12).fillColor(COLOR_TEXT);
   doc.text(`Q${index + 1}. ${question.prompt || "Untitled question"}`, PAGE_MARGIN, doc.y, {
     width: CONTENT_WIDTH,
   });
-  doc.font("Helvetica").fontSize(9).fillColor(COLOR_MUTED);
+  doc.font(PDF_FONT.regular).fontSize(9).fillColor(COLOR_MUTED);
   const typeLabel =
     question.type === "multipleChoice" ? "Multiple choice" : "Written response";
   const pointsLabel =
@@ -187,7 +192,7 @@ function renderMultipleChoiceAnswer(
     }
     doc.restore();
 
-    doc.font("Helvetica").fontSize(11).fillColor(COLOR_TEXT);
+    doc.font(PDF_FONT.regular).fontSize(PDF_BODY_SIZE).fillColor(COLOR_TEXT);
     const parts: string[] = [option || "(blank option)"];
     if (isCorrect) {
       parts.push("· answer key");
@@ -201,12 +206,12 @@ function renderMultipleChoiceAnswer(
     studentAnswer.trim() &&
     !question.options.some((option) => option === studentAnswer)
   ) {
-    doc.font("Helvetica-Oblique").fontSize(10).fillColor(COLOR_MUTED);
+    doc.font(PDF_FONT.italic).fontSize(10).fillColor(COLOR_MUTED);
     doc.text(`Student chose: ${studentAnswer}`, PAGE_MARGIN + 4, doc.y, {
       width: CONTENT_WIDTH - 8,
     });
   } else if (!studentAnswer.trim()) {
-    doc.font("Helvetica-Oblique").fontSize(10).fillColor(COLOR_MUTED);
+    doc.font(PDF_FONT.italic).fontSize(10).fillColor(COLOR_MUTED);
     doc.text("Student did not pick an option.", PAGE_MARGIN + 4, doc.y, {
       width: CONTENT_WIDTH - 8,
     });
@@ -219,9 +224,9 @@ function renderTextAnswer(doc: ExamPdfDoc, answer: string): void {
   const padding = 10;
   const innerWidth = CONTENT_WIDTH - padding * 2;
 
-  const fontName = trimmed ? "Helvetica" : "Helvetica-Oblique";
+  const fontName = trimmed ? PDF_FONT.regular : PDF_FONT.italic;
   const body = trimmed || "No answer submitted.";
-  doc.font(fontName).fontSize(11);
+  doc.font(fontName).fontSize(PDF_BODY_SIZE);
   const textHeight = doc.heightOfString(body, { width: innerWidth });
   const boxHeight = textHeight + padding * 2;
 
@@ -240,7 +245,7 @@ function renderTextAnswer(doc: ExamPdfDoc, answer: string): void {
     .stroke();
   doc.restore();
 
-  doc.font(fontName).fontSize(11).fillColor(trimmed ? COLOR_TEXT : COLOR_MUTED);
+  doc.font(fontName).fontSize(PDF_BODY_SIZE).fillColor(trimmed ? COLOR_TEXT : COLOR_MUTED);
   doc.text(body, PAGE_MARGIN + padding, boxTop + padding, { width: innerWidth });
 
   doc.x = PAGE_MARGIN;
@@ -255,9 +260,9 @@ function renderFeedback(doc: ExamPdfDoc, message: string): void {
   const padding = 10;
   const innerWidth = CONTENT_WIDTH - padding * 2;
 
-  doc.font("Helvetica-Bold").fontSize(9);
+  doc.font(PDF_FONT.semibold).fontSize(9);
   const titleHeight = doc.heightOfString("Teacher feedback", { width: innerWidth });
-  doc.font("Helvetica").fontSize(11);
+  doc.font(PDF_FONT.regular).fontSize(PDF_BODY_SIZE);
   const bodyHeight = doc.heightOfString(trimmed, { width: innerWidth });
   const boxHeight = padding * 2 + titleHeight + 4 + bodyHeight;
 
@@ -277,13 +282,13 @@ function renderFeedback(doc: ExamPdfDoc, message: string): void {
   doc.restore();
 
   doc
-    .font("Helvetica-Bold")
+    .font(PDF_FONT.semibold)
     .fontSize(9)
     .fillColor(COLOR_ACCENT)
     .text("TEACHER FEEDBACK", PAGE_MARGIN + padding, boxTop + padding, { width: innerWidth });
   doc
-    .font("Helvetica")
-    .fontSize(11)
+    .font(PDF_FONT.regular)
+    .fontSize(PDF_BODY_SIZE)
     .fillColor(COLOR_TEXT)
     .text(trimmed, PAGE_MARGIN + padding, boxTop + padding + titleHeight + 4, {
       width: innerWidth,
@@ -300,7 +305,7 @@ function pageFooter(doc: ExamPdfDoc, session: ExamPdfSession): void {
     const y = doc.page.height - 36;
     doc.save();
     doc
-      .font("Helvetica")
+      .font(PDF_FONT.regular)
       .fontSize(8)
       .fillColor(COLOR_FAINT)
       .text(`${session.formTitle} · Code ${session.joinCode}`, PAGE_MARGIN, y, {
@@ -318,9 +323,9 @@ function pageFooter(doc: ExamPdfDoc, session: ExamPdfSession): void {
 }
 
 function writeStudentHeader(doc: ExamPdfDoc, student: ExamPdfStudent): void {
-  doc.font("Helvetica-Bold").fontSize(20).fillColor(COLOR_TEXT);
+  doc.font(PDF_FONT.semibold).fontSize(20).fillColor(COLOR_TEXT);
   doc.text(studentDisplayName(student), PAGE_MARGIN, doc.y, { width: CONTENT_WIDTH });
-  doc.font("Helvetica").fontSize(10).fillColor(COLOR_MUTED);
+  doc.font(PDF_FONT.regular).fontSize(10).fillColor(COLOR_MUTED);
   doc.text(`Device ${maskDeviceId(student.anonymousSessionId)}`, PAGE_MARGIN, doc.y, {
     width: CONTENT_WIDTH,
   });
@@ -372,14 +377,14 @@ function writeStudentSection(
 ): void {
   writeStudentHeader(doc, student);
   if (!student.hasJoined) {
-    doc.font("Helvetica-Oblique").fontSize(11).fillColor(COLOR_MUTED);
+    doc.font(PDF_FONT.italic).fontSize(PDF_BODY_SIZE).fillColor(COLOR_MUTED);
     doc.text("This student has not joined the session yet.", PAGE_MARGIN, doc.y, {
       width: CONTENT_WIDTH,
     });
     return;
   }
   if (form.questions.length === 0) {
-    doc.font("Helvetica-Oblique").fontSize(11).fillColor(COLOR_MUTED);
+    doc.font(PDF_FONT.italic).fontSize(PDF_BODY_SIZE).fillColor(COLOR_MUTED);
     doc.text("This form has no questions.", PAGE_MARGIN, doc.y, { width: CONTENT_WIDTH });
     return;
   }
@@ -392,13 +397,13 @@ function writeSessionCover(
   form: Form,
   students: ExamPdfStudent[],
 ): void {
-  doc.font("Helvetica-Bold").fontSize(10).fillColor(COLOR_ACCENT);
+  doc.font(PDF_FONT.semibold).fontSize(10).fillColor(COLOR_ACCENT);
   doc.text("SESSION RESULTS", PAGE_MARGIN, doc.y, { width: CONTENT_WIDTH });
   spacer(doc, 0.2);
-  doc.font("Helvetica-Bold").fontSize(24).fillColor(COLOR_TEXT);
+  doc.font(PDF_FONT.semibold).fontSize(24).fillColor(COLOR_TEXT);
   doc.text(session.formTitle, PAGE_MARGIN, doc.y, { width: CONTENT_WIDTH });
   if (form.description?.trim()) {
-    doc.font("Helvetica").fontSize(11).fillColor(COLOR_MUTED);
+    doc.font(PDF_FONT.regular).fontSize(PDF_BODY_SIZE).fillColor(COLOR_MUTED);
     doc.text(form.description.trim(), PAGE_MARGIN, doc.y, { width: CONTENT_WIDTH });
   }
   spacer(doc, 0.6);
@@ -416,12 +421,12 @@ function writeSessionCover(
     ["Graded", String(graded)],
   ]);
   hr(doc);
-  doc.font("Helvetica-Bold").fontSize(13).fillColor(COLOR_TEXT);
+  doc.font(PDF_FONT.semibold).fontSize(13).fillColor(COLOR_TEXT);
   doc.text("Students in this bundle", PAGE_MARGIN, doc.y, { width: CONTENT_WIDTH });
   spacer(doc, 0.4);
 
   if (students.length === 0) {
-    doc.font("Helvetica-Oblique").fontSize(11).fillColor(COLOR_MUTED);
+    doc.font(PDF_FONT.italic).fontSize(PDF_BODY_SIZE).fillColor(COLOR_MUTED);
     doc.text("No students have joined this session.", PAGE_MARGIN, doc.y, { width: CONTENT_WIDTH });
     return;
   }
@@ -430,7 +435,7 @@ function writeSessionCover(
   const colStatus = CONTENT_WIDTH * 0.25;
   const colScore = CONTENT_WIDTH * 0.25;
   const headerY = doc.y;
-  doc.font("Helvetica-Bold").fontSize(9).fillColor(COLOR_MUTED);
+  doc.font(PDF_FONT.semibold).fontSize(9).fillColor(COLOR_MUTED);
   doc.text("STUDENT", PAGE_MARGIN, headerY, { width: colName, lineBreak: false });
   doc.text("STATUS", PAGE_MARGIN + colName, headerY, { width: colStatus, lineBreak: false });
   doc.text("SCORE", PAGE_MARGIN + colName + colStatus, headerY, {
@@ -444,7 +449,7 @@ function writeSessionCover(
   students.forEach((student) => {
     ensureSpace(doc, 22);
     const rowY = doc.y;
-    doc.font("Helvetica").fontSize(11).fillColor(COLOR_TEXT);
+    doc.font(PDF_FONT.regular).fontSize(PDF_BODY_SIZE).fillColor(COLOR_TEXT);
     doc.text(studentDisplayName(student), PAGE_MARGIN, rowY, { width: colName, lineBreak: false });
     const status = statusLabel(student);
     doc.fillColor(status.color);
@@ -466,7 +471,7 @@ function writeSessionCover(
 }
 
 function createDoc(): ExamPdfDoc {
-  return new PDFDocument({
+  const doc = new PDFDocument({
     size: "LETTER",
     margins: {
       top: PAGE_MARGIN,
@@ -480,6 +485,9 @@ function createDoc(): ExamPdfDoc {
     },
     bufferPages: true,
   });
+  registerExamPdfFonts(doc);
+  doc.font(PDF_FONT.regular);
+  return doc;
 }
 
 async function bufferDoc(doc: ExamPdfDoc): Promise<Buffer> {
@@ -499,12 +507,12 @@ export async function buildSingleStudentExamPdf(args: {
 }): Promise<Buffer> {
   const { session, form, student } = args;
   const doc = createDoc();
-  doc.font("Helvetica-Bold").fontSize(10).fillColor(COLOR_ACCENT);
+  doc.font(PDF_FONT.semibold).fontSize(10).fillColor(COLOR_ACCENT);
   doc.text("STUDENT EXAM", PAGE_MARGIN, doc.y, { width: CONTENT_WIDTH });
   spacer(doc, 0.2);
-  doc.font("Helvetica-Bold").fontSize(20).fillColor(COLOR_TEXT);
+  doc.font(PDF_FONT.semibold).fontSize(20).fillColor(COLOR_TEXT);
   doc.text(session.formTitle, PAGE_MARGIN, doc.y, { width: CONTENT_WIDTH });
-  doc.font("Helvetica").fontSize(10).fillColor(COLOR_MUTED);
+  doc.font(PDF_FONT.monoSemiBold).fontSize(PDF_BODY_SIZE).fillColor(COLOR_MUTED);
   doc.text(`Session code ${session.joinCode}`, PAGE_MARGIN, doc.y, { width: CONTENT_WIDTH });
   spacer(doc, 0.6);
   writeStudentSection(doc, form, student);

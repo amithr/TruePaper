@@ -35,17 +35,41 @@ export type OverflowMenuItem =
       type: "custom";
       key: string;
       node: ReactNode;
+    }
+  | {
+      type: "divider";
+      key: string;
     };
 
 type Props = {
   label: string;
   items: OverflowMenuItem[];
   className?: string;
+  /** Controlled open state. When set, pair with `onOpenChange`. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** When false, omit the trailing Close row (click-outside still dismisses). Default true. */
+  showClose?: boolean;
 };
 
-export function OverflowMenu({ label, items, className = "" }: Props) {
+export function OverflowMenu({
+  label,
+  items,
+  className = "",
+  open: openProp,
+  onOpenChange,
+  showClose = true,
+}: Props) {
   const t = useTranslations();
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const controlled = openProp !== undefined;
+  const open = controlled ? openProp : uncontrolledOpen;
+  const setOpen = (next: boolean) => {
+    if (!controlled) {
+      setUncontrolledOpen(next);
+    }
+    onOpenChange?.(next);
+  };
   const menuId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -87,7 +111,7 @@ export function OverflowMenu({ label, items, className = "" }: Props) {
   }
 
   return (
-    <div ref={rootRef} className={className}>
+    <div ref={rootRef} className={className} onClick={(event) => event.stopPropagation()}>
       <button
         type="button"
         // eslint-disable-next-line react-hooks/refs -- Floating UI callback ref setter
@@ -97,7 +121,10 @@ export function OverflowMenu({ label, items, className = "" }: Props) {
         aria-expanded={open}
         aria-haspopup="menu"
         aria-controls={menuId}
-        onClick={() => setOpen((value) => !value)}
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen(!open);
+        }}
       >
         <span className="sr-only">{label}</span>
         <svg
@@ -122,63 +149,69 @@ export function OverflowMenu({ label, items, className = "" }: Props) {
             role="menu"
             className="tp-overflow-menu tp-overflow-menu--portal"
             style={floatingStyles}
+            onClick={(event) => event.stopPropagation()}
           >
-          {items.map((item, index) => {
-            if (item.type === "custom") {
+            {items.map((item, index) => {
+              if (item.type === "divider") {
+                return <div key={item.key} className="tp-overflow-menu__divider" role="separator" />;
+              }
+              if (item.type === "custom") {
+                return (
+                  <div
+                    key={item.key}
+                    className="px-3 py-2"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    {item.node}
+                  </div>
+                );
+              }
+              if (item.type === "link") {
+                return (
+                  <a
+                    key={`${item.label}-${index}`}
+                    role="menuitem"
+                    href={item.href}
+                    download={item.download}
+                    target={item.target}
+                    rel={item.rel}
+                    className={`tp-overflow-menu__item ${focusRing}`}
+                    onClick={() => setOpen(false)}
+                  >
+                    {item.label}
+                  </a>
+                );
+              }
               return (
-                <div
-                  key={item.key}
-                  className="px-3 py-2"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  {item.node}
-                </div>
-              );
-            }
-            if (item.type === "link") {
-              return (
-                <a
+                <button
                   key={`${item.label}-${index}`}
+                  type="button"
                   role="menuitem"
-                  href={item.href}
-                  download={item.download}
-                  target={item.target}
-                  rel={item.rel}
-                  className={`tp-overflow-menu__item ${focusRing}`}
-                  onClick={() => setOpen(false)}
+                  disabled={item.disabled}
+                  onClick={() => {
+                    item.onClick();
+                    if (!item.keepOpen) {
+                      setOpen(false);
+                    }
+                  }}
+                  className={`tp-overflow-menu__item ${
+                    item.tone === "danger" ? "tp-overflow-menu__item--danger" : ""
+                  } ${focusRing}`}
                 >
                   {item.label}
-                </a>
+                </button>
               );
-            }
-            return (
+            })}
+            {showClose ? (
               <button
-                key={`${item.label}-${index}`}
                 type="button"
                 role="menuitem"
-                disabled={item.disabled}
-                onClick={() => {
-                  item.onClick();
-                  if (!item.keepOpen) {
-                    setOpen(false);
-                  }
-                }}
-                className={`tp-overflow-menu__item ${
-                  item.tone === "danger" ? "tp-overflow-menu__item--danger" : ""
-                } ${focusRing}`}
+                className={`tp-overflow-menu__item tp-overflow-menu__item--muted ${focusRing}`}
+                onClick={() => setOpen(false)}
               >
-                {item.label}
+                {t("common.close")}
               </button>
-            );
-          })}
-          <button
-            type="button"
-            role="menuitem"
-            className={`tp-overflow-menu__item tp-overflow-menu__item--muted ${focusRing}`}
-            onClick={() => setOpen(false)}
-          >
-            {t("common.close")}
-          </button>
+            ) : null}
           </div>
         </FloatingPortal>
       ) : null}

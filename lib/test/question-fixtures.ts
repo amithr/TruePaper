@@ -10,6 +10,7 @@ export function makeQuestion(
   return {
     id: "q-fixture-1",
     prompt: "Fixture question?",
+    promptImagePath: null,
     type,
     options: [],
     correctAnswer: null,

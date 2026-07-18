@@ -120,6 +120,7 @@ export function deriveInteractionTypes(snapshot: TemplateSnapshot): string[] {
     snapshot.questions.map((q, i) => ({
       id: `snap-${i}`,
       prompt: q.prompt,
+      promptImagePath: null,
       type: q.type as Form["questions"][0]["type"],
       options: q.options,
       correctAnswer: q.correctAnswer,

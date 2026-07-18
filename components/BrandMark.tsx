@@ -30,7 +30,7 @@ export function BrandMark({
       </span>
       {showText ? (
         <span
-          className={`text-base font-bold tracking-tight sm:text-lg ${
+          className={`text-base font-semibold tracking-tight sm:text-lg ${
             variant === "onDark" ? "text-white" : "text-[var(--tp-text)]"
           }`}
         >

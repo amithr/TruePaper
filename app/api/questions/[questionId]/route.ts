@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { FORM_ASSETS_BUCKET } from "@/lib/form-assets";
 import type { QuestionType } from "@/lib/forms";
 import { parseResponseConfig } from "@/lib/response-types/registry";
 import { isValidQuestionType } from "@/lib/response-types/valid-types";
@@ -101,6 +102,22 @@ export async function DELETE(_: Request, { params }: Params) {
 
   const { questionId } = await params;
 
+  const { data: existing, error: existingError } = await supabase
+    .from("questions")
+    .select("id, prompt_image_path")
+    .eq("id", questionId)
+    .maybeSingle();
+
+  if (existingError) {
+    return NextResponse.json({ error: existingError.message }, { status: 500 });
+  }
+  if (!existing) {
+    return NextResponse.json(
+      { error: "Question not found or you do not have access." },
+      { status: 404 },
+    );
+  }
+
   const { data, error } = await supabase
     .from("questions")
     .delete()
@@ -116,6 +133,12 @@ export async function DELETE(_: Request, { params }: Params) {
       { error: "Question not found or you do not have access." },
       { status: 404 },
     );
+  }
+
+  const imagePath =
+    typeof existing.prompt_image_path === "string" ? existing.prompt_image_path : null;
+  if (imagePath) {
+    await supabase.storage.from(FORM_ASSETS_BUCKET).remove([imagePath]);
   }
 
   return NextResponse.json({ ok: true });

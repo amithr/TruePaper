@@ -6,6 +6,7 @@ import { useLocaleRouter as useRouter } from "@/lib/i18n/client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Breadcrumbs } from "@/components/Breadcrumbs";
+import { FormAssetImage } from "@/components/FormAssetImage";
 import { HelpHint } from "@/components/HelpHint";
 import { LoadingBar } from "@/components/LoadingBar";
 import { OverflowMenu, type OverflowMenuItem } from "@/components/OverflowMenu";
@@ -14,6 +15,7 @@ import {
   canvasFeedbackPayload,
   TeacherResponseWatch,
 } from "@/components/response-types/TeacherResponseWatch";
+import { TeacherQuestionHeader } from "@/components/response-types/TeacherQuestionHeader";
 import { ScoreRing } from "@/components/ScoreMeter";
 import { StudentReviewShare } from "@/components/StudentReviewShare";
 import { TeacherFeedbackComposer } from "@/components/TeacherFeedbackComposer";
@@ -796,7 +798,7 @@ export default function WatchStudentExamPage() {
                 { label: titleName },
               ]}
             />
-            <h1 className="mt-3 truncate text-2xl font-bold tracking-tight">{titleName}</h1>
+            <h1 className="mt-3 truncate text-2xl font-semibold tracking-tight">{titleName}</h1>
             <p className="mt-1 text-sm text-[var(--tp-text-secondary)]">
               {s.sessionOpen
                 ? noTimeLimit
@@ -966,19 +968,26 @@ export default function WatchStudentExamPage() {
 
         <section className="tp-card p-6">
           <header>
-            <h2 className="flex items-center gap-1.5 text-xl font-bold">
+            <h2 className="flex items-center gap-1.5 text-xl font-semibold">
               {snapshot.form.title || t("common.untitledForm")}
               {snapshot.form.liveTeacherFeedbackEnabled ? (
                 <HelpHint id="watch-live-feedback" text={t("help.watch.liveFeedback")} />
               ) : null}
             </h2>
             {snapshot.form.description ? (
-              <p className="mt-1 text-sm text-zinc-600">{snapshot.form.description}</p>
+              <p className="mt-1 text-sm text-[var(--tp-text-secondary)]">{snapshot.form.description}</p>
+            ) : null}
+            {snapshot.form.descriptionImagePath ? (
+              <FormAssetImage
+                path={snapshot.form.descriptionImagePath}
+                alt={t("home.exam.descriptionImageAlt")}
+                className="mt-3 overflow-hidden rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-white"
+              />
             ) : null}
           </header>
 
           {snapshot.form.questions.length === 0 ? (
-            <p className="mt-4 rounded-lg border border-dashed border-zinc-300 p-4 text-sm text-zinc-600">
+            <p className="mt-4 rounded-lg border border-dashed border-[var(--tp-border)] p-4 text-sm text-[var(--tp-text-secondary)]">
               {t("session.watch.noQuestions")}
             </p>
           ) : (
@@ -1010,67 +1019,81 @@ export default function WatchStudentExamPage() {
                     focusQuestionFromUrl === question.id ? " tp-watch-q--hand-focus" : ""
                   }`}
                 >
-                  <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <h3 className="text-sm font-semibold text-zinc-900">
-                      {index + 1}. {question.prompt || t("common.untitledQuestion")}
-                    </h3>
-                    {st.finished ? (
-                      gradingState === "needs-grading" ? (
-                        <span className="tp-grade-pill tp-grade-pill--needs">{t("session.watch.needsGradingPill")}</span>
-                      ) : gradingState === "auto" ? (
-                        <span className="tp-grade-pill tp-grade-pill--auto">
-                          {t("session.watch.autoPill", { earned: serverGrade ?? 0, possible: question.points })}
-                        </span>
-                      ) : (
-                        <span className="tp-grade-pill tp-grade-pill--graded">
-                          {t("session.watch.gradedPill", { earned: serverGrade ?? 0, possible: question.points })}
-                        </span>
-                      )
-                    ) : null}
-                  </div>
+                  <TeacherQuestionHeader
+                    index={index}
+                    type={question.type}
+                    title={question.prompt || t("common.untitledQuestion")}
+                    trailing={
+                      st.finished ? (
+                        gradingState === "needs-grading" ? (
+                          <span className="tp-grade-pill tp-grade-pill--needs">
+                            {t("session.watch.needsGradingPill")}
+                          </span>
+                        ) : gradingState === "auto" ? (
+                          <span className="tp-grade-pill tp-grade-pill--auto">
+                            {t("session.watch.autoPill", {
+                              earned: serverGrade ?? 0,
+                              possible: question.points,
+                            })}
+                          </span>
+                        ) : (
+                          <span className="tp-grade-pill tp-grade-pill--graded">
+                            {t("session.watch.gradedPill", {
+                              earned: serverGrade ?? 0,
+                              possible: question.points,
+                            })}
+                          </span>
+                        )
+                      ) : null
+                    }
+                  />
 
-                  <details className="mt-3 mb-4 rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] px-3 py-2">
-                    <summary className={`cursor-pointer text-sm font-medium text-[var(--tp-text-secondary)] ${focusRing}`}>
-                      {t("session.watch.adjustPoints")}
-                    </summary>
-                    <div className={`${ui.questionScoring} mt-3 flex flex-wrap items-end gap-3`}>
-                      <div>
-                        <p className={ui.sectionTitle}>{t("session.watch.scoring")}</p>
-                        <label className={`${ui.label} mt-1.5 block`}>
-                          {t("session.watch.points")}
-                          <div className="mt-1 flex items-center gap-2">
-                            <input
-                              type="number"
-                              min={1}
-                              max={1000}
-                              value={pointsDraftsByQuestionId[question.id] ?? question.points}
-                              onChange={(event) =>
-                                setPointsDraftsByQuestionId((current) => ({
-                                  ...current,
-                                  [question.id]: Math.max(
-                                    1,
-                                    Math.min(1000, Number(event.target.value) || 1),
-                                  ),
-                                }))
-                              }
-                              className={ui.pointsInput}
-                            />
-                            <span className="text-sm font-medium text-[var(--tp-text-muted)]">pts</span>
-                          </div>
-                        </label>
+                  {question.promptImagePath ? (
+                    <FormAssetImage
+                      path={question.promptImagePath}
+                      alt={t("home.exam.promptImageAlt")}
+                      className="mt-3 overflow-hidden rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-white"
+                    />
+                  ) : null}
+
+                  <div
+                    className={`${ui.questionScoring} mt-3 mb-4 flex flex-wrap items-end gap-3 rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] px-3 py-2`}
+                  >
+                    <label className={`${ui.label} block`}>
+                      {t("session.watch.points")}
+                      <div className="mt-1 flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={1}
+                          max={1000}
+                          value={pointsDraftsByQuestionId[question.id] ?? question.points}
+                          onChange={(event) =>
+                            setPointsDraftsByQuestionId((current) => ({
+                              ...current,
+                              [question.id]: Math.max(
+                                1,
+                                Math.min(1000, Number(event.target.value) || 1),
+                              ),
+                            }))
+                          }
+                          className={ui.pointsInput}
+                        />
+                        <span className="text-sm font-medium text-[var(--tp-text-muted)]">
+                          {t("home.builder.pts")}
+                        </span>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => void saveQuestionPoints(question)}
-                        disabled={savingPointsQuestionId === question.id}
-                        className={`${ui.btnSecondary} min-h-11 px-3 text-sm disabled:opacity-50`}
-                      >
-                        {savingPointsQuestionId === question.id
-                          ? t("common.saving")
-                          : t("session.watch.savePoints")}
-                      </button>
-                    </div>
-                  </details>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => void saveQuestionPoints(question)}
+                      disabled={savingPointsQuestionId === question.id}
+                      className={`${ui.btnSecondary} min-h-11 px-3 text-sm disabled:opacity-50`}
+                    >
+                      {savingPointsQuestionId === question.id
+                        ? t("common.saving")
+                        : t("session.watch.savePoints")}
+                    </button>
+                  </div>
 
                   {st.finished ? (
                     <div className="mt-3 mb-4 rounded-[var(--tp-radius-sm)] border border-violet-200 bg-violet-50/50 px-3 py-3">
@@ -1262,7 +1285,7 @@ export default function WatchStudentExamPage() {
         </section>
 
         {snapshot.updatedAt ? (
-          <p className="text-center text-xs text-zinc-500">
+          <p className="text-center text-xs text-[var(--tp-text-muted)]">
             {t("session.watch.lastServerUpdate", {
               datetime: new Date(snapshot.updatedAt).toLocaleString(),
             })}

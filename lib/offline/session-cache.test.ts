@@ -21,12 +21,14 @@ const miniForm: Form = {
   id: "form-1",
   title: "Quiz",
   description: "",
+  descriptionImagePath: null,
   createdBy: null,
   liveTeacherFeedbackEnabled: false,
   questions: [
     {
       id: "q1",
       prompt: "Name?",
+      promptImagePath: null,
       type: "text",
       options: [],
       correctAnswer: null,

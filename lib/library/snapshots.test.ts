@@ -9,12 +9,14 @@ describe("formToSnapshot", () => {
       id: "f1",
       title: "Algebra quiz",
       description: "Unit 3",
+      descriptionImagePath: null,
       createdBy: "u1",
       liveTeacherFeedbackEnabled: true,
       questions: [
         {
           id: "q1",
           prompt: "Solve x",
+          promptImagePath: null,
           type: "mathInput",
           options: [],
           correctAnswer: null,
@@ -38,6 +40,7 @@ describe("questionToSnapshot", () => {
       {
         id: "q1",
         prompt: "TF",
+        promptImagePath: null,
         type: "trueFalse",
         options: [],
         correctAnswer: null,

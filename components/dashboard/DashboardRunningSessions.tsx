@@ -1,28 +1,34 @@
 "use client";
 
-import { LocaleLink as Link } from "@/lib/i18n/client";
+import { LocaleLink as Link, useLocaleRouter as useRouter } from "@/lib/i18n/client";
 import { useCallback, useEffect, useState } from "react";
 
 import { deferEffect } from "@/lib/defer-effect";
 
 import { ConfirmButton } from "@/components/ConfirmButton";
-import { HelpHint } from "@/components/HelpHint";
+import { LiveCountdown } from "@/components/LiveCountdown";
 import {
   EntityList,
   EntityListPanel,
   EntityListRow,
-  EntityListToolbar,
 } from "@/components/lists/EntityList";
+import { OverflowMenu, type OverflowMenuItem } from "@/components/OverflowMenu";
 import { SessionJoinShare } from "@/components/SessionJoinShare";
-import { useTranslations } from "@/lib/i18n/I18nProvider";
+import { copyToClipboard } from "@/lib/copy-to-clipboard";
+import { useLocale, useTranslations } from "@/lib/i18n/I18nProvider";
 import { notifyStudentExamResumed } from "@/lib/notify-student-exam-resumed";
-import { isNoTimeLimitSession } from "@/lib/session-window";
+import {
+  getSessionDurationMinutes,
+  isNoTimeLimitSession,
+} from "@/lib/session-window";
+import { formatSessionCountdown, maskDashboardDeviceId } from "@/lib/session-countdown";
+import { buildStudentJoinUrl } from "@/lib/student-join-url";
 import type { SuspendedStudentRow, TeacherSessionSummary } from "@/lib/teacher-sessions";
 import { usePollingRefresh } from "@/lib/use-polling-refresh";
-import { focusRing, ui } from "@/lib/ui";
+import { focusRing } from "@/lib/ui";
 import { messageForBackgroundRefreshError } from "@/lib/background-network-error";
 import { requestJson } from "@/lib/request-json";
-import { formatSessionCountdown, maskDashboardDeviceId } from "@/lib/session-countdown";
+import { toast } from "sonner";
 
 type Props = {
   initialSessions: TeacherSessionSummary[];
@@ -36,11 +42,14 @@ export function DashboardRunningSessions({
   onError,
 }: Props) {
   const t = useTranslations();
+  const locale = useLocale();
+  const router = useRouter();
   const [sessions, setSessions] = useState(initialSessions);
   const [suspensionsBySession, setSuspensionsBySession] = useState(initialSuspensions);
-  const [nowTick, setNowTick] = useState(() => Date.now());
   const [stoppingSessionId, setStoppingSessionId] = useState<string | null>(null);
-  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(() => Date.now());
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
+  const [origin] = useState(() => (typeof window !== "undefined" ? window.location.origin : ""));
 
   const refreshActive = useCallback(async () => {
     try {
@@ -50,7 +59,6 @@ export function DashboardRunningSessions({
       }>("/api/teacher/sessions?scope=active");
       setSessions(data.sessions);
       setSuspensionsBySession(data.suspensionsBySession ?? {});
-      setLastSyncedAt(Date.now());
       onError("");
     } catch (e) {
       const message = messageForBackgroundRefreshError(
@@ -70,17 +78,20 @@ export function DashboardRunningSessions({
     });
   }, [initialSessions, initialSuspensions]);
 
-  useEffect(() => {
-    const id = window.setInterval(() => setNowTick(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, []);
-
   usePollingRefresh({
     enabled: sessions.length > 0,
     intervalMs: 5000,
     immediate: false,
     onRefresh: () => void refreshActive(),
   });
+
+  useEffect(() => {
+    if (!copiedCodeId) {
+      return;
+    }
+    const id = window.setTimeout(() => setCopiedCodeId(null), 1500);
+    return () => window.clearTimeout(id);
+  }, [copiedCodeId]);
 
   const resumeStudent = async (liveSessionId: string, deviceId: string) => {
     try {
@@ -102,6 +113,7 @@ export function DashboardRunningSessions({
       await requestJson<{ ok: true }>(`/api/forms/live-sessions/${liveSessionId}/stop`, {
         method: "POST",
       });
+      setOpenMenuId(null);
       await refreshActive();
     } catch (e) {
       onError(e instanceof Error ? e.message : t("runningSessions.errors.stop"));
@@ -110,161 +122,249 @@ export function DashboardRunningSessions({
     }
   };
 
-  const hasToGrade = sessions.some((s) => s.needsGradingCount > 0);
+  const copyJoinCode = async (sessionId: string, joinCode: string) => {
+    const ok = await copyToClipboard(joinCode);
+    if (ok) {
+      setCopiedCodeId(sessionId);
+    }
+  };
+
+  const copyJoinLink = async (joinCode: string) => {
+    if (!origin) {
+      return;
+    }
+    const link = buildStudentJoinUrl(origin, joinCode);
+    if (!link) {
+      return;
+    }
+    const ok = await copyToClipboard(link);
+    if (ok) {
+      toast.success(t("share.join.linkCopied"));
+    }
+  };
+
+  const menuItemsFor = (s: TeacherSessionSummary): OverflowMenuItem[] => [
+    {
+      type: "button",
+      label: t("runningSessions.copyJoinLink"),
+      disabled: !origin,
+      onClick: () => void copyJoinLink(s.joinCode),
+    },
+    {
+      type: "button",
+      label: t("home.teacher.classDisplay"),
+      onClick: () => {
+        window.open(
+          `/${locale}/live/${encodeURIComponent(s.joinCode)}`,
+          "_blank",
+          "noopener,noreferrer",
+        );
+      },
+    },
+    { type: "divider", key: `stop-div-${s.id}` },
+    {
+      type: "custom",
+      key: `stop-${s.id}`,
+      node: (
+        <ConfirmButton
+          tone="danger"
+          label={t("runningSessions.stopEllipsis")}
+          confirmLabel={t("common.tapAgainStop")}
+          busy={stoppingSessionId === s.id}
+          busyLabel={
+            <>
+              <span
+                className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-red-200 border-t-red-800"
+                aria-hidden
+              />
+              {t("common.stopping")}
+            </>
+          }
+          onConfirm={() => void stopRunningSession(s.id)}
+          className="tp-overflow-menu__confirm"
+        />
+      ),
+    },
+  ];
 
   return (
-    <section id="running-sessions" className="scroll-mt-6 tp-card p-6">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <p className={ui.sectionTitle}>{t("runningSessions.eyebrow")}</p>
-          <h2 className="text-xl font-semibold tracking-tight flex items-center gap-2">
-            <span
-              aria-hidden
-              className="inline-block h-2 w-2 rounded-full bg-[var(--tp-mint)]"
-              style={
-                sessions.length > 0
-                  ? { animation: "tp-typing-pulse 1.4s ease-in-out infinite" }
-                  : undefined
-              }
-            />
+    <section id="running-sessions" className="scroll-mt-6 tp-card tp-running-sessions p-6">
+      <div className="tp-running-sessions__header">
+        <span
+          aria-hidden
+          className="tp-running-sessions__live-dot"
+          style={
+            sessions.length > 0
+              ? { animation: "tp-typing-pulse 1.4s ease-in-out infinite" }
+              : undefined
+          }
+        />
+        <div>
+          <p className="tp-running-sessions__eyebrow">{t("runningSessions.eyebrow")}</p>
+          <h2 className="tp-running-sessions__title">
             {t("runningSessions.title")}
             {sessions.length > 0 ? (
-              <span className="text-sm font-normal text-[var(--tp-text-muted)]">
-                · {sessions.length}
-              </span>
+              <span className="tp-running-sessions__count"> · {sessions.length}</span>
             ) : null}
           </h2>
         </div>
-        <button
-          type="button"
-          onClick={() => void refreshActive()}
-          className={`tp-btn-ghost text-sm ${focusRing}`}
-          title={
-            lastSyncedAt
-              ? t("common.updatedAt", { time: new Date(lastSyncedAt).toLocaleTimeString() })
-              : t("common.refresh")
-          }
-        >
-          <svg
-            aria-hidden
-            className="h-4 w-4"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
-            <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
-            <path d="M21 3v5h-5" />
-            <path d="M3 21v-5h5" />
-          </svg>
-          {t("common.refresh")}
-        </button>
       </div>
+
       {sessions.length === 0 ? (
         <p className="tp-empty">{t("runningSessions.empty")}</p>
       ) : (
         <EntityListPanel>
-          <EntityListToolbar>
-            <div className="flex flex-wrap items-center gap-2">
-              {hasToGrade ? (
-                <HelpHint id="dash-to-grade" text={t("help.dashboard.toGrade")} />
-              ) : null}
-              <HelpHint id="dash-join-code" text={t("help.dashboard.joinCode")} />
-            </div>
-          </EntityListToolbar>
-          <EntityList>
+          <EntityList className="tp-running-sessions__list">
             {sessions.map((s) => {
-              const msLeft = new Date(s.closesAt).getTime() - nowTick;
               const suspended = suspensionsBySession[s.id] ?? [];
               const noTimeLimit = isNoTimeLimitSession(s.opensAt, s.closesAt);
+              const totalMinutes = getSessionDurationMinutes(s.opensAt, s.closesAt) ?? 0;
+              const totalMs = Math.max(1, new Date(s.closesAt).getTime() - new Date(s.opensAt).getTime());
+              const waiting = s.assignedCount === 0;
+              const openHref = `/dashboard/sessions/${s.id}`;
+
               return (
-                <EntityListRow key={s.id} className="tp-entity-list-row--stacked">
-                  <div className="tp-entity-list-row__primary min-w-0">
-                    <div className="min-w-0">
-                      <Link
-                        href={`/dashboard/sessions/${s.id}`}
-                        className={`tp-entity-list-row__title ${focusRing}`}
-                      >
-                        {s.formTitle}
-                      </Link>
-                      <p className="tp-entity-list-row__cell tp-entity-list-row__cell--mono mt-0.5">
-                        {s.joinCode}
-                      </p>
-                      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
-                        <span className="tp-status tp-status-typing">
-                          <span className="tp-status-dot" />
+                <EntityListRow
+                  key={s.id}
+                  className="tp-running-session-row"
+                  interactive
+                  onClick={(event) => {
+                    if ((event.target as HTMLElement).closest("[data-row-action], a")) {
+                      return;
+                    }
+                    setOpenMenuId(null);
+                    router.push(openHref);
+                  }}
+                >
+                  <div className="tp-running-session-row__code-block" data-row-action>
+                    <button
+                      type="button"
+                      className="tp-running-session-row__code"
+                      title={t("runningSessions.copyCodeHint")}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void copyJoinCode(s.id, s.joinCode);
+                      }}
+                    >
+                      <span className="tp-running-session-row__code-text">{s.joinCode}</span>
+                      <span className="tp-running-session-row__code-glyph">
+                        {copiedCodeId === s.id
+                          ? t("runningSessions.codeCopiedShort")
+                          : "⧉"}
+                      </span>
+                    </button>
+                    <SessionJoinShare joinCode={s.joinCode} variant="qrIcon" />
+                  </div>
+
+                  <div className="tp-running-session-row__main">
+                    <Link
+                      href={openHref}
+                      className={`tp-running-session-row__title ${focusRing}`}
+                      onClick={() => setOpenMenuId(null)}
+                    >
+                      {s.formTitle}
+                    </Link>
+                    {waiting ? (
+                      <div className="tp-running-session-row__waiting">
+                        <span aria-hidden className="tp-running-session-row__waiting-dot" />
+                        {t("runningSessions.waitingForStudents")}
+                      </div>
+                    ) : (
+                      <div className="tp-running-session-row__pills">
+                        <span className="tp-running-session-row__pill tp-running-session-row__pill--joined">
+                          {t("runningSessions.joined", { n: s.assignedCount })}
+                        </span>
+                        <span className="tp-running-session-row__pill tp-running-session-row__pill--working">
                           {t("runningSessions.working", { n: s.inProgressCount })}
                         </span>
-                        <span className="tp-status tp-status-finished">
-                          <span className="tp-status-dot" />
+                        <span className="tp-running-session-row__pill tp-running-session-row__pill--done">
                           {t("runningSessions.done", { n: s.finishedCount })}
-                        </span>
-                        <span className="tp-status tp-status-idle">
-                          <span className="tp-status-dot" />
-                          {t("runningSessions.joined", { n: s.assignedCount })}
                         </span>
                         {s.needsGradingCount > 0 ? (
                           <span
-                            className="tp-status tp-status-blocked"
-                            title={t("runningSessions.toGradeTitle", { count: s.needsGradingCount })}
+                            className="tp-running-session-row__pill tp-running-session-row__pill--grade"
+                            title={t("runningSessions.toGradeTitle", {
+                              count: s.needsGradingCount,
+                            })}
                           >
-                            <span className="tp-status-dot" />
                             {t("runningSessions.toGrade", { n: s.needsGradingCount })}
                           </span>
                         ) : null}
                       </div>
-                      <div className="mt-2">
-                        <SessionJoinShare joinCode={s.joinCode} />
-                      </div>
-                    </div>
+                    )}
                   </div>
-                  <div className="tp-entity-list-row__actions">
-                    <div className="text-sm text-[var(--tp-text-secondary)]">
-                      {noTimeLimit ? (
-                        <span>{t("common.noTimeLimit")}</span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5">
-                          <svg
-                            aria-hidden
-                            className="h-4 w-4 text-[var(--tp-accent)]"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <circle cx="12" cy="12" r="9" />
-                            <path d="M12 7v5l3 2" />
-                          </svg>
-                          <span className="font-mono font-semibold tabular-nums text-[var(--tp-text)]">
-                            {formatSessionCountdown(msLeft)}
-                          </span>
-                        </span>
-                      )}
-                    </div>
-                    <ConfirmButton
-                      tone="danger"
-                      label={t("session.actions.stop")}
-                      confirmLabel={t("common.tapAgainStop")}
-                      busy={stoppingSessionId === s.id}
-                      busyLabel={
-                        <>
-                          <span
-                            className="h-3.5 w-3.5 shrink-0 animate-spin rounded-full border-2 border-red-200 border-t-red-800"
-                            aria-hidden
-                          />
-                          {t("common.stopping")}
-                        </>
-                      }
-                      onConfirm={() => stopRunningSession(s.id)}
+
+                  <div className="tp-running-session-row__time">
+                    {noTimeLimit ? (
+                      <div className="tp-running-session-row__time-value">
+                        {t("common.noTimeLimit")}
+                      </div>
+                    ) : (
+                      <LiveCountdown
+                        closesAt={s.closesAt}
+                        render={(msLeft) => {
+                          const fractionLeft = Math.max(0, Math.min(1, msLeft / totalMs));
+                          const low = fractionLeft < 0.25;
+                          return (
+                            <>
+                              <div
+                                className="tp-running-session-row__time-value"
+                                data-low={low ? "true" : undefined}
+                              >
+                                {formatSessionCountdown(msLeft)}
+                              </div>
+                              <div className="tp-running-session-row__time-label">
+                                {t("runningSessions.leftOfTotal", { total: totalMinutes })}
+                              </div>
+                              <div className="tp-running-session-row__bar">
+                                <div
+                                  className="tp-running-session-row__bar-fill"
+                                  data-low={low ? "true" : undefined}
+                                  style={{ width: `${Math.round(fractionLeft * 100)}%` }}
+                                />
+                              </div>
+                            </>
+                          );
+                        }}
+                      />
+                    )}
+                  </div>
+
+                  <div className="tp-running-session-row__actions" data-row-action>
+                    <button
+                      type="button"
+                      className={`tp-running-session-row__open ${focusRing}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setOpenMenuId(null);
+                        router.push(openHref);
+                      }}
+                    >
+                      {t("runningSessions.open")}
+                      <svg
+                        aria-hidden
+                        className="h-3.5 w-3.5"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.4"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M5 12h14M13 6l6 6-6 6" />
+                      </svg>
+                    </button>
+                    <OverflowMenu
+                      label={t("runningSessions.moreActions")}
+                      items={menuItemsFor(s)}
+                      showClose={false}
+                      open={openMenuId === s.id}
+                      onOpenChange={(open) => setOpenMenuId(open ? s.id : null)}
                     />
                   </div>
+
                   {suspended.length > 0 ? (
-                    <div className="tp-entity-list-callout">
+                    <div className="tp-entity-list-callout" data-row-action>
                       <p className="inline-flex items-center gap-1.5 font-semibold">
                         <span aria-hidden className="tp-status tp-status-blocked">
                           <span className="tp-status-dot" />
@@ -303,6 +403,7 @@ export function DashboardRunningSessions({
               );
             })}
           </EntityList>
+          <p className="tp-running-sessions__hint">{t("runningSessions.rowHint")}</p>
         </EntityListPanel>
       )}
     </section>

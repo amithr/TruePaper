@@ -1,3 +1,4 @@
+/** @vitest-environment node */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -20,12 +21,14 @@ const form: Form = {
   id: "form-1",
   title: "Midterm Essay",
   description: "Answer all questions.",
+  descriptionImagePath: null,
   createdBy: "teacher-1",
   liveTeacherFeedbackEnabled: false,
   questions: [
     {
       id: "q1",
       prompt: "Explain photosynthesis.",
+      promptImagePath: null,
       type: "extendedWritten",
       options: [],
       correctAnswer: null,

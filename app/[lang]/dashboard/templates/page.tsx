@@ -68,7 +68,7 @@ export default function TemplateLibraryPage() {
     <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
       <header className="mb-8">
         <TeacherAppNav active="templates" />
-        <h1 className="mt-6 text-2xl font-bold tracking-tight">{t("templateLibrary.title")}</h1>
+        <h1 className="mt-6 text-2xl font-semibold tracking-tight">{t("templateLibrary.title")}</h1>
         <p className="mt-1 text-sm text-[var(--tp-text-secondary)]">{t("templateLibrary.subtitle")}</p>
       </header>
 

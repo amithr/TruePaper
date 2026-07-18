@@ -31,6 +31,24 @@ describe("response-types registry", () => {
     expect(config).toHaveProperty("right");
   });
 
+  it("defaults math input to acceptedAnswers list and placeholder", () => {
+    const config = parseResponseConfig("mathInput", null);
+    expect(config).toMatchObject({
+      acceptedAnswers: [],
+      caseSensitive: false,
+    });
+    expect(config).toHaveProperty("placeholder");
+    const merged = parseResponseConfig("mathInput", {
+      acceptedAnswers: ["2", "2.0"],
+      placeholder: "final",
+    });
+    expect(merged).toMatchObject({
+      acceptedAnswers: ["2", "2.0"],
+      placeholder: "final",
+      caseSensitive: false,
+    });
+  });
+
   it("reports live feedback support per type", () => {
     expect(questionSupportsLiveFeedback("extendedWritten")).toBe(true);
     expect(questionSupportsLiveFeedback("trueFalse")).toBe(true);

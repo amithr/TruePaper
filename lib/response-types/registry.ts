@@ -306,7 +306,11 @@ const REGISTRY: Record<ResponseTypeId, ResponseTypeMeta> = {
     supportsRubric: false,
     defaultPoints: 2,
     defaultConfig: () =>
-      ({ placeholder: "Enter your equation…" }) satisfies MathInputConfig,
+      ({
+        placeholder: "Enter your final answer…",
+        acceptedAnswers: [],
+        caseSensitive: false,
+      }) satisfies MathInputConfig,
     defaultPrompt: () => "Enter your answer",
   },
 };

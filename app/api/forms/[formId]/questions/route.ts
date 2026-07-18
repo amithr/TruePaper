@@ -99,7 +99,9 @@ export async function POST(request: Request, { params }: Params) {
       display_order: displayOrder,
       response_config: responseConfig,
     })
-    .select("id, prompt, question_type, options, correct_answer, points, display_order, response_config")
+    .select(
+      "id, prompt, prompt_image_path, question_type, options, correct_answer, points, display_order, response_config",
+    )
     .single();
 
   if (error || !data) {
@@ -113,6 +115,7 @@ export async function POST(request: Request, { params }: Params) {
     question: {
       id: data.id,
       prompt: data.prompt,
+      promptImagePath: data.prompt_image_path ?? null,
       type: data.question_type,
       options: Array.isArray(data.options)
         ? data.options.filter((value): value is string => typeof value === "string")

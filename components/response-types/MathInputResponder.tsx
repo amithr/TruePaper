@@ -8,57 +8,87 @@ const MATH_SYMBOLS = ["π", "√", "²", "³", "±", "×", "÷", "≤", "≥", "
 
 type Props = {
   id: string;
-  latex: string;
+  working: string;
+  answer: string;
   disabled: boolean;
   config: MathInputConfig;
-  onChange: (latex: string) => void;
+  onChange: (next: { working: string; answer: string }) => void;
 };
 
-export function MathInputResponder({ id, latex, disabled, config, onChange }: Props) {
+export function MathInputResponder({
+  id,
+  working,
+  answer,
+  disabled,
+  config,
+  onChange,
+}: Props) {
   const t = useTranslations();
 
   const insertSymbol = (symbol: string) => {
     if (disabled) {
       return;
     }
-    onChange(`${latex}${symbol}`);
+    onChange({ working: `${working}${symbol}`, answer });
   };
 
   return (
-    <div className="space-y-2" data-testid="student-math-input">
-      <div className="flex flex-wrap gap-1.5">
-        {MATH_SYMBOLS.map((symbol) => (
+    <div className="space-y-4" data-testid="student-math-input">
+      <div className="space-y-2">
+        <label className="block text-sm font-medium text-[var(--tp-text)]" htmlFor={`${id}-working`}>
+          {t("responseTypes.mathInput.workingLabel")}
+        </label>
+        <div className="flex flex-wrap gap-1.5">
+          {MATH_SYMBOLS.map((symbol) => (
+            <button
+              key={symbol}
+              type="button"
+              disabled={disabled}
+              onClick={() => insertSymbol(symbol)}
+              className={`min-h-9 min-w-9 rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] px-2 text-sm ${focusRing}`}
+              aria-label={t("responseTypes.mathInput.insertSymbol", { symbol })}
+            >
+              {symbol}
+            </button>
+          ))}
           <button
-            key={symbol}
             type="button"
             disabled={disabled}
-            onClick={() => insertSymbol(symbol)}
-            className={`min-h-9 min-w-9 rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] px-2 text-sm ${focusRing}`}
-            aria-label={t("responseTypes.mathInput.insertSymbol", { symbol })}
+            onClick={() => insertSymbol("()/")}
+            className={`min-h-9 rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] px-2 text-xs ${focusRing}`}
           >
-            {symbol}
+            ( ) /
           </button>
-        ))}
-        <button
-          type="button"
+        </div>
+        <textarea
+          id={`${id}-working`}
+          rows={4}
+          value={working}
           disabled={disabled}
-          onClick={() => insertSymbol("()/")}
-          className={`min-h-9 rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] px-2 text-xs ${focusRing}`}
-        >
-          ( ) /
-        </button>
+          onChange={(event) => onChange({ working: event.target.value, answer })}
+          placeholder={t("responseTypes.mathInput.workingPlaceholder")}
+          className={`tp-input w-full resize-y font-mono text-sm ${focusRing}`}
+          spellCheck={false}
+          autoComplete="off"
+        />
+        <p className="text-xs text-[var(--tp-text-muted)]">{t("responseTypes.mathInput.workingHint")}</p>
       </div>
-      <textarea
-        id={id}
-        rows={3}
-        value={latex}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder={config.placeholder ?? t("responseTypes.mathInput.placeholder")}
-        className={`tp-input w-full resize-y font-mono text-sm ${focusRing}`}
-        spellCheck={false}
-        autoComplete="off"
-      />
+
+      <label className="block space-y-1.5 text-sm font-medium text-[var(--tp-text)]" htmlFor={`${id}-answer`}>
+        {t("responseTypes.mathInput.answerLabel")}
+        <input
+          id={`${id}-answer`}
+          type="text"
+          value={answer}
+          disabled={disabled}
+          onChange={(event) => onChange({ working, answer: event.target.value })}
+          placeholder={config.placeholder ?? t("responseTypes.mathInput.placeholder")}
+          className={`tp-input w-full font-mono text-sm ${focusRing}`}
+          spellCheck={false}
+          autoComplete="off"
+          data-testid="student-math-final-answer"
+        />
+      </label>
     </div>
   );
 }

@@ -25,10 +25,14 @@ describe("DashboardFormLibrary", () => {
           id: "form-1",
           title: "Biology Unit 1",
           description: "Cells",
+          descriptionImagePath: null,
           createdBy: "t1",
           liveTeacherFeedbackEnabled: false,
           questions: [],
           questionCount: 3,
+          autogradeCount: 2,
+          lastRunAt: null,
+          lastSessionDefaults: null,
         },
       ],
     });
@@ -38,6 +42,10 @@ describe("DashboardFormLibrary", () => {
     await waitFor(() => {
       expect(screen.getByText("Biology Unit 1")).toBeInTheDocument();
     });
+    expect(screen.getByText(/3 questions/i)).toBeInTheDocument();
+    expect(screen.getByText(/2\/3 auto-graded/i)).toBeInTheDocument();
+    expect(screen.getByText(/Never run/i)).toBeInTheDocument();
     expect(requestJson).toHaveBeenCalledWith("/api/forms?summary=1");
   });
 });
+

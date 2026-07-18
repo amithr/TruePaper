@@ -8,6 +8,7 @@ create table if not exists public.forms (
   id uuid primary key default gen_random_uuid(),
   title text not null,
   description text not null default '',
+  description_image_path text,
   created_by uuid references auth.users (id) on delete set null,
   live_teacher_feedback_enabled boolean not null default false,
   created_at timestamptz not null default now()
@@ -39,6 +40,7 @@ create table if not exists public.questions (
   correct_answer text,
   points integer not null default 1,
   response_config jsonb not null default '{}'::jsonb,
+  prompt_image_path text,
   display_order integer not null default 0,
   created_at timestamptz not null default now(),
   constraint questions_points_chk check (points > 0 and points <= 1000),
@@ -522,6 +524,7 @@ begin
     'closesAt', fs.closes_at,
     'title', f.title,
     'description', coalesce(f.description, ''),
+    'descriptionImagePath', f.description_image_path,
     'liveTeacherFeedbackEnabled', coalesce(f.live_teacher_feedback_enabled, false),
     'questions', coalesce(
       (
@@ -529,6 +532,7 @@ begin
           jsonb_build_object(
             'id', q.id,
             'prompt', q.prompt,
+            'promptImagePath', q.prompt_image_path,
             'type', q.question_type,
             'options', q.options,
             'displayOrder', q.display_order
@@ -776,6 +780,7 @@ begin
     'resumeCode', c,
     'title', f.title,
     'description', coalesce(f.description, ''),
+    'descriptionImagePath', f.description_image_path,
     'liveTeacherFeedbackEnabled', coalesce(f.live_teacher_feedback_enabled, false),
     'questions', coalesce(
       (
@@ -783,6 +788,7 @@ begin
           jsonb_build_object(
             'id', q.id,
             'prompt', q.prompt,
+            'promptImagePath', q.prompt_image_path,
             'type', q.question_type,
             'options', q.options,
             'displayOrder', q.display_order
@@ -1279,8 +1285,18 @@ declare
   ans jsonb;
   grades jsonb;
   q record;
-  chosen text;
+  raw_answer text;
+  final_answer text;
+  answer_json jsonb;
   earned int;
+  accepted jsonb;
+  accepted_item text;
+  case_sensitive boolean;
+  student_norm text;
+  accepted_norm text;
+  matched boolean;
+  tf_student boolean;
+  tf_correct boolean;
 begin
   select fs.form_id into fid
   from public.form_sessions fs
@@ -1302,17 +1318,112 @@ begin
   end if;
 
   for q in
-    select id, points, correct_answer
+    select id, points, correct_answer, question_type, response_config
     from public.questions
     where form_id = fid
-      and question_type = 'multipleChoice'
+      and question_type in ('multipleChoice', 'shortAnswer', 'trueFalse', 'mathInput')
   loop
-    chosen := ans ->> q.id::text;
-    if q.correct_answer is not null and chosen is not null and chosen = q.correct_answer then
-      earned := q.points;
-    else
-      earned := 0;
+    earned := 0;
+    raw_answer := ans ->> q.id::text;
+
+    if q.question_type = 'multipleChoice' then
+      if q.correct_answer is not null
+         and raw_answer is not null
+         and raw_answer = q.correct_answer then
+        earned := q.points;
+      end if;
+
+    elsif q.question_type = 'shortAnswer' then
+      accepted := coalesce(q.response_config -> 'acceptedAnswers', '[]'::jsonb);
+      if jsonb_typeof(accepted) = 'array'
+         and jsonb_array_length(accepted) > 0
+         and raw_answer is not null
+         and length(trim(raw_answer)) > 0 then
+        case_sensitive := coalesce((q.response_config ->> 'caseSensitive')::boolean, false);
+        student_norm := case
+          when case_sensitive then trim(raw_answer)
+          else lower(trim(raw_answer))
+        end;
+        matched := false;
+        for accepted_item in
+          select jsonb_array_elements_text(accepted)
+        loop
+          accepted_norm := case
+            when case_sensitive then trim(accepted_item)
+            else lower(trim(accepted_item))
+          end;
+          if accepted_norm <> '' and accepted_norm = student_norm then
+            matched := true;
+            exit;
+          end if;
+        end loop;
+        if matched then
+          earned := q.points;
+        end if;
+      end if;
+
+    elsif q.question_type = 'mathInput' then
+      accepted := coalesce(q.response_config -> 'acceptedAnswers', '[]'::jsonb);
+      final_answer := '';
+      if raw_answer is not null and length(trim(raw_answer)) > 0 then
+        begin
+          answer_json := raw_answer::jsonb;
+          final_answer := coalesce(
+            nullif(trim(coalesce(answer_json ->> 'answer', '')), ''),
+            nullif(trim(coalesce(answer_json ->> 'latex', '')), ''),
+            ''
+          );
+        exception
+          when others then
+            final_answer := trim(raw_answer);
+        end;
+      end if;
+      if jsonb_typeof(accepted) = 'array'
+         and jsonb_array_length(accepted) > 0
+         and length(final_answer) > 0 then
+        case_sensitive := coalesce((q.response_config ->> 'caseSensitive')::boolean, false);
+        student_norm := case
+          when case_sensitive then final_answer
+          else lower(final_answer)
+        end;
+        matched := false;
+        for accepted_item in
+          select jsonb_array_elements_text(accepted)
+        loop
+          accepted_norm := case
+            when case_sensitive then trim(accepted_item)
+            else lower(trim(accepted_item))
+          end;
+          if accepted_norm <> '' and accepted_norm = student_norm then
+            matched := true;
+            exit;
+          end if;
+        end loop;
+        if matched then
+          earned := q.points;
+        end if;
+      end if;
+
+    elsif q.question_type = 'trueFalse' then
+      if raw_answer is not null
+         and q.response_config ? 'correctAnswer'
+         and jsonb_typeof(q.response_config -> 'correctAnswer') = 'boolean' then
+        begin
+          answer_json := raw_answer::jsonb;
+          if (answer_json ->> 'answer') in ('true', 'false') then
+            tf_student := (answer_json ->> 'answer')::boolean;
+            tf_correct := (q.response_config ->> 'correctAnswer')::boolean;
+            if tf_student = tf_correct then
+              earned := q.points;
+            end if;
+          end if;
+        exception
+          when others then
+            null;
+        end;
+      end if;
     end if;
+
     grades := grades || jsonb_build_object(q.id::text, earned);
   end loop;
 
@@ -1774,6 +1885,7 @@ begin
     jsonb_build_object(
       'id', q.id,
       'prompt', q.prompt,
+      'promptImagePath', q.prompt_image_path,
       'type', q.question_type,
       'options', coalesce(q.options, '[]'::jsonb),
       'points', q.points,
@@ -1788,6 +1900,7 @@ begin
   select jsonb_build_object(
     'formTitle', coalesce(f.title, 'Form'),
     'formDescription', coalesce(f.description, ''),
+    'descriptionImagePath', f.description_image_path,
     'displayName', coalesce(nullif(trim(fr.student_display_name), ''), ''),
     'finished', fr.finished_at is not null,
     'sessionOpen',

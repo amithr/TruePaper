@@ -33,7 +33,8 @@ This doc defines the **flat entity list** pattern used across the dashboard and 
 | `tp-entity-list-row--interactive` | Clickable row (cursor, keyboard focus) |
 | `tp-entity-list-row--form` | Form library 3-column grid |
 | `tp-entity-list-row--past` | Past sessions 5-column grid |
-| `tp-entity-list-row--stacked` | Running sessions: primary + actions columns |
+| `tp-entity-list-row--stacked` | Generic primary + actions columns |
+| `tp-running-session-row` | Running sessions redesign: code chip + status + countdown + Open |
 | `tp-entity-list-row__primary` | Title / identity column |
 | `tp-entity-list-row__avatar` | Monogram avatar (forms) |
 | `tp-entity-list-row__heading` | Title + meta wrapper |
@@ -76,8 +77,8 @@ Import from `@/components/lists/EntityList`:
 
 | Surface | File | Row variant |
 |---------|------|-------------|
-| Form library | `DashboardFormLibrary.tsx`, `FormLibraryRow.tsx` | `--form` |
-| Running sessions | `DashboardRunningSessions.tsx` | `--stacked` |
+| Form library | `DashboardFormLibrary.tsx`, `FormLibraryRow.tsx` | `--form` (identity row + Start / ⋯ popovers; no inline session-setup column). Start popover includes late sync + live teacher feedback. |
+| Running sessions | `DashboardRunningSessions.tsx` | `tp-running-session-row` |
 | Past sessions | `DashboardPastSessions.tsx` | `--past` |
 | Live roster | `SessionExamRoster.tsx` | Roster uses flat `--flat` modifier on `tp-roster-list` |
 
@@ -100,8 +101,8 @@ Do **not** force entity lists onto question stacks or catalog grids.
 2. Use `EntityListPanel` → optional `EntityListToolbar` / `EntityListSearch` → optional `EntityListColumns` → `EntityList` → `EntityListRow` rows → optional `EntityListFooter`.
 3. Pick a row variant class or add a new `--modifier` in `app/globals.css` if the column layout is genuinely new.
 4. Put `HelpHint` in the toolbar, not on row 0.
-5. Use `tp-entity-list-input` / `tp-entity-list-segments` for inline controls.
-6. Add i18n column header keys; update `docs/FEATURES.md` if the list is a new user-facing surface.
+5. Use `tp-entity-list-input` / `tp-entity-list-segments` for inline controls — or tuck session/setup controls into a Start popover when the row should stay identity-first (form library).
+6. Add i18n column header keys when using `EntityListColumns`; update `docs/FEATURES.md` if the list is a new user-facing surface.
 
 ---
 

@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { isResponseAnswered, parseResponseValue, serializeResponseValue } from "@/lib/response-types/answers";
+import {
+  isResponseAnswered,
+  parseResponseValue,
+  previewResponseText,
+  serializeResponseValue,
+} from "@/lib/response-types/answers";
 
 describe("response answer wire format", () => {
   it("parses and detects answered multiple choice", () => {
@@ -43,5 +48,64 @@ describe("response answer wire format", () => {
       highlights: [],
     });
     expect(isResponseAnswered("annotateSource", undefined)).toBe(false);
+  });
+
+  it("round-trips math input working + final answer", () => {
+    const raw = serializeResponseValue({
+      type: "mathInput",
+      working: "12^2 / (2*9.8)",
+      answer: "7.35",
+    });
+    expect(parseResponseValue("mathInput", raw)).toEqual({
+      type: "mathInput",
+      working: "12^2 / (2*9.8)",
+      answer: "7.35",
+    });
+    expect(isResponseAnswered("mathInput", raw)).toBe(true);
+  });
+
+  it("maps legacy math latex field to final answer", () => {
+    const legacy = JSON.stringify({ type: "mathInput", latex: "x=2" });
+    expect(parseResponseValue("mathInput", legacy)).toEqual({
+      type: "mathInput",
+      working: "",
+      answer: "x=2",
+    });
+  });
+
+  it("treats math as answered when working or final answer is present", () => {
+    expect(
+      isResponseAnswered(
+        "mathInput",
+        serializeResponseValue({ type: "mathInput", working: "steps", answer: "" }),
+      ),
+    ).toBe(true);
+    expect(
+      isResponseAnswered(
+        "mathInput",
+        serializeResponseValue({ type: "mathInput", working: "", answer: "2" }),
+      ),
+    ).toBe(true);
+    expect(
+      isResponseAnswered(
+        "mathInput",
+        serializeResponseValue({ type: "mathInput", working: "", answer: "" }),
+      ),
+    ).toBe(false);
+  });
+
+  it("previews math final answer preferentially over working", () => {
+    const raw = serializeResponseValue({
+      type: "mathInput",
+      working: "long working out",
+      answer: "7.35",
+    });
+    expect(previewResponseText("mathInput", raw)).toBe("7.35");
+    expect(
+      previewResponseText(
+        "mathInput",
+        serializeResponseValue({ type: "mathInput", working: "only working", answer: "" }),
+      ),
+    ).toBe("only working");
   });
 });

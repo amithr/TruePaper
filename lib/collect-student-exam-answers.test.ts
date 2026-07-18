@@ -6,6 +6,7 @@ import type { Question } from "@/lib/forms";
 const textQuestion = (id: string): Question => ({
   id,
   prompt: "Write your answer",
+  promptImagePath: null,
   type: "text",
   options: [],
   correctAnswer: null,

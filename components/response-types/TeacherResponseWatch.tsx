@@ -101,7 +101,7 @@ function WrittenFeedbackBlock({
           onBlur={onBlur}
           onChange={(event) => onChange(event.target.value)}
           placeholder={t("session.watch.feedbackPlaceholder")}
-          className="mt-2 w-full rounded-md border border-sky-300 bg-white px-3 py-2 text-sm text-zinc-900"
+          className="mt-2 w-full rounded-md border border-[var(--tp-accent-border)] bg-[var(--tp-surface)] px-3 py-2 text-sm text-[var(--tp-text)]"
         />
       </label>
     </div>
@@ -279,14 +279,28 @@ export function TeacherResponseWatch({
   }
 
   if (type === "mathInput" && value.type === "mathInput") {
+    const working = value.working.trim();
+    const answer = value.answer.trim() || (value.latex ?? "").trim();
     return (
       <WatchQuestionBlock feedback={feedbackBundle}>
-        <pre
-          data-testid="teacher-watch-answer"
-          className="overflow-x-auto rounded-md border border-zinc-300 bg-white px-3 py-2 font-mono text-sm text-zinc-900"
-        >
-          {value.latex || t("session.watch.noResponse")}
-        </pre>
+        <div className="space-y-3" data-testid="teacher-watch-answer">
+          <div>
+            <p className="mb-1 text-xs font-medium uppercase tracking-wide text-[var(--tp-text-muted)]">
+              {t("responseTypes.mathInput.workingLabel")}
+            </p>
+            <pre className="overflow-x-auto whitespace-pre-wrap rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] px-3 py-2 font-mono text-sm text-[var(--tp-text-secondary)]">
+              {working || t("session.watch.noResponse")}
+            </pre>
+          </div>
+          <div>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--tp-text)]">
+              {t("responseTypes.mathInput.answerLabel")}
+            </p>
+            <pre className="overflow-x-auto whitespace-pre-wrap rounded-[var(--tp-radius-sm)] border-2 border-[var(--tp-accent-border)] bg-[var(--tp-surface)] px-3 py-3 font-mono text-base font-semibold text-[var(--tp-text)]">
+              {answer || t("session.watch.noResponse")}
+            </pre>
+          </div>
+        </div>
       </WatchQuestionBlock>
     );
   }
@@ -452,7 +466,7 @@ export function TeacherResponseWatch({
         value={textPreview}
         placeholder={t("session.watch.noResponse")}
         onFocus={() => onFeedbackFocus(question.id)}
-        className="w-full resize-y rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900"
+        className="w-full resize-y rounded-md border border-[var(--tp-border)] bg-[var(--tp-surface)] px-3 py-2 text-sm text-[var(--tp-text)]"
       />
     </WatchQuestionBlock>
   );

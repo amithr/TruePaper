@@ -14,6 +14,7 @@ export const PDF_LOADED_SESSION = {
     id: "form-1",
     title: "Algebra Quiz",
     description: "",
+    descriptionImagePath: null,
     createdBy: "teacher-1",
     liveTeacherFeedbackEnabled: false,
     questions: [],

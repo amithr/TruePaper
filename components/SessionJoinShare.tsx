@@ -11,6 +11,11 @@ type Props = {
   joinCode: string;
   showQr?: boolean;
   className?: string;
+  /**
+   * Compact QR-only control (icon button + panel). Used by the running-sessions
+   * redesign where copy actions live elsewhere.
+   */
+  variant?: "full" | "qrIcon";
 };
 
 const btnBase =
@@ -74,7 +79,12 @@ function QrIcon() {
   );
 }
 
-export function SessionJoinShare({ joinCode, showQr = true, className }: Props) {
+export function SessionJoinShare({
+  joinCode,
+  showQr = true,
+  className,
+  variant = "full",
+}: Props) {
   const t = useTranslations();
   const [copied, setCopied] = useState<"link" | "code" | null>(null);
   const [showQrPanel, setShowQrPanel] = useState(false);
@@ -112,6 +122,51 @@ export function SessionJoinShare({ joinCode, showQr = true, className }: Props) 
       flashCopied("code");
     }
   }, [joinCode, flashCopied]);
+
+  if (variant === "qrIcon") {
+    return (
+      <div className={`relative ${className ?? ""}`.trim()}>
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            setShowQrPanel((v) => !v);
+          }}
+          className="tp-running-session__qr-btn"
+          aria-expanded={showQrPanel}
+          aria-label={showQrPanel ? t("share.join.hideQr") : t("share.join.showQr")}
+          title={t("share.join.showQr")}
+        >
+          <svg
+            aria-hidden
+            className="h-5 w-5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <rect x="3" y="3" width="7" height="7" rx="1" />
+            <rect x="14" y="3" width="7" height="7" rx="1" />
+            <rect x="3" y="14" width="7" height="7" rx="1" />
+            <path d="M14 14h3v3M21 14v3M21 21h-3M14 21v-4" />
+          </svg>
+        </button>
+        {showQrPanel && qrUrl ? (
+          <div
+            className="tp-running-session__qr-panel"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <QRCode value={qrUrl} size={128} className="h-32 w-32" />
+            <p className="mt-2 max-w-[10rem] text-center text-[10px] leading-relaxed text-[var(--tp-text-muted)]">
+              {t("share.join.qrHint")}
+            </p>
+          </div>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div className={className}>

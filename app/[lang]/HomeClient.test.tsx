@@ -115,6 +115,7 @@ describe("HomeClient", () => {
           id: "form-1",
           title: "Biology Unit 1",
           description: "Cells",
+          descriptionImagePath: null,
           createdBy: "t1",
           liveTeacherFeedbackEnabled: false,
           questions: [],

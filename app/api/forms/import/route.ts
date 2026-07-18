@@ -5,10 +5,36 @@ import { buildForms } from "@/lib/forms-api";
 import { getSessionUser } from "@/lib/request-auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
-type ImportBody = {
-  /** The parsed exam document, or the raw uploaded JSON at the root. */
-  document?: unknown;
-};
+async function parseImportPayload(request: Request) {
+  const contentType = request.headers.get("content-type") ?? "";
+
+  if (contentType.includes("multipart/form-data")) {
+    const formData = await request.formData();
+    const file = formData.get("file");
+    if (!(file instanceof File)) {
+      throw new AiExamParseError("Choose a JSON exam file to upload.");
+    }
+    const text = await file.text();
+    try {
+      return parseAiExamDocument(JSON.parse(text) as unknown);
+    } catch (error) {
+      if (error instanceof AiExamParseError) {
+        throw error;
+      }
+      throw new AiExamParseError(
+        "That file isn't valid JSON. Save the AI's reply as a .json file and try again.",
+      );
+    }
+  }
+
+  let body: { document?: unknown };
+  try {
+    body = (await request.json()) as { document?: unknown };
+  } catch {
+    throw new AiExamParseError("The uploaded file is not valid JSON.");
+  }
+  return parseAiExamDocument(body.document ?? body);
+}
 
 export async function POST(request: Request) {
   const supabase = await createSupabaseServerClient();
@@ -21,16 +47,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Only teachers can import exams." }, { status: 403 });
   }
 
-  let body: ImportBody;
-  try {
-    body = (await request.json()) as ImportBody;
-  } catch {
-    return NextResponse.json({ error: "The uploaded file is not valid JSON." }, { status: 400 });
-  }
-
   let parsed;
   try {
-    parsed = parseAiExamDocument(body.document ?? body);
+    parsed = await parseImportPayload(request);
   } catch (error) {
     if (error instanceof AiExamParseError) {
       return NextResponse.json({ error: error.message }, { status: 422 });
@@ -74,7 +93,6 @@ export async function POST(request: Request) {
     );
 
   if (questionsError) {
-    // Avoid leaving an empty orphan form behind if question insert fails.
     await supabase.from("forms").delete().eq("id", formRow.id);
     return NextResponse.json({ error: questionsError.message }, { status: 500 });
   }

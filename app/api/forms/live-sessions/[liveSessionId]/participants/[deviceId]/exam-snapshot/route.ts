@@ -18,7 +18,8 @@ const RESPONSE_SELECT_WITH_NAME =
   "answers, student_display_name, suspended_at, finished_at, text_graded_at, text_grades, last_activity_at, updated_at, live_teacher_feedback, student_resume_code";
 const RESPONSE_SELECT_LEGACY =
   "answers, suspended_at, finished_at, last_activity_at, updated_at";
-const FORM_SELECT = "id, title, description, created_by, live_teacher_feedback_enabled";
+const FORM_SELECT =
+  "id, title, description, description_image_path, created_by, live_teacher_feedback_enabled";
 const FORM_SELECT_LEGACY = "id, title, description, created_by";
 
 function sessionWindowOpen(opensAt: string, closesAt: string, nowMs: number): boolean {
@@ -81,7 +82,9 @@ export async function GET(_request: Request, { params }: Params) {
 
   const { data: questionRows, error: qError } = await supabase
     .from("questions")
-    .select("id, form_id, prompt, question_type, options, correct_answer, points, display_order")
+    .select(
+      "id, form_id, prompt, prompt_image_path, question_type, options, correct_answer, points, display_order, response_config",
+    )
     .eq("form_id", formId)
     .order("display_order", { ascending: true });
 
@@ -93,6 +96,7 @@ export async function GET(_request: Request, { params }: Params) {
     id: formRow!.id as string,
     title: formRow!.title as string,
     description: (formRow!.description as string | null) ?? "",
+    description_image_path: (formRow!.description_image_path as string | null) ?? null,
     created_by: (formRow!.created_by as string | null) ?? null,
     live_teacher_feedback_enabled: formRow!.live_teacher_feedback_enabled === true,
   };

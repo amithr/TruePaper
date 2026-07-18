@@ -3,6 +3,7 @@
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+import { FormAssetImage } from "@/components/FormAssetImage";
 import { LoadingBar } from "@/components/LoadingBar";
 import { ScoreRing } from "@/components/ScoreMeter";
 import { StudentTeacherFeedbackCard } from "@/components/StudentTeacherFeedbackCard";
@@ -15,6 +16,7 @@ import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { useScoreCopy } from "@/lib/i18n/score-copy";
 import type { StudentReviewPayload } from "@/lib/parse-student-review";
 import { hasLiveTeacherFeedbackContent } from "@/lib/live-teacher-feedback";
+import { parseResponseValue } from "@/lib/response-types/answers";
 import { ui } from "@/lib/ui";
 
 export default function StudentReviewPage() {
@@ -99,9 +101,16 @@ export default function StudentReviewPage() {
           <div className="flex flex-wrap items-start justify-between gap-5">
             <div className="min-w-0 flex-1">
               <p className={ui.sectionTitle}>{t("review.headerEyebrow")}</p>
-              <h1 className="mt-1 text-2xl font-bold tracking-tight">{review.formTitle}</h1>
+              <h1 className="mt-1 text-2xl font-semibold tracking-tight">{review.formTitle}</h1>
               {review.formDescription ? (
                 <p className="mt-2 text-[var(--tp-text-secondary)]">{review.formDescription}</p>
+              ) : null}
+              {review.descriptionImagePath ? (
+                <FormAssetImage
+                  path={review.descriptionImagePath}
+                  alt={t("home.exam.descriptionImageAlt")}
+                  className="mt-3 overflow-hidden rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-white"
+                />
               ) : null}
               {review.displayName ? (
                 <p className="mt-3 text-sm text-[var(--tp-text-secondary)]">
@@ -165,6 +174,14 @@ export default function StudentReviewPage() {
                     )}
                   </div>
 
+                  {question.promptImagePath ? (
+                    <FormAssetImage
+                      path={question.promptImagePath}
+                      alt={t("home.exam.promptImageAlt")}
+                      className="mb-3 overflow-hidden rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-white"
+                    />
+                  ) : null}
+
                   {question.type === "multipleChoice" ? (
                     <div className="space-y-2">
                       {question.options.map((option, optionIndex) => (
@@ -183,6 +200,51 @@ export default function StudentReviewPage() {
                           <span>{option || t("review.optionN", { n: optionIndex + 1 })}</span>
                         </label>
                       ))}
+                    </div>
+                  ) : question.type === "mathInput" ? (
+                    <div className="space-y-3">
+                      {(() => {
+                        const math = parseResponseValue("mathInput", review.answers[question.id]);
+                        const working =
+                          math.type === "mathInput" ? math.working.trim() : "";
+                        const answer =
+                          math.type === "mathInput"
+                            ? math.answer.trim() || (math.latex ?? "").trim()
+                            : "";
+                        return (
+                          <>
+                            <div>
+                              <p className="mb-1 text-xs font-medium uppercase tracking-wide text-[var(--tp-text-muted)]">
+                                {t("responseTypes.mathInput.workingLabel")}
+                              </p>
+                              <textarea
+                                readOnly
+                                rows={4}
+                                value={working}
+                                placeholder={t("review.noAnswer")}
+                                className="w-full resize-y rounded-md border border-[var(--tp-border-strong)] bg-[var(--tp-bg-subtle)] px-3 py-2 font-mono text-sm text-[var(--tp-text)]"
+                              />
+                            </div>
+                            <div>
+                              <p className="mb-1 text-xs font-medium uppercase tracking-wide text-[var(--tp-text-muted)]">
+                                {t("responseTypes.mathInput.answerLabel")}
+                              </p>
+                              <input
+                                readOnly
+                                value={answer}
+                                placeholder={t("review.noAnswer")}
+                                className="w-full rounded-md border border-[var(--tp-border-strong)] bg-[var(--tp-bg-subtle)] px-3 py-2 font-mono text-sm text-[var(--tp-text)]"
+                              />
+                            </div>
+                          </>
+                        );
+                      })()}
+                      {showFeedback &&
+                      (review.liveTeacherFeedback[question.id] ?? "").trim().length > 0 ? (
+                        <StudentTeacherFeedbackCard
+                          message={review.liveTeacherFeedback[question.id] ?? ""}
+                        />
+                      ) : null}
                     </div>
                   ) : (
                     <div className="space-y-3">

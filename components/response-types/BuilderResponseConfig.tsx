@@ -42,7 +42,7 @@ export function BuilderResponseConfig({ question, updateActiveForm }: Props) {
   if (question.type === "trueFalse") {
     const config = parseResponseConfig(question.type, question.responseConfig) as TrueFalseConfig;
     return (
-      <fieldset className="space-y-2 rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] p-3">
+      <fieldset className="space-y-2">
         <legend className={ui.sectionTitle}>{t("responseTypes.builder.correctAnswer")}</legend>
         <label className="flex items-center gap-2 text-sm">
           <input
@@ -197,15 +197,34 @@ export function BuilderResponseConfig({ question, updateActiveForm }: Props) {
   if (question.type === "mathInput") {
     const config = parseResponseConfig(question.type, question.responseConfig) as MathInputConfig;
     return (
-      <label className={ui.label}>
-        {t("responseTypes.builder.mathPlaceholder")}
-        <input
-          type="text"
-          value={config.placeholder ?? ""}
-          onChange={(event) => patchConfig({ placeholder: event.target.value })}
-          className="tp-input"
-        />
-      </label>
+      <div className="space-y-3">
+        <label className={ui.label}>
+          {t("responseTypes.builder.acceptedAnswers")}
+          <input
+            type="text"
+            value={(config.acceptedAnswers ?? []).join(", ")}
+            onChange={(event) =>
+              patchConfig({
+                acceptedAnswers: event.target.value
+                  .split(",")
+                  .map((v) => v.trim())
+                  .filter(Boolean),
+              })
+            }
+            className="tp-input"
+            placeholder={t("responseTypes.builder.acceptedAnswersPlaceholder")}
+          />
+        </label>
+        <label className={ui.label}>
+          {t("responseTypes.builder.mathPlaceholder")}
+          <input
+            type="text"
+            value={config.placeholder ?? ""}
+            onChange={(event) => patchConfig({ placeholder: event.target.value })}
+            className="tp-input"
+          />
+        </label>
+      </div>
     );
   }
 

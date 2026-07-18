@@ -12,6 +12,7 @@ import { PhotoHandwrittenResponder } from "@/components/response-types/PhotoHand
 import { ShortAnswerResponder } from "@/components/response-types/ShortAnswerResponder";
 import { StructuredMultiPartResponder } from "@/components/response-types/StructuredMultiPartResponder";
 import { TrueFalseResponder } from "@/components/response-types/TrueFalseResponder";
+import { FormAssetImage } from "@/components/FormAssetImage";
 import { StudentTeacherFeedbackCard } from "@/components/StudentTeacherFeedbackCard";
 import type { Question } from "@/lib/forms";
 import {
@@ -137,7 +138,7 @@ export function StudentResponseDispatcher({
       }`}
     >
       <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-        <h3 id={headingId} className="text-base font-semibold text-[var(--tp-text)]">
+        <h3 id={headingId} className="tp-exam-prompt text-[var(--tp-text)]">
           {index + 1}. {question.prompt || t("common.untitledQuestion")}
         </h3>
         {answered && examActive ? (
@@ -146,6 +147,14 @@ export function StudentResponseDispatcher({
           </span>
         ) : null}
       </div>
+
+      {question.promptImagePath ? (
+        <FormAssetImage
+          path={question.promptImagePath}
+          alt={t("home.exam.promptImageAlt")}
+          className="mb-3 overflow-hidden rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-white"
+        />
+      ) : null}
 
       {type === "multipleChoice" && value.type === "multipleChoice" ? (
         <div className="tp-exam-choices" role="radiogroup" aria-labelledby={headingId}>
@@ -314,11 +323,12 @@ export function StudentResponseDispatcher({
       {type === "mathInput" && value.type === "mathInput" ? (
         <MathInputResponder
           id={question.id}
-          latex={value.latex}
+          working={value.working}
+          answer={value.answer}
           disabled={disabled}
           config={question.responseConfig as MathInputConfig}
-          onChange={(latex) =>
-            onAnswerChange(serializeResponseValue({ type: "mathInput", latex }))
+          onChange={({ working, answer }) =>
+            onAnswerChange(serializeResponseValue({ type: "mathInput", working, answer }))
           }
         />
       ) : null}

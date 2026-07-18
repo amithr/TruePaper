@@ -11,6 +11,7 @@ import { stableStringifyStudentAnswers } from "@/lib/student-answers-json";
 const textQuestion: Question = {
   id: "q-essay",
   prompt: "Essay",
+  promptImagePath: null,
   type: "text",
   options: [],
   correctAnswer: null,

@@ -171,7 +171,7 @@ export default function LiveClassDisplayPage() {
             <div>
               <p className="text-sm font-medium text-zinc-400">{t("liveDisplay.joinCode")}</p>
               <p
-                className="mt-2 font-mono text-5xl font-bold tracking-[0.35em] sm:text-6xl"
+                className="mt-2 font-mono text-5xl font-semibold tracking-[0.35em] sm:text-6xl"
                 style={{
                   background:
                     "linear-gradient(135deg, #60a5fa 0%, #a78bfa 50%, #34d399 100%)",
@@ -185,7 +185,7 @@ export default function LiveClassDisplayPage() {
             </div>
 
             <div className="rounded-2xl border border-zinc-700 bg-zinc-900/60 px-6 py-8">
-              <h1 className="text-2xl font-bold leading-snug text-white sm:text-3xl">{board.formTitle}</h1>
+              <h1 className="text-2xl font-semibold leading-snug text-white sm:text-3xl">{board.formTitle}</h1>
               <p className="mt-4 text-lg text-zinc-300">
                 {t("liveDisplay.timeLimit")}{" "}
                 <span className="font-semibold text-white">
@@ -197,7 +197,7 @@ export default function LiveClassDisplayPage() {
                 </span>
               </p>
               {!noTimeLimit ? (
-                <p className="mt-3 text-3xl font-bold tabular-nums text-emerald-400 sm:text-4xl">
+                <p className="mt-3 text-3xl font-semibold tabular-nums text-emerald-400 sm:text-4xl">
                   {formatCountdown(msLeft)}
                 </p>
               ) : null}

@@ -255,12 +255,16 @@ const GUIDE_TYPE_DOCS: GuideTypeDoc[] = [
   },
   {
     type: "mathInput",
-    summary: "Student enters an equation/expression. Optional `config.placeholder`.",
+    summary:
+      "Student shows workings plus a final answer. Auto-graded from `config.acceptedAnswers` (comma-separated variants). Optional `config.placeholder` for the final-answer field.",
     example: {
       type: "mathInput",
-      prompt: "Write the overall equation for photosynthesis.",
+      prompt: "A ball is thrown upward at 12 m/s. Calculate the maximum height. Take g = 9.8 m/s².",
       points: 2,
-      config: { placeholder: "e.g. 6CO2 + 6H2O -> ..." },
+      config: {
+        acceptedAnswers: ["7.35", "7.3", "7.347"],
+        placeholder: "e.g. 7.35",
+      },
     },
   },
   {
@@ -295,7 +299,8 @@ const GUIDE_TYPE_DOCS: GuideTypeDoc[] = [
   },
   {
     type: "photoHandwritten",
-    summary: "Student uploads a photo of handwritten work (no answer key).",
+    summary:
+      "Student uploads a photo of handwritten work (no answer key). Prefer for multi-step calculations, proofs, or workings that need paper.",
     example: {
       type: "photoHandwritten",
       prompt: "Upload your worked solution.",
@@ -342,7 +347,7 @@ content into an exam you can import into Truepaper.
 2. Paste **this entire file**, then paste or attach your source content
    (notes, a textbook chapter, a topic outline, learning objectives…).
 3. Ask: *"Using the guide above, generate an exam as a single JSON file."*
-4. Save the assistant's reply as a \`.json\` file.
+4. Save the assistant's reply as a \`.json\` file (no Markdown fences).
 5. In Truepaper: **Dashboard → Form library → Import exam**, and upload that file.
 6. The exam opens in the form builder, fully editable before you start a session.
 
@@ -355,6 +360,78 @@ content into an exam you can import into Truepaper.
 - Only \`multipleChoice\` uses top-level \`options\` and \`correctAnswer\`.
 - All other answer keys / settings go inside a \`config\` object (see each type).
 - Maximum ${AI_EXAM_MAX_QUESTIONS} questions per file.
+
+## Choosing the right question type
+
+Pick \`type\` from what the student must **do**, not from how the source text is
+worded. Prefer the most specific type that fits:
+
+| If the student must… | Prefer |
+|----------------------|--------|
+| Pick one option from a short list | \`multipleChoice\` |
+| Judge a clear true/false claim | \`trueFalse\` |
+| Give a single word, number, or short phrase that can be auto-marked | \`shortAnswer\` |
+| Enter a calculated final answer (with space for workings) | \`mathInput\` |
+| Show multi-step calculation on paper / photo of workings | \`photoHandwritten\` |
+| Write a paragraph / essay / explanation | \`extendedWritten\` |
+| Answer several labelled sub-parts of one stem | \`structuredMultiPart\` |
+| Match terms to definitions / causes to effects | \`matching\` |
+| Put steps, events, or stages in order | \`ordering\` |
+| Label parts of a diagram or named zones | \`labelling\` |
+| Annotate or highlight a source passage | \`annotateSource\` |
+| Draw a diagram, sketch, or labelled figure | \`drawDiagram\` |
+| Plot points / a relationship on axes | \`graph\` |
+
+Rules of thumb:
+
+- If the source asks students to **calculate**, **solve**, **evaluate**, or
+  **find the value of**, use \`mathInput\` (workings + auto-graded final answer
+  via \`config.acceptedAnswers\`), or \`photoHandwritten\` when a photo of paper
+  work is required.
+- Do **not** put calculation tasks in \`extendedWritten\` or \`multipleChoice\`
+  unless the teacher’s material clearly wants that format.
+- Do **not** force every question into multiple choice — mix types so each item
+  uses the interaction that matches the skill being assessed.
+- If the teacher’s prompt names formats (e.g. “questions 1–5 multiple choice”),
+  follow those instructions first.
+
+## Writing clear, readable question text
+
+Students see \`prompt\` on a phone or laptop during a live exam. Write so the task
+is obvious at a glance:
+
+- Lead with the **task** (what to do), then give any data, context, or constraints.
+- Prefer short sentences and plain classroom language over dense paragraphs.
+- For longer stems, break the text with blank lines (\`\\n\\n\` in the JSON string):
+  context first, then the question, then any “Show your working” / word-count
+  instructions on their own line.
+- Put lists and given values on separate lines when that helps scanning
+  (e.g. given measurements, vocabulary to use, or part labels).
+- Keep the stem focused: one main ask per question (use \`structuredMultiPart\`
+  when there are genuine a/b/c parts).
+- **Never** put teacher-only material in student-facing fields (\`prompt\`,
+  \`description\`, options, part prompts, or \`config.passageText\`): no
+  “Teacher note:”, mark schemes, answers, hints for the teacher, or commentary
+  about how to grade.
+- **Do not describe diagrams or figures in words.** If the source refers to a
+  diagram, figure, graph, map, or photo, write a short instruction only
+  (e.g. “Refer to the diagram.” / “Label the parts shown.”) and use
+  \`drawDiagram\`, \`labelling\`, or \`graph\` as appropriate. Teachers attach the
+  real image in Truepaper — do **not** invent ASCII art, long visual
+  descriptions, or fake figure captions that try to stand in for the image.
+- For \`annotateSource\`, put the full passage in \`config.passageText\`, not the
+  prompt; keep the prompt as the instruction only.
+- For \`structuredMultiPart\`, keep the overall stem in \`prompt\` and put each
+  sub-question in \`config.parts[].prompt\`.
+
+Good prompt shape (example):
+
+${FENCE}text
+A ball is thrown vertically upward with speed 12 m/s.
+
+Calculate the maximum height reached. Take g = 9.8 m/s².
+Show your working.
+${FENCE}
 
 ## Top-level shape
 
@@ -386,10 +463,14 @@ ${FENCE}
 
 ## Notes for the assistant
 
-- Prefer a mix of question types appropriate to the content.
+- Choose each \`type\` using the table above (task → type), then write a clear
+  \`prompt\` using the readability guidance.
+- Prefer a mix of question types appropriate to the content and skills assessed.
 - For objective types (\`matching\`, \`ordering\`, \`labelling\`) always include the
   full \`config\` with ids that are consistent between the items and the answer key.
 - Keep ids short and unique within a question (e.g. \`l1\`, \`r1\`, \`i1\`).
 - Do not invent new \`type\` values or extra top-level fields.
+- Do **not** add teacher notes, mark schemes, or diagram descriptions — leave
+  images and teacher-only guidance for the human teacher in Truepaper.
 `;
 }

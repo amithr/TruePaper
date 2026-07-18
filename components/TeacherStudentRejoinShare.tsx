@@ -236,7 +236,7 @@ export function TeacherStudentRejoinShare({
               </div>
             ) : hasCode ? (
               <div className="mt-6 rounded-[var(--tp-radius-sm)] border border-sky-200 bg-sky-50/70 px-4 py-4 text-sm text-sky-950">
-                <p className="font-mono text-2xl font-bold tracking-[0.2em]">{displayCode}</p>
+                <p className="font-mono text-2xl font-semibold tracking-[0.2em]">{displayCode}</p>
                 <p className="mt-3 text-sm text-sky-900">{t("share.rejoin.instructions")}</p>
                 <div className="mt-4 flex flex-wrap items-center gap-2">
                   <button

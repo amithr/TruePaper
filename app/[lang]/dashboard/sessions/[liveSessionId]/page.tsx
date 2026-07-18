@@ -399,7 +399,7 @@ export default function LiveSessionDetailPage() {
                 { label: s.formTitle },
               ]}
             />
-            <h1 className="mt-4 text-2xl font-bold tracking-tight">{s.formTitle}</h1>
+            <h1 className="mt-4 text-2xl font-semibold tracking-tight">{s.formTitle}</h1>
             <p className="mt-1 flex items-center gap-2 text-sm text-[var(--tp-text-secondary)]">
               <span
                 className={`tp-status ${sessionRunning ? "tp-status-started" : "tp-status-neutral"}`}
@@ -453,7 +453,7 @@ export default function LiveSessionDetailPage() {
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="tp-stat-label">{t("session.joinCodeLabel")}</p>
-              <p className="mt-1 font-mono text-2xl font-bold tracking-[0.2em] text-[var(--tp-text)]">
+              <p className="mt-1 font-mono text-2xl font-semibold tracking-[0.2em] text-[var(--tp-text)]">
                 {s.joinCode}
               </p>
               <SessionJoinShare joinCode={s.joinCode} className="mt-3" />

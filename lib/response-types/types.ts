@@ -107,7 +107,11 @@ export type LabellingConfig = {
 };
 
 export type MathInputConfig = {
+  /** Placeholder for the final-answer field. */
   placeholder?: string;
+  /** Accepted final answers for auto-grading (same matching rules as short answer). */
+  acceptedAnswers?: string[];
+  caseSensitive?: boolean;
 };
 
 export type ResponseConfig =
@@ -167,7 +171,18 @@ export type TrueFalseValue = { type: "trueFalse"; answer: boolean | null };
 export type MatchingValue = { type: "matching"; pairs: Record<string, string> };
 export type OrderingValue = { type: "ordering"; order: string[] };
 export type LabellingValue = { type: "labelling"; assignments: Record<string, string> };
-export type MathInputValue = { type: "mathInput"; latex: string };
+export type MathInputValue = {
+  type: "mathInput";
+  /** Unscored working / calculations area. */
+  working: string;
+  /** Final answer used for auto-grading. */
+  answer: string;
+  /**
+   * Legacy single-field payload (pre working/answer split).
+   * Prefer `working` / `answer`; kept optional for older stored rows.
+   */
+  latex?: string;
+};
 
 export type ResponseValue =
   | ShortAnswerValue

@@ -16,10 +16,12 @@ type LookupPayload = {
   closesAt?: string;
   title?: string;
   description?: string;
+  descriptionImagePath?: string | null;
   liveTeacherFeedbackEnabled?: boolean;
   questions?: Array<{
     id: string;
     prompt: string;
+    promptImagePath?: string | null;
     type: QuestionType;
     options: unknown;
     displayOrder: number;
@@ -32,6 +34,10 @@ function mapQuestions(rows: NonNullable<LookupPayload["questions"]>): Question[]
     .map((row) => ({
       id: row.id,
       prompt: row.prompt,
+      promptImagePath:
+        typeof row.promptImagePath === "string" && row.promptImagePath.trim()
+          ? row.promptImagePath.trim()
+          : null,
       type: normalizeResponseType(row.type),
       options: Array.isArray(row.options)
         ? row.options.filter((o): o is string => typeof o === "string")
@@ -81,6 +87,10 @@ export async function GET(request: Request) {
       id: payload.formId ?? "",
       title: payload.title ?? "Form",
       description: payload.description ?? "",
+      descriptionImagePath:
+        typeof payload.descriptionImagePath === "string" && payload.descriptionImagePath.trim()
+          ? payload.descriptionImagePath.trim()
+          : null,
       createdBy: null,
       liveTeacherFeedbackEnabled: payload.liveTeacherFeedbackEnabled === true,
       questions: mapQuestions(payload.questions ?? []),

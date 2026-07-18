@@ -94,14 +94,9 @@ export function startDashboardTour(t: Translator, onDone: () => void): boolean {
 export function startBuilderTour(t: Translator, onDone: () => void): boolean {
   const steps = toDriveSteps(t, [
     {
-      selector: '[data-tour="form-title"]',
+      selector: '[data-tour="form-title"], .tp-builder-details__collapsed',
       titleKey: "help.tour.builder.title.title",
       bodyKey: "help.tour.builder.title.body",
-    },
-    {
-      selector: '[data-tour="live-feedback"]',
-      titleKey: "help.tour.builder.liveFeedback.title",
-      bodyKey: "help.tour.builder.liveFeedback.body",
     },
     {
       selector: '[data-tour="add-question"]',
@@ -109,17 +104,7 @@ export function startBuilderTour(t: Translator, onDone: () => void): boolean {
       bodyKey: "help.tour.builder.addQuestion.body",
     },
     {
-      selector: '[data-tour="question-points"]',
-      titleKey: "help.tour.builder.scoring.title",
-      bodyKey: "help.tour.builder.scoring.body",
-    },
-    {
-      selector: '[data-tour="correct-answer"]',
-      titleKey: "help.tour.builder.answerKey.title",
-      bodyKey: "help.tour.builder.answerKey.body",
-    },
-    {
-      selector: '[data-tour="save-form"]',
+      selector: '[data-tour="builder-autosave"]',
       titleKey: "help.tour.builder.save.title",
       bodyKey: "help.tour.builder.save.body",
     },

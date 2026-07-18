@@ -73,6 +73,24 @@ describe("parseAiExamDocument", () => {
     expect(exam.questions[0].responseConfig).toMatchObject({ acceptedAnswers: ["oxygen"] });
   });
 
+  it("imports mathInput with accepted final answers", () => {
+    const exam = parseAiExamDocument({
+      questions: [
+        {
+          type: "mathInput",
+          prompt: "Calculate the height.",
+          points: 3,
+          config: { acceptedAnswers: ["7.35", "7.3"], placeholder: "e.g. 7.35" },
+        },
+      ],
+    });
+    expect(exam.questions[0].type).toBe("mathInput");
+    expect(exam.questions[0].responseConfig).toMatchObject({
+      acceptedAnswers: ["7.35", "7.3"],
+      placeholder: "e.g. 7.35",
+    });
+  });
+
   it("clamps invalid points to a sensible value", () => {
     const exam = parseAiExamDocument({
       questions: [{ type: "shortAnswer", prompt: "?", points: -4 }],
@@ -127,5 +145,23 @@ describe("buildAiExamGuideMarkdown", () => {
   it("includes the top-level shape and JSON examples", () => {
     expect(guide).toContain('"questions"');
     expect(guide).toContain("```json");
+  });
+
+  it("teaches type selection and readable prompt structure", () => {
+    expect(guide).toContain("Choosing the right question type");
+    expect(guide).toContain("Writing clear, readable question text");
+    expect(guide).toContain("mathInput");
+    expect(guide).toContain("calculate");
+  });
+
+  it("documents mathInput acceptedAnswers for auto-grading", () => {
+    expect(guide).toContain("acceptedAnswers");
+    expect(guide).toMatch(/mathInput[\s\S]*acceptedAnswers|acceptedAnswers[\s\S]*mathInput/);
+  });
+
+  it("tells the assistant not to describe diagrams or add teacher notes", () => {
+    expect(guide).toMatch(/do not describe diagrams/i);
+    expect(guide).toMatch(/teacher note/i);
+    expect(guide).toMatch(/mark schemes/i);
   });
 });

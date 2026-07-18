@@ -1,14 +1,15 @@
 "use client";
 
 import { useLocaleRouter as useRouter } from "@/lib/i18n/client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { deferEffect } from "@/lib/defer-effect";
 
+import { AiGuideModal } from "@/components/dashboard/AiGuideModal";
 import { FormLibraryRow } from "@/components/dashboard/FormLibraryRow";
+import { ImportExamModal } from "@/components/dashboard/ImportExamModal";
 import {
   EntityList,
-  EntityListColumns,
   EntityListFooter,
   EntityListPanel,
   EntityListPager,
@@ -36,6 +37,26 @@ type Props = {
   onError: (message: string) => void;
 };
 
+type OpenPopover = { formId: string; kind: "start" | "menu" } | null;
+
+function seedSessionState(forms: Form[]) {
+  const durations: Record<string, number> = {};
+  const noTimeLimit: Record<string, boolean> = {};
+  const deliveryMode: Record<string, "live" | "self_paced" | "hybrid"> = {};
+  const acceptLateSync: Record<string, boolean> = {};
+  for (const form of forms) {
+    const defaults = form.lastSessionDefaults;
+    if (!defaults) {
+      continue;
+    }
+    durations[form.id] = defaults.durationMinutes;
+    noTimeLimit[form.id] = defaults.noTimeLimit;
+    deliveryMode[form.id] = defaults.deliveryMode;
+    acceptLateSync[form.id] = defaults.acceptLateSync;
+  }
+  return { durations, noTimeLimit, deliveryMode, acceptLateSync };
+}
+
 export function DashboardFormLibrary({ onError }: Props) {
   const router = useRouter();
   const t = useTranslations();
@@ -49,10 +70,13 @@ export function DashboardFormLibrary({ onError }: Props) {
     Record<string, "live" | "self_paced" | "hybrid">
   >({});
   const [acceptLateSyncByForm, setAcceptLateSyncByForm] = useState<Record<string, boolean>>({});
+  const [liveFeedbackByForm, setLiveFeedbackByForm] = useState<Record<string, boolean>>({});
+  const [openPopover, setOpenPopover] = useState<OpenPopover>(null);
   const [startingFormId, setStartingFormId] = useState<string | null>(null);
   const [creatingForm, setCreatingForm] = useState(false);
   const [importingExam, setImportingExam] = useState(false);
-  const importInputRef = useRef<HTMLInputElement>(null);
+  const [aiGuideOpen, setAiGuideOpen] = useState(false);
+  const [importExamOpen, setImportExamOpen] = useState(false);
   const [deletingFormId, setDeletingFormId] = useState<string | null>(null);
   const [formLibraryPage, setFormLibraryPage] = useState(0);
   const [formLibrarySearch, setFormLibrarySearch] = useState("");
@@ -66,6 +90,16 @@ export function DashboardFormLibrary({ onError }: Props) {
         const data = await requestJson<{ forms: Form[] }>("/api/forms?summary=1");
         if (!cancelled) {
           setForms(data.forms);
+          const seeded = seedSessionState(data.forms);
+          setSessionDurations(seeded.durations);
+          setNoTimeLimitByForm(seeded.noTimeLimit);
+          setDeliveryModeByForm(seeded.deliveryMode);
+          setAcceptLateSyncByForm(seeded.acceptLateSync);
+          const feedback: Record<string, boolean> = {};
+          for (const form of data.forms) {
+            feedback[form.id] = form.liveTeacherFeedbackEnabled === true;
+          }
+          setLiveFeedbackByForm(feedback);
         }
       } catch (e) {
         if (!cancelled) {
@@ -113,6 +147,7 @@ export function DashboardFormLibrary({ onError }: Props) {
     try {
       await requestJson<{ ok: true }>(`/api/forms/${formId}`, { method: "DELETE" });
       setForms((prev) => prev.filter((f) => f.id !== formId));
+      setOpenPopover(null);
       setSessionDurations((d) => {
         const next = { ...d };
         delete next[formId];
@@ -130,6 +165,20 @@ export function DashboardFormLibrary({ onError }: Props) {
     const noTimeLimit = noTimeLimitByForm[formId] === true;
     setStartingFormId(formId);
     try {
+      const form = forms.find((f) => f.id === formId);
+      const liveFeedback = liveFeedbackByForm[formId] === true;
+      if (form && form.liveTeacherFeedbackEnabled !== liveFeedback) {
+        await requestJson<{ ok: true }>(`/api/forms/${formId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ liveTeacherFeedbackEnabled: liveFeedback }),
+        });
+        setForms((prev) =>
+          prev.map((f) =>
+            f.id === formId ? { ...f, liveTeacherFeedbackEnabled: liveFeedback } : f,
+          ),
+        );
+      }
       const created = await startLiveSession(formId, {
         ...(noTimeLimit ? { noTimeLimit: true } : { durationMinutes: minutes }),
         deliveryMode: deliveryModeByForm[formId] ?? "live",
@@ -146,23 +195,21 @@ export function DashboardFormLibrary({ onError }: Props) {
   const importExamFromFile = async (file: File) => {
     setImportingExam(true);
     try {
-      const text = await file.text();
-      let document: unknown;
-      try {
-        document = JSON.parse(text);
-      } catch {
-        throw new Error(t("formLibrary.import.errors.invalidJson"));
-      }
+      const body = new FormData();
+      body.append("file", file);
       const data = await requestJson<{ form: Form }>("/api/forms/import", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ document }),
+        body,
       });
       const created = {
         ...data.form,
         questionCount: data.form.questions.length,
+        autogradeCount: 0,
+        lastRunAt: null,
+        lastSessionDefaults: null,
       };
       setForms((prev) => [...prev, created]);
+      setImportExamOpen(false);
       stashPendingBuilderForm(created);
       router.push(`/?form=${encodeURIComponent(data.form.id)}`);
     } catch (e) {
@@ -188,82 +235,52 @@ export function DashboardFormLibrary({ onError }: Props) {
   );
 
   const formRowMenuItems = useCallback(
-    (form: Form): OverflowMenuItem[] => {
-      const acceptLateSync = acceptLateSyncByForm[form.id] !== false;
-      return [
-        {
-          type: "custom",
-          key: `late-sync-${form.id}`,
-          node: (
-            <label className="tp-overflow-menu__toggle">
-              <input
-                type="checkbox"
-                checked={acceptLateSync}
-                onChange={(event) =>
-                  setAcceptLateSyncByForm((current) => ({
-                    ...current,
-                    [form.id]: event.target.checked,
-                  }))
-                }
-              />
-              <span>{t("formLibrary.acceptLateSyncShort")}</span>
-            </label>
-          ),
-        },
-        {
-          type: "button",
-          label: t("formLibrary.startLink.copy"),
-          onClick: () => {
-            const url = buildFormStartUrl(origin, locale, form.id, sessionOptionsForForm(form.id));
-            if (url) {
-              void copyToClipboard(url).then((ok) => {
-                if (ok) {
-                  toast.success(t("formLibrary.startLink.copied"));
-                }
-              });
-            }
-          },
-          disabled: !origin,
-        },
-        {
-          type: "button",
-          label: t("templateLibrary.save.action"),
-          onClick: () => {
-            setSaveTemplateFormId(form.id);
-            setSaveTemplateTitle(form.title || "");
-          },
-        },
-        {
-          type: "custom",
-          key: `delete-${form.id}`,
-          node: (
-            <ConfirmButton
-              tone="danger"
-              label={t("common.delete")}
-              confirmLabel={t("common.tapAgainDelete")}
-              busy={deletingFormId === form.id}
-              busyLabel={t("common.deleting")}
-              disabled={
-                startingFormId === form.id ||
-                (deletingFormId !== null && deletingFormId !== form.id)
+    (form: Form): OverflowMenuItem[] => [
+      {
+        type: "button",
+        label: t("formLibrary.startLink.copy"),
+        onClick: () => {
+          const url = buildFormStartUrl(origin, locale, form.id, sessionOptionsForForm(form.id));
+          if (url) {
+            void copyToClipboard(url).then((ok) => {
+              if (ok) {
+                toast.success(t("formLibrary.startLink.copied"));
               }
-              onConfirm={() => void deleteForm(form.id)}
-              className="tp-overflow-menu__confirm"
-            />
-          ),
+            });
+          }
         },
-      ];
-    },
-    [
-      acceptLateSyncByForm,
-      deleteForm,
-      deletingFormId,
-      locale,
-      origin,
-      sessionOptionsForForm,
-      startingFormId,
-      t,
+        disabled: !origin,
+      },
+      {
+        type: "button",
+        label: t("templateLibrary.save.action"),
+        onClick: () => {
+          setSaveTemplateFormId(form.id);
+          setSaveTemplateTitle(form.title || "");
+        },
+      },
+      { type: "divider", key: `divider-${form.id}` },
+      {
+        type: "custom",
+        key: `delete-${form.id}`,
+        node: (
+          <ConfirmButton
+            tone="danger"
+            label={t("formLibrary.deleteEllipsis")}
+            confirmLabel={t("common.tapAgainDelete")}
+            busy={deletingFormId === form.id}
+            busyLabel={t("common.deleting")}
+            disabled={
+              startingFormId === form.id ||
+              (deletingFormId !== null && deletingFormId !== form.id)
+            }
+            onConfirm={() => void deleteForm(form.id)}
+            className="tp-overflow-menu__confirm"
+          />
+        ),
+      },
     ],
+    [deleteForm, deletingFormId, locale, origin, sessionOptionsForForm, startingFormId, t],
   );
 
   return (
@@ -275,9 +292,9 @@ export function DashboardFormLibrary({ onError }: Props) {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <HelpHint id="dash-ai-guide" text={t("help.dashboard.aiGuide")}>
-            <a
-              href="/api/forms/ai-template"
-              download
+            <button
+              type="button"
+              onClick={() => setAiGuideOpen(true)}
               className={`${ui.btnGhost} inline-flex items-center gap-2 text-sm`}
             >
               <svg
@@ -290,29 +307,17 @@ export function DashboardFormLibrary({ onError }: Props) {
                 strokeLinecap="round"
                 strokeLinejoin="round"
               >
-                <path d="M12 3v12M7 10l5 5 5-5M5 21h14" />
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 8v.01M11 12h1v4h1" />
               </svg>
               {t("formLibrary.import.downloadGuide")}
-            </a>
+            </button>
           </HelpHint>
-          <input
-            ref={importInputRef}
-            type="file"
-            accept="application/json,.json"
-            className="sr-only"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              event.target.value = "";
-              if (file) {
-                void importExamFromFile(file);
-              }
-            }}
-          />
           <button
             type="button"
             data-tour="import-exam"
             disabled={importingExam || creatingForm}
-            onClick={() => importInputRef.current?.click()}
+            onClick={() => setImportExamOpen(true)}
             className={`${ui.btnSecondary} inline-flex items-center gap-2 disabled:opacity-50`}
             aria-busy={importingExam}
           >
@@ -350,7 +355,14 @@ export function DashboardFormLibrary({ onError }: Props) {
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({}),
                 });
-                const created = { ...data.form, questionCount: 0, questions: [] };
+                const created = {
+                  ...data.form,
+                  questionCount: 0,
+                  questions: [],
+                  autogradeCount: 0,
+                  lastRunAt: null,
+                  lastSessionDefaults: null,
+                };
                 setForms((prev) => [...prev, created]);
                 stashPendingBuilderForm(created);
                 router.push(`/?form=${encodeURIComponent(data.form.id)}`);
@@ -394,16 +406,6 @@ export function DashboardFormLibrary({ onError }: Props) {
               placeholder={t("formLibrary.searchPlaceholder")}
               label={t("formLibrary.searchSrOnly")}
             />
-            <HelpHint
-              id="dash-session-settings"
-              text={t("help.dashboard.sessionSettings")}
-              label={t("formLibrary.listHeaderSetup")}
-            />
-            <HelpHint
-              id="dash-accept-late-sync"
-              text={t("help.dashboard.acceptLateSync")}
-              label={t("formLibrary.acceptLateSyncShort")}
-            />
           </EntityListToolbar>
           {filteredForms.length === 0 ? (
             <p className="tp-entity-list-empty">
@@ -411,25 +413,27 @@ export function DashboardFormLibrary({ onError }: Props) {
             </p>
           ) : (
             <>
-              <EntityListColumns
-                variant="three"
-                columns={[
-                  t("formLibrary.listHeaderForm"),
-                  t("formLibrary.listHeaderSetup"),
-                  t("formLibrary.listHeaderActions"),
-                ]}
-              />
               <EntityList>
                 {formLibraryPageSlice.map((form) => (
                   <FormLibraryRow
                     key={form.id}
                     form={form}
                     questionCount={questionCount(form)}
+                    autogradeCount={form.autogradeCount ?? 0}
+                    lastRunAt={form.lastRunAt ?? null}
                     durationMinutes={sessionDurations[form.id] ?? 45}
                     noTimeLimit={noTimeLimitByForm[form.id] === true}
                     deliveryMode={deliveryModeByForm[form.id] ?? "live"}
+                    acceptLateSync={acceptLateSyncByForm[form.id] !== false}
+                    liveTeacherFeedbackEnabled={liveFeedbackByForm[form.id] === true}
                     starting={startingFormId === form.id}
                     menuItems={formRowMenuItems(form)}
+                    openPopover={
+                      openPopover?.formId === form.id ? openPopover.kind : null
+                    }
+                    onOpenPopoverChange={(kind) =>
+                      setOpenPopover(kind ? { formId: form.id, kind } : null)
+                    }
                     onDurationChange={(minutes) =>
                       setSessionDurations((d) => ({ ...d, [form.id]: minutes }))
                     }
@@ -439,10 +443,18 @@ export function DashboardFormLibrary({ onError }: Props) {
                     onDeliveryModeChange={(mode) =>
                       setDeliveryModeByForm((current) => ({ ...current, [form.id]: mode }))
                     }
+                    onAcceptLateSyncChange={(enabled) =>
+                      setAcceptLateSyncByForm((current) => ({ ...current, [form.id]: enabled }))
+                    }
+                    onLiveTeacherFeedbackChange={(enabled) =>
+                      setLiveFeedbackByForm((current) => ({ ...current, [form.id]: enabled }))
+                    }
                     onStart={() => void startSessionForForm(form.id)}
+                    onEdit={() => router.push(`/?form=${encodeURIComponent(form.id)}`)}
                   />
                 ))}
               </EntityList>
+              <p className="tp-form-library-row-hint">{t("formLibrary.rowHint")}</p>
               {filteredForms.length > FORM_LIBRARY_PAGE_SIZE ? (
                 <EntityListFooter>
                   <p>
@@ -485,6 +497,23 @@ export function DashboardFormLibrary({ onError }: Props) {
         formId={saveTemplateFormId ?? undefined}
         defaultTitle={saveTemplateTitle}
       />
+      <AiGuideModal
+        open={aiGuideOpen}
+        onClose={() => setAiGuideOpen(false)}
+        onImportExam={() => setImportExamOpen(true)}
+      />
+      {importExamOpen ? (
+        <ImportExamModal
+          open
+          importing={importingExam}
+          onClose={() => {
+            if (!importingExam) {
+              setImportExamOpen(false);
+            }
+          }}
+          onImport={(file) => void importExamFromFile(file)}
+        />
+      ) : null}
     </section>
   );
 }

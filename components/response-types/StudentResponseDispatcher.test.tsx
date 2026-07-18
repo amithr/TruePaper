@@ -1,7 +1,8 @@
-import { screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { StudentResponseDispatcher } from "@/components/response-types/StudentResponseDispatcher";
+import { serializeResponseValue } from "@/lib/response-types/answers";
 import { makeQuestion } from "@/lib/test/question-fixtures";
 import { renderWithI18n } from "@/lib/test/render-i18n";
 
@@ -64,5 +65,35 @@ describe("StudentResponseDispatcher", () => {
     expect(
       screen.getByText(/Paste the source passage here/i),
     ).toBeInTheDocument();
+  });
+
+  it("renders math working + final answer and serializes both on change", () => {
+    const onAnswerChange = vi.fn();
+    renderWithI18n(
+      <StudentResponseDispatcher
+        question={makeQuestion("mathInput", {
+          responseConfig: { acceptedAnswers: ["2"], placeholder: "final" },
+        })}
+        index={0}
+        answer={serializeResponseValue({ type: "mathInput", working: "1+1", answer: "" })}
+        answered={false}
+        examActive
+        disabled={false}
+        protectTextarea={false}
+        showLiveFeedbackFeature={false}
+        feedbackStore={{}}
+        onAnswerChange={onAnswerChange}
+        onChoiceChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId("student-math-input")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("1+1")).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId("student-math-final-answer"), {
+      target: { value: "2" },
+    });
+    expect(onAnswerChange).toHaveBeenCalledWith(
+      serializeResponseValue({ type: "mathInput", working: "1+1", answer: "2" }),
+    );
   });
 });

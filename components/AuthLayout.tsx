@@ -41,7 +41,7 @@ export function AuthLayout({ eyebrow, title, subtitle, children, footer }: Props
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/80">
             {t("brand.sidePanelEyebrow")}
           </p>
-          <h2 className="text-3xl font-bold leading-tight">{t("brand.sidePanelTitle")}</h2>
+          <h2 className="text-3xl font-semibold leading-tight">{t("brand.sidePanelTitle")}</h2>
           <ul className="space-y-2 text-sm text-white/90">
             <li className="flex items-start gap-2">
               <span aria-hidden className="mt-1 inline-block h-1.5 w-1.5 rounded-full bg-white" />
@@ -81,7 +81,7 @@ export function AuthLayout({ eyebrow, title, subtitle, children, footer }: Props
               {eyebrow}
             </p>
           ) : null}
-          <h1 className="mt-1 text-3xl font-bold tracking-tight text-[var(--tp-text)]">
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight text-[var(--tp-text)]">
             {title}
           </h1>
           {subtitle ? (

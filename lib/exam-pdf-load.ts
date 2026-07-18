@@ -13,7 +13,8 @@ const RESPONSE_SELECT_FULL =
 const RESPONSE_SELECT_FALLBACK =
   "anonymous_session_id, student_display_name, answers, suspended_at, finished_at, last_activity_at, updated_at, live_teacher_feedback";
 
-const FORM_SELECT = "id, title, description, created_by, live_teacher_feedback_enabled";
+const FORM_SELECT =
+  "id, title, description, description_image_path, created_by, live_teacher_feedback_enabled";
 const FORM_SELECT_LEGACY = "id, title, description, created_by";
 
 export type ExamPdfSession = {
@@ -50,6 +51,7 @@ type FormRow = {
   id: string;
   title: string;
   description: string | null;
+  description_image_path?: string | null;
   created_by: string | null;
   live_teacher_feedback_enabled?: boolean | null;
 };
@@ -97,7 +99,9 @@ export async function loadSessionForPdf(
 
   const { data: questionRows, error: qError } = await supabase
     .from("questions")
-    .select("id, form_id, prompt, question_type, options, correct_answer, points, display_order")
+    .select(
+      "id, form_id, prompt, prompt_image_path, question_type, options, correct_answer, points, display_order, response_config",
+    )
     .eq("form_id", formId)
     .order("display_order", { ascending: true });
 
@@ -111,6 +115,7 @@ export async function loadSessionForPdf(
         id: formRow.id,
         title: formRow.title,
         description: formRow.description ?? "",
+        description_image_path: formRow.description_image_path ?? null,
         created_by: formRow.created_by,
         live_teacher_feedback_enabled: formRow.live_teacher_feedback_enabled === true,
       },

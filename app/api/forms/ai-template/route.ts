@@ -1,8 +1,8 @@
 import { AI_EXAM_TEMPLATE_FILENAME, buildAiExamGuideMarkdown } from "@/lib/ai-exam-import";
 
 /**
- * Public download: the Markdown guide a teacher feeds to ChatGPT/Claude to
- * generate an importable exam. Contains no secrets, so no auth is required.
+ * Public download: Markdown guide teachers feed to ChatGPT/Claude to generate
+ * an importable JSON exam. Contains no secrets.
  */
 export function GET() {
   const body = buildAiExamGuideMarkdown();

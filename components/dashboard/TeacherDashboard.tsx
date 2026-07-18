@@ -105,7 +105,7 @@ export function TeacherDashboard({
 
         <section data-tour="welcome" className="tp-card-accent p-6 sm:p-8 tp-anim-fade-up">
           <p className={ui.sectionTitle}>{t("dashboard.eyebrow")}</p>
-          <h1 className="mt-1 text-3xl font-bold tracking-tight">
+          <h1 className="mt-1 text-3xl font-semibold tracking-tight">
             {t("dashboard.helloPrefix")}
             <span className="text-[var(--tp-brand)]">{name}</span>
           </h1>
