@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 
+import { ExamMarkdown } from "@/components/ExamMarkdown";
 import { StudentExamTextarea } from "@/components/StudentExamTextarea";
 import type { StructuredMultiPartConfig } from "@/lib/response-types/types";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
@@ -103,7 +104,9 @@ export function StructuredMultiPartResponder({
 
       <div role="tabpanel" aria-labelledby={`${questionId}-part-${currentPart.id}`}>
         {currentPart.prompt ? (
-          <p className="mb-2 text-sm text-[var(--tp-text-secondary)]">{currentPart.prompt}</p>
+          <ExamMarkdown variant="body" className="mb-2 text-sm">
+            {currentPart.prompt}
+          </ExamMarkdown>
         ) : null}
         {partFeedback[currentPart.id]?.trim() ? (
           <div className="tp-teacher-feedback-card mb-3">

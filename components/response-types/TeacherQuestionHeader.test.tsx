@@ -18,7 +18,7 @@ describe("TeacherQuestionHeader", () => {
     expect(screen.getByTestId("teacher-question-header")).toBeInTheDocument();
     expect(screen.getByTestId("teacher-question-number")).toHaveTextContent("3");
     expect(screen.getByTestId("question-type-badge")).toHaveTextContent(/math/i);
-    expect(screen.getByRole("heading", { level: 3 })).toHaveTextContent("Calculate the height");
+    expect(screen.getByText("Calculate the height")).toBeInTheDocument();
     expect(screen.getByTestId("trail")).toHaveTextContent("Auto");
   });
 });

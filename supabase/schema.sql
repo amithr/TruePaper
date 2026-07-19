@@ -151,6 +151,8 @@ create table if not exists public.live_session_presence (
     check (sync_state in ('synced', 'pending', 'offline')),
   hand_raised_at timestamptz,
   hand_raise_question_id uuid,
+  -- Question the student last focused / typed in (teacher watch live chip).
+  focus_question_id uuid,
   primary key (live_session_id, anonymous_session_id)
 ) with (fillfactor = 70);
 
@@ -186,7 +188,8 @@ create or replace function public.touch_live_session_presence(
   p_live_session_id uuid,
   p_device_id text,
   p_is_typing boolean,
-  p_interaction boolean
+  p_interaction boolean,
+  p_focus_question_id uuid default null
 )
 returns void
 language sql
@@ -194,14 +197,19 @@ security definer
 set search_path = public
 as $$
   insert into public.live_session_presence as p (
-    live_session_id, anonymous_session_id, last_activity_at, last_typing_at, last_seen_at
+    live_session_id, anonymous_session_id, last_activity_at, last_typing_at, last_seen_at, focus_question_id
   )
   values (
     p_live_session_id,
     p_device_id,
     case when coalesce(p_interaction, true) then timezone('utc', now()) else null end,
     case when coalesce(p_is_typing, false) then timezone('utc', now()) else null end,
-    timezone('utc', now())
+    timezone('utc', now()),
+    case
+      when coalesce(p_interaction, true) or coalesce(p_is_typing, false)
+        then p_focus_question_id
+      else null
+    end
   )
   on conflict (live_session_id, anonymous_session_id) do update
   set
@@ -213,7 +221,12 @@ as $$
       when coalesce(p_is_typing, false) then timezone('utc', now())
       else p.last_typing_at
     end,
-    last_seen_at = timezone('utc', now());
+    last_seen_at = timezone('utc', now()),
+    focus_question_id = case
+      when coalesce(p_interaction, true) or coalesce(p_is_typing, false)
+        then p_focus_question_id
+      else p.focus_question_id
+    end;
 $$;
 
 create or replace function public.update_updated_at_column()
@@ -1222,7 +1235,8 @@ create or replace function public.heartbeat_live_session_student(
   p_interaction boolean,
   p_display_name text,
   p_pending_sync_count integer default 0,
-  p_sync_state text default 'synced'
+  p_sync_state text default 'synced',
+  p_focus_question_id uuid default null
 )
 returns void
 language plpgsql
@@ -1252,7 +1266,7 @@ begin
   end if;
 
   perform public.touch_live_session_presence(
-    p_live_session_id, p_device_id, p_is_typing, p_interaction
+    p_live_session_id, p_device_id, p_is_typing, p_interaction, p_focus_question_id
   );
 
   update public.live_session_presence
@@ -2213,11 +2227,11 @@ revoke all on function public.lookup_join_code(text) from public;
 revoke all on function public.get_live_session_public_board(text) from public;
 revoke all on function public.get_live_session_student_response(uuid, text) from public;
 revoke all on function public.get_live_session_student_state(uuid, text) from public;
-revoke all on function public.touch_live_session_presence(uuid, text, boolean, boolean) from public;
+revoke all on function public.touch_live_session_presence(uuid, text, boolean, boolean, uuid) from public;
 revoke all on function public.save_live_session_student_response(uuid, text, jsonb, text, uuid) from public;
 revoke all on function public.suspend_live_session_student_tab_leave(uuid, text, text) from public;
 revoke all on function public.register_live_session_student_presence(uuid, text, text) from public;
-revoke all on function public.heartbeat_live_session_student(uuid, text, boolean, boolean, text, integer, text) from public;
+revoke all on function public.heartbeat_live_session_student(uuid, text, boolean, boolean, text, integer, text, uuid) from public;
 revoke all on function public.finish_live_session_student_response(uuid, text, text) from public;
 revoke all on function public.set_live_teacher_feedback(uuid, text, uuid, text) from public;
 revoke all on function public.ensure_student_resume_code(uuid, text) from public;
@@ -2242,11 +2256,11 @@ grant execute on function public.get_student_review_by_token(text) to anon, auth
 grant execute on function public.get_live_session_public_board(text) to anon, authenticated, service_role;
 grant execute on function public.get_live_session_student_response(uuid, text) to anon, authenticated, service_role;
 grant execute on function public.get_live_session_student_state(uuid, text) to anon, authenticated, service_role;
-grant execute on function public.touch_live_session_presence(uuid, text, boolean, boolean) to service_role;
+grant execute on function public.touch_live_session_presence(uuid, text, boolean, boolean, uuid) to service_role;
 grant execute on function public.save_live_session_student_response(uuid, text, jsonb, text, uuid) to anon, authenticated, service_role;
 grant execute on function public.suspend_live_session_student_tab_leave(uuid, text, text) to anon, authenticated, service_role;
 grant execute on function public.register_live_session_student_presence(uuid, text, text) to anon, authenticated, service_role;
-grant execute on function public.heartbeat_live_session_student(uuid, text, boolean, boolean, text, integer, text) to anon, authenticated, service_role;
+grant execute on function public.heartbeat_live_session_student(uuid, text, boolean, boolean, text, integer, text, uuid) to anon, authenticated, service_role;
 grant execute on function public.finish_live_session_student_response(uuid, text, text) to anon, authenticated, service_role;
 grant execute on function public.set_live_teacher_feedback(uuid, text, uuid, text) to authenticated, service_role;
 grant execute on function public.teacher_clear_live_session_student_suspension(uuid, text) to authenticated, service_role;

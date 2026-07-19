@@ -1665,6 +1665,156 @@ code,
   letter-spacing: 0;
 }
 
+/* Markdown in exam prompts / descriptions (AI import + teacher text) */
+.tp-md {
+  min-width: 0;
+}
+
+.tp-md--prompt {
+  font-weight: 500;
+  line-height: 1.6;
+}
+
+.tp-md--body {
+  font-weight: 400;
+  line-height: 1.55;
+  color: var(--tp-text-secondary);
+}
+
+.tp-md__p {
+  margin: 0 0 0.65em;
+}
+
+.tp-md__p:last-child {
+  margin-bottom: 0;
+}
+
+.tp-md__strong {
+  font-weight: 600;
+  color: var(--tp-text);
+}
+
+.tp-md__em {
+  font-style: italic;
+}
+
+.tp-md__ul,
+.tp-md__ol {
+  margin: 0.35em 0 0.65em;
+  padding-left: 1.35em;
+}
+
+.tp-md__ul {
+  list-style: disc;
+}
+
+.tp-md__ol {
+  list-style: decimal;
+}
+
+.tp-md__li {
+  margin: 0.2em 0;
+  padding-left: 0.15em;
+}
+
+.tp-md__li > .tp-md__p {
+  margin: 0;
+}
+
+.tp-md__h {
+  margin: 0.75em 0 0.35em;
+  font-size: 0.95em;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--tp-text);
+}
+
+.tp-md__h:first-child {
+  margin-top: 0;
+}
+
+.tp-md__code {
+  font-family: var(--font-mono-stack);
+  font-size: 0.9em;
+  font-weight: 500;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  background: var(--tp-bg-subtle);
+  color: var(--tp-text);
+}
+
+.tp-md__pre {
+  margin: 0.5em 0 0.75em;
+  padding: 0.65rem 0.75rem;
+  overflow-x: auto;
+  border-radius: var(--tp-radius-xs);
+  border: 1px solid var(--tp-border);
+  background: var(--tp-bg-subtle);
+}
+
+.tp-md__code-block {
+  font-family: var(--font-mono-stack);
+  font-size: 0.85em;
+  font-weight: 500;
+  white-space: pre;
+}
+
+.tp-md__blockquote {
+  margin: 0.5em 0 0.75em;
+  padding: 0.35em 0 0.35em 0.85em;
+  border-left: 3px solid var(--tp-border-strong);
+  color: var(--tp-text-secondary);
+}
+
+.tp-md__a {
+  color: var(--tp-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.tp-md__table-wrap {
+  margin: 0.5em 0 0.75em;
+  overflow-x: auto;
+}
+
+.tp-md__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+
+.tp-md__th,
+.tp-md__td {
+  border: 1px solid var(--tp-border);
+  padding: 0.35em 0.55em;
+  text-align: left;
+  vertical-align: top;
+}
+
+.tp-md__th {
+  font-weight: 600;
+  background: var(--tp-bg-subtle);
+  color: var(--tp-text);
+}
+
+.tp-md__hr {
+  margin: 0.75em 0;
+  border: 0;
+  border-top: 1px solid var(--tp-border);
+}
+
+.tp-exam-prompt__row {
+  display: flex;
+  gap: 0.4rem;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.tp-exam-prompt__num {
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
 .tp-exam-choices {
   display: flex;
   flex-direction: column;
@@ -1983,6 +2133,11 @@ code,
 }
 
 .tp-watch-q--hand-focus {
+  box-shadow: 0 0 0 2px #facc15;
+}
+
+/* Student exam: yellow ring while this question's hand is raised */
+.tp-exam-q--hand-raised .tp-question-card--exam {
   box-shadow: 0 0 0 2px #facc15;
 }
 
@@ -5738,4 +5893,964 @@ code,
   .tp-running-session-row__actions {
     justify-content: space-between;
   }
+}
+
+/* —— Teacher watch (student review redesign) —— */
+.tp-watch-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+}
+
+.tp-watch-header__identity {
+  min-width: 0;
+  flex: 1 1 12rem;
+}
+
+.tp-watch-header__name {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+  line-height: 1.2;
+}
+
+.tp-watch-header__activity {
+  margin: 0.35rem 0 0;
+  font-size: 0.78125rem;
+  color: #94a3b8;
+}
+
+.tp-watch-header__nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.tp-watch-header__index {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  min-width: 6.5rem;
+  text-align: center;
+}
+
+.tp-watch-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.125rem;
+  height: 2.125rem;
+  border-radius: 0.5rem;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #0f172a;
+}
+
+.tp-watch-nav-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.tp-watch-live-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.tp-watch-live-chip[data-kind="live"],
+.tp-watch-live-chip[data-kind="typing"] {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.tp-watch-live-chip[data-kind="paused"] {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.tp-watch-live-chip__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #22c55e;
+}
+
+.tp-watch-progress {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+
+.tp-watch-progress__stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-size: 0.8125rem;
+  color: #64748b;
+}
+
+.tp-watch-progress__num {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #0f172a;
+}
+
+.tp-watch-progress__dot {
+  color: #cbd5e1;
+}
+
+.tp-watch-progress__jumps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.tp-watch-progress__jump-label {
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.tp-watch-progress__squares {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.tp-watch-jump {
+  width: 1.625rem;
+  height: 1.625rem;
+  border-radius: 0.3rem;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #94a3b8;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.tp-watch-jump[data-state="answered"] {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.tp-watch-jump[data-state="graded"] {
+  background: #dcfce7;
+  border-color: #bbf7d0;
+  color: #15803d;
+}
+
+.tp-watch-brief {
+  padding: 0.65rem 0.15rem;
+}
+
+.tp-watch-brief__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.tp-watch-brief__title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.tp-watch-brief__toggle {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-size: 0.78125rem;
+  font-weight: 500;
+  color: #2563eb;
+  cursor: pointer;
+}
+
+.tp-watch-brief__body {
+  margin-top: 0.55rem;
+  font-size: 0.84375rem;
+  line-height: 1.55;
+  color: #475569;
+}
+
+.tp-watch-q-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.tp-watch-q {
+  padding: 1.25rem 1.375rem;
+  border-radius: 14px;
+  background: #fff;
+  border: 1.5px solid transparent;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+.tp-watch-q--typing {
+  border-color: #fbbf24;
+}
+
+.tp-watch-q--hand {
+  border-color: #fde047;
+}
+
+.tp-watch-q__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.tp-watch-q__num {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 0.875rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #64748b;
+}
+
+.tp-watch-q__max {
+  margin-left: auto;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 0.78125rem;
+  font-variant-numeric: tabular-nums;
+  color: #94a3b8;
+}
+
+.tp-watch-type-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border: 0;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.tp-watch-type-badge--extendedWritten,
+.tp-watch-type-badge--shortAnswer,
+.tp-watch-type-badge--structuredMultiPart,
+.tp-watch-type-badge--annotateSource {
+  background: #e0e7ff;
+  color: #4338ca;
+}
+
+.tp-watch-type-badge--mathInput {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.tp-watch-typing-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.55rem 0 0;
+  font-size: 0.75rem;
+  color: #b45309;
+}
+
+.tp-watch-typing-hint__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #f59e0b;
+}
+
+.tp-watch-hand-hint {
+  margin: 0.4rem 0 0;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #854d0e;
+}
+
+.tp-watch-q__prompt {
+  margin-top: 0.65rem;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  line-height: 1.5;
+  color: #0f172a;
+}
+
+.tp-watch-q__response {
+  margin-top: 0.85rem;
+}
+
+.tp-watch-q__score-row {
+  padding-top: 0.85rem;
+  border-top: 1px solid #f1f5f9;
+}
+
+.tp-watch-response {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0.7rem 0.85rem;
+  font-size: 0.90625rem;
+  line-height: 1.6;
+  color: #0f172a;
+  background: #fff;
+}
+
+.tp-watch-response--empty {
+  border: 1.5px dashed #e2e8f0;
+  font-size: 0.84375rem;
+  font-style: italic;
+  color: #94a3b8;
+  background: transparent;
+}
+
+.tp-watch-response--emphasis {
+  border-width: 1.5px;
+  border-color: var(--tp-accent-border, #bfdbfe);
+}
+
+.tp-watch-response__label {
+  margin: 0 0 0.35rem;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+  color: #94a3b8;
+}
+
+.tp-watch-response__pre {
+  margin: 0;
+  white-space: pre-wrap;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 0.875rem;
+  color: #334155;
+}
+
+.tp-watch-response__pre--final {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.tp-watch-score {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.65rem;
+}
+
+.tp-watch-score__label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.tp-watch-score__stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.tp-watch-score__btn {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 0.4rem;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #0f172a;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.tp-watch-score__btn:disabled {
+  opacity: 0.35;
+}
+
+.tp-watch-score__value {
+  min-width: 3.5rem;
+  text-align: center;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.tp-watch-score__sep,
+.tp-watch-score__max {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.tp-watch-score__full {
+  border-radius: 999px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  padding: 0.25rem 0.65rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #334155;
+}
+
+.tp-watch-score__full:disabled {
+  opacity: 0.4;
+}
+
+.tp-watch-score__status {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.tp-watch-score__status[data-state="saving"] {
+  color: #b45309;
+}
+
+.tp-watch-score__status[data-state="saved"],
+.tp-watch-score__status[data-state="idle"] {
+  color: #15803d;
+}
+
+.tp-watch-score__status[data-state="error"] {
+  color: #b91c1c;
+}
+
+.tp-watch-score__status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.tp-watch-score--auto {
+  font-size: 0.8125rem;
+}
+
+.tp-watch-score__auto-val {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.tp-watch-score__auto-hint {
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+.tp-watch-feedback {
+  margin-top: 0.25rem;
+}
+
+.tp-watch-feedback__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 0.65rem;
+  margin-bottom: 0.35rem;
+}
+
+.tp-watch-feedback__label {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #0f172a;
+}
+
+.tp-watch-feedback__hint {
+  font-size: 0.71875rem;
+  color: #94a3b8;
+}
+
+.tp-watch-feedback__status {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: #b45309;
+}
+
+.tp-watch-feedback__input {
+  width: 100%;
+  resize: vertical;
+  min-height: 4.5rem;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  padding: 0.65rem 0.75rem;
+  font-size: 0.875rem;
+  color: #0f172a;
+}
+
+/* —— Student exam redesign —— */
+.tp-exam-page {
+  min-height: 100vh;
+  background: #f6f7fa;
+}
+
+.tp-exam-main {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.tp-exam-shell {
+  width: 100%;
+}
+
+.tp-exam-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  border-bottom: 1px solid #e9edf3;
+  background: color-mix(in srgb, #fff 92%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+.tp-exam-header__inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem 1rem;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0.7rem 1rem 0.55rem;
+}
+
+.tp-exam-header__identity {
+  min-width: 0;
+  flex: 1 1 10rem;
+}
+
+.tp-exam-header__title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tp-exam-header__sync {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.2rem 0 0;
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.tp-exam-header__sync[data-kind="saved"] {
+  color: #15803d;
+}
+
+.tp-exam-header__sync[data-kind="saving"] {
+  color: #d97706;
+}
+
+.tp-exam-header__sync[data-kind="reconnect"] {
+  color: #dc2626;
+}
+
+.tp-exam-header__sync-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.tp-exam-header__sync[data-kind="saved"] .tp-exam-header__sync-dot {
+  background: #22c55e;
+}
+
+.tp-exam-header__dots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  justify-content: center;
+}
+
+.tp-exam-dot {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 0.3rem;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #94a3b8;
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.tp-exam-dot[data-state="answered"] {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.tp-exam-header__timer-wrap {
+  flex: 0 0 auto;
+  min-width: 4.5rem;
+  text-align: right;
+}
+
+.tp-exam-header__timer {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.1rem;
+  color: #0f172a;
+}
+
+.tp-exam-header__timer[data-urgency="amber"] {
+  color: #d97706;
+}
+
+.tp-exam-header__timer[data-urgency="red"] {
+  color: #dc2626;
+}
+
+.tp-exam-header__timer-value {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.tp-exam-header__timer-label {
+  font-size: 0.65625rem;
+  color: #94a3b8;
+}
+
+.tp-exam-header__timer[data-urgency="amber"] .tp-exam-header__timer-label,
+.tp-exam-header__timer[data-urgency="red"] .tp-exam-header__timer-label {
+  color: currentColor;
+  opacity: 0.75;
+}
+
+.tp-exam-header__timer-fallback {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.tp-exam-header__timebar {
+  height: 2px;
+  width: 100%;
+  background: #e9edf3;
+}
+
+.tp-exam-header__timebar--idle {
+  background: transparent;
+}
+
+.tp-exam-header__timebar-fill {
+  height: 100%;
+  background: #0f172a;
+  transition: width 0.8s linear, background 0.3s ease;
+}
+
+.tp-exam-header__timebar[data-urgency="amber"] .tp-exam-header__timebar-fill {
+  background: #d97706;
+}
+
+.tp-exam-header__timebar[data-urgency="red"] .tp-exam-header__timebar-fill {
+  background: #dc2626;
+}
+
+.tp-exam-body {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 1.1rem 1rem 2.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.375rem;
+}
+
+.tp-exam-intro {
+  padding: 1.1rem 1.25rem;
+  border-radius: 12px;
+  border: 1px solid #e9edf3;
+  background: #fff;
+}
+
+.tp-exam-intro__label {
+  margin: 0 0 0.4rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.tp-exam-intro__body {
+  font-size: 0.90625rem;
+  line-height: 1.6;
+  color: #475569;
+}
+
+.tp-exam-q-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1.375rem;
+}
+
+.tp-question-card--exam {
+  padding: 1.625rem 1.75rem;
+  border-radius: 16px;
+  border: 1px solid #e9edf3;
+  background: #fff;
+  box-shadow: none;
+}
+
+.tp-question-card--exam.tp-question-card--answered {
+  background: #fff;
+  box-shadow: none;
+}
+
+.tp-exam-q-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.65rem;
+}
+
+.tp-exam-q-head__num {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+}
+
+.tp-exam-q-head__marks {
+  margin-left: auto;
+  font-size: 0.78125rem;
+  color: #94a3b8;
+}
+
+.tp-exam-q-head .tp-raise-hand-btn {
+  margin-left: 0.25rem;
+}
+
+.tp-question-card--exam .tp-exam-prompt {
+  font-size: 1.09375rem; /* 17.5px */
+  font-weight: 400;
+  line-height: 1.6;
+  max-width: 62ch;
+  color: #0f172a;
+}
+
+.tp-question-card--exam .tp-input,
+.tp-question-card--exam textarea.tp-input,
+.tp-question-card--exam .tp-exam-textarea {
+  font-size: 1rem;
+  line-height: 1.6;
+  padding: 0.875rem 1rem;
+  border-radius: 12px;
+  border: 1.5px solid #e2e8f0;
+  background: #fff;
+}
+
+.tp-question-card--exam .tp-input:focus,
+.tp-question-card--exam textarea.tp-input:focus,
+.tp-question-card--exam .tp-exam-textarea:focus {
+  border-color: #93c5fd;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+  outline: none;
+}
+
+.tp-exam-saved {
+  min-height: 1.35rem;
+  margin-top: 0.55rem;
+  display: flex;
+  align-items: center;
+}
+
+.tp-exam-saved__tick {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #15803d;
+}
+
+.tp-exam-feedback-stack {
+  margin-top: 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.tp-exam-nudge {
+  margin: 0;
+  padding: 0.65rem 0.85rem;
+  border-radius: 12px;
+  border: 1px solid #dbeafe;
+  background: #eff6ff;
+  font-size: 0.875rem;
+  color: #1e3a5f;
+}
+
+.tp-exam-fb-bubble {
+  border-radius: 12px;
+  border: 1px solid #dbeafe;
+  background: #eff6ff;
+  padding: 0.75rem 0.9rem;
+}
+
+.tp-exam-fb-bubble__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.35rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #1d4ed8;
+}
+
+.tp-exam-fb-bubble__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #2563eb;
+}
+
+.tp-exam-fb-bubble__body {
+  margin: 0;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: #1e3a5f;
+}
+
+.tp-exam-fb-bubble__placeholder {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: #64748b;
+}
+
+.tp-exam-q--hand-raised .tp-question-card--exam {
+  border-color: #fbbf24;
+  box-shadow: none;
+}
+
+.tp-exam-handin {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.tp-exam-handin__card {
+  padding: 1.25rem 1.35rem;
+  border-radius: 16px;
+  border: 1px solid #e9edf3;
+  background: #fff;
+}
+
+.tp-exam-handin__title {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.tp-exam-handin__hint {
+  margin: 0.4rem 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: #64748b;
+}
+
+.tp-exam-handin__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 0.9rem;
+}
+
+.tp-exam-handin__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.75rem;
+  padding: 0.55rem 1.35rem;
+  border: 0;
+  border-radius: 999px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tp-exam-handin__btn:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.tp-exam-handin__btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.tp-exam-handin__btn--busy {
+  opacity: 0.7;
+}
+
+.tp-exam-handin__cancel {
+  border: 0;
+  background: transparent;
+  color: #64748b;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0.4rem 0.5rem;
+}
+
+.tp-exam-handin__resume {
+  margin: 0;
+  text-align: center;
+  font-size: 0.8125rem;
+  color: #94a3b8;
+}
+
+.tp-exam-handin__code {
+  font-family: var(--font-plex-mono), ui-monospace, monospace;
+  font-weight: 600;
+  letter-spacing: 0.125em;
+  color: #64748b;
 }

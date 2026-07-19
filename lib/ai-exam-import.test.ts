@@ -147,9 +147,11 @@ describe("buildAiExamGuideMarkdown", () => {
     expect(guide).toContain("```json");
   });
 
-  it("teaches type selection and readable prompt structure", () => {
+  it("teaches type selection and readable Markdown prompt structure", () => {
     expect(guide).toContain("Choosing the right question type");
-    expect(guide).toContain("Writing clear, readable question text");
+    expect(guide).toContain("Writing clear, readable question text (Markdown)");
+    expect(guide).toContain("**bold**");
+    expect(guide).toContain("Markdown");
     expect(guide).toContain("mathInput");
     expect(guide).toContain("calculate");
   });

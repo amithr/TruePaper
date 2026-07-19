@@ -3,6 +3,7 @@
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+import { ExamMarkdown } from "@/components/ExamMarkdown";
 import { FormAssetImage } from "@/components/FormAssetImage";
 import { LoadingBar } from "@/components/LoadingBar";
 import { ScoreRing } from "@/components/ScoreMeter";
@@ -158,9 +159,14 @@ export default function StudentReviewPage() {
               return (
                 <article key={question.id} className={ui.questionCardNested}>
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                    <h2 className="text-base font-semibold text-[var(--tp-text)]">
-                      {index + 1}. {question.prompt || t("common.untitledQuestion")}
-                    </h2>
+                    <div className="tp-exam-prompt__row text-base font-semibold text-[var(--tp-text)]">
+                      <span className="tp-exam-prompt__num" aria-hidden>
+                        {index + 1}.
+                      </span>
+                      <ExamMarkdown className="min-w-0 flex-1">
+                        {question.prompt || t("common.untitledQuestion")}
+                      </ExamMarkdown>
+                    </div>
                     {tone && typeof earned === "number" ? (
                       <span className={`tp-grade-pill tp-grade-pill--${tone}`}>
                         {t("review.points", { earned, possible })}

@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { FormAssetImage } from "@/components/FormAssetImage";
+import { ExamMarkdown } from "@/components/ExamMarkdown";
 import { HelpHint } from "@/components/HelpHint";
 import { LoadingBar } from "@/components/LoadingBar";
 import { OverflowMenu, type OverflowMenuItem } from "@/components/OverflowMenu";
@@ -15,15 +16,23 @@ import {
   canvasFeedbackPayload,
   TeacherResponseWatch,
 } from "@/components/response-types/TeacherResponseWatch";
-import { TeacherQuestionHeader } from "@/components/response-types/TeacherQuestionHeader";
+import { QuestionTypeBadge } from "@/components/response-types/QuestionTypeBadge";
 import { ScoreRing } from "@/components/ScoreMeter";
 import { StudentReviewShare } from "@/components/StudentReviewShare";
 import { TeacherFeedbackComposer } from "@/components/TeacherFeedbackComposer";
 import { TeacherStudentRejoinShare } from "@/components/TeacherStudentRejoinShare";
 import { TeacherTopBar } from "@/components/TeacherTopBar";
+import { WatchFormBrief } from "@/components/watch/WatchFormBrief";
+import { WatchProgressStrip, type JumpSquareState } from "@/components/watch/WatchProgressStrip";
+import { WatchScoreStepper } from "@/components/watch/WatchScoreStepper";
+import {
+  WatchStudentHeader,
+  type WatchLiveChipState,
+} from "@/components/watch/WatchStudentHeader";
 import { useOfflineFeedback } from "@/lib/offline/use-offline-feedback";
 import { useFeedbackSyncStatus } from "@/lib/offline/use-feedback-sync-status";
 import { SyncStatusIndicator } from "@/components/SyncStatusIndicator";
+import { countAnsweredQuestions } from "@/lib/count-answered-questions";
 import {
   gradingStateFor,
   isFullyGraded,
@@ -33,10 +42,13 @@ import {
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { useScoreCopy } from "@/lib/i18n/score-copy";
 import type { Form, Question, StudentAnswers } from "@/lib/forms";
+import type { LiveSessionOverviewPayload } from "@/lib/live-session-overview";
+import { LIVE_PRESENCE_STALE_MS, LIVE_TYPING_INDICATOR_MS } from "@/lib/participant-status";
 import { isNoTimeLimitSession } from "@/lib/session-window";
 import { stableStringifyStudentAnswers } from "@/lib/student-answers-json";
 import { notifyStudentExamFeedback } from "@/lib/notify-student-exam-feedback";
 import { usePollingRefresh } from "@/lib/use-polling-refresh";
+import { useLiveSessionOverviewRefresh } from "@/lib/use-live-session-overview-refresh";
 import { type LiveTeacherFeedbackByQuestionId } from "@/lib/live-teacher-feedback";
 import { focusRing, ui } from "@/lib/ui";
 import { messageForBackgroundRefreshError } from "@/lib/background-network-error";
@@ -61,7 +73,12 @@ type SnapshotJson = {
     graded: boolean;
     gradedAt: string | null;
     lastActivityAt: string | null;
+    lastTypingAt?: string | null;
+    lastSeenAt?: string | null;
+    focusQuestionId?: string | null;
     hasJoined: boolean;
+    handRaiseQuestionId?: string | null;
+    handRaisedAt?: string | null;
   };
   form: Form;
   answers: StudentAnswers;
@@ -72,6 +89,29 @@ type SnapshotJson = {
   studentResumeCode: string | null;
   updatedAt: string | null;
 };
+
+function formatRelativeShort(iso: string | null | undefined, nowMs: number): string {
+  if (!iso) {
+    return "";
+  }
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) {
+    return "";
+  }
+  const deltaSec = Math.round((then - nowMs) / 1000);
+  const abs = Math.abs(deltaSec);
+  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+  if (abs < 60) {
+    return rtf.format(deltaSec, "second");
+  }
+  if (abs < 3600) {
+    return rtf.format(Math.round(deltaSec / 60), "minute");
+  }
+  if (abs < 86400) {
+    return rtf.format(Math.round(deltaSec / 3600), "hour");
+  }
+  return rtf.format(Math.round(deltaSec / 86400), "day");
+}
 
 
 function formatCountdown(ms: number): string {
@@ -113,13 +153,16 @@ export default function WatchStudentExamPage() {
   const [loadError, setLoadError] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
   const [nowTick, setNowTick] = useState(() => Date.now());
-  const [pointsDraftsByQuestionId, setPointsDraftsByQuestionId] = useState<Record<string, number>>({});
-  const [gradeDraftsByQuestionId, setGradeDraftsByQuestionId] = useState<Record<string, number>>({});
+  /** Local score drafts; `null` = not marked yet. */
+  const [gradeDraftsByQuestionId, setGradeDraftsByQuestionId] = useState<
+    Record<string, number | null>
+  >({});
   /** Server-confirmed earned points by question id. `undefined` means not graded yet. */
   const [serverGradesByQuestionId, setServerGradesByQuestionId] = useState<
     Record<string, number | undefined>
   >({});
-  const [savingPointsQuestionId, setSavingPointsQuestionId] = useState<string | null>(null);
+  const [briefOpen, setBriefOpen] = useState(false);
+  const [rosterDeviceIds, setRosterDeviceIds] = useState<string[]>([]);
   /** Saving / saved state for per-question grade autosave (UI only). */
   const [gradeSaveStateByQuestionId, setGradeSaveStateByQuestionId] = useState<
     Record<string, "saving" | "saved" | "error">
@@ -201,12 +244,28 @@ export default function WatchStudentExamPage() {
       }
     }
     for (const [questionId, draft] of Object.entries(latestGradeDraftsRef.current)) {
-      if (isGradePending(questionId)) {
+      if (isGradePending(questionId) && typeof draft === "number") {
         merged[questionId] = draft;
       }
     }
     return merged;
   };
+
+  const refreshRosterRef = useLatestRef(async () => {
+    if (!liveSessionId) {
+      return;
+    }
+    try {
+      const data = await requestJson<LiveSessionOverviewPayload>(
+        `/api/forms/live-sessions/${liveSessionId}/overview`,
+      );
+      setRosterDeviceIds(
+        data.participants.map((p) => p.anonymousSessionId.trim().toLowerCase()),
+      );
+    } catch {
+      /* roster nav is best-effort */
+    }
+  });
 
   const applyServerLiveFeedback = (server: LiveTeacherFeedbackByQuestionId) => {
     const merged = mergeLiveFeedbackForDisplay(server);
@@ -246,7 +305,13 @@ export default function WatchStudentExamPage() {
           prev.student.suspended === data.student.suspended &&
           prev.student.finished === data.student.finished &&
           prev.student.displayName === data.student.displayName &&
-          prev.student.lastActivityAt === data.student.lastActivityAt;
+          prev.student.lastActivityAt === data.student.lastActivityAt &&
+          (prev.student.lastTypingAt ?? null) === (data.student.lastTypingAt ?? null) &&
+          (prev.student.lastSeenAt ?? null) === (data.student.lastSeenAt ?? null) &&
+          (prev.student.focusQuestionId ?? null) === (data.student.focusQuestionId ?? null) &&
+          (prev.student.handRaiseQuestionId ?? null) ===
+            (data.student.handRaiseQuestionId ?? null) &&
+          (prev.student.handRaisedAt ?? null) === (data.student.handRaisedAt ?? null);
         if (answersUnchanged && feedbackUnchanged && gradesUnchanged && metaUnchanged) {
           return prev;
         }
@@ -270,8 +335,9 @@ export default function WatchStudentExamPage() {
     }
     deferEffect(() => {
       void refreshRef.current();
+      void refreshRosterRef.current();
     });
-  }, [liveSessionId, deviceIdNorm, refreshRef]);
+  }, [liveSessionId, deviceIdNorm, refreshRef, refreshRosterRef]);
 
   usePollingRefresh({
     enabled:
@@ -281,19 +347,53 @@ export default function WatchStudentExamPage() {
     onRefresh: () => void refreshRef.current(),
   });
 
+  // Student raise/lower hand notifies the overview channel — refresh the watch
+  // snapshot so the typing/hand indicators clear without waiting for the poll.
+  useLiveSessionOverviewRefresh(
+    Boolean(snapshot?.session.sessionOpen) && Boolean(liveSessionId && deviceIdNorm),
+    liveSessionId,
+    () => {
+      void refreshRef.current();
+      void refreshRosterRef.current();
+    },
+  );
+
+  const handRaiseQuestionId =
+    snapshot?.student.handRaisedAt && snapshot.student.handRaiseQuestionId
+      ? snapshot.student.handRaiseQuestionId
+      : null;
+
+  // Drop sticky ?question= once the student lowers (or moves) their hand.
   useEffect(() => {
-    if (!snapshot) {
+    if (!focusQuestionFromUrl) {
       return;
     }
-    const nextPoints: Record<string, number> = {};
-    for (const question of snapshot.form.questions) {
-      nextPoints[question.id] = Math.max(1, Math.min(1000, Number(question.points) || 1));
+    if (handRaiseQuestionId === focusQuestionFromUrl) {
+      return;
     }
-    deferEffect(() => {
-      setPointsDraftsByQuestionId(nextPoints);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on question list only
-  }, [snapshot?.form.questions]);
+    if (snapshot == null) {
+      return;
+    }
+    const params = new URLSearchParams(searchParams.toString());
+    if (!params.has("question")) {
+      return;
+    }
+    params.delete("question");
+    const qs = params.toString();
+    router.replace(
+      `/dashboard/sessions/${liveSessionId}/watch/${encodeURIComponent(deviceIdNorm)}${
+        qs ? `?${qs}` : ""
+      }`,
+    );
+  }, [
+    focusQuestionFromUrl,
+    handRaiseQuestionId,
+    snapshot,
+    searchParams,
+    router,
+    liveSessionId,
+    deviceIdNorm,
+  ]);
 
   useEffect(() => {
     if (!snapshot) {
@@ -313,14 +413,16 @@ export default function WatchStudentExamPage() {
       }
       setServerGradesByQuestionId(nextServerGrades);
       setGradeDraftsByQuestionId((prev) => {
-        const next: Record<string, number> = {};
+        const next: Record<string, number | null> = {};
         for (const question of snapshot.form.questions) {
           const serverVal = serverGrades[question.id];
           if (isGradePending(question.id)) {
             next[question.id] =
-              prev[question.id] ?? latestGradeDraftsRef.current[question.id] ?? serverVal ?? 0;
+              prev[question.id] ??
+              latestGradeDraftsRef.current[question.id] ??
+              (typeof serverVal === "number" ? serverVal : null);
           } else {
-            next[question.id] = typeof serverVal === "number" ? serverVal : 0;
+            next[question.id] = typeof serverVal === "number" ? serverVal : null;
             dirtyGradeRef.current[question.id] = false;
           }
         }
@@ -413,7 +515,7 @@ export default function WatchStudentExamPage() {
       liveFeedbackSaveTimerRef.current[questionId] = window.setTimeout(() => {
         delete liveFeedbackSaveTimerRef.current[questionId];
         void persistLiveFeedbackRef.current(questionId);
-      }, 400);
+      }, 700);
     },
     [persistLiveFeedbackRef],
   );
@@ -504,38 +606,19 @@ export default function WatchStudentExamPage() {
     });
   }, [urlFeedbackFocusQuestionId]);
 
-  const saveQuestionPoints = async (question: Form["questions"][number]) => {
-    const nextPoints = Math.max(1, Math.min(1000, pointsDraftsByQuestionId[question.id] ?? question.points));
-    setSavingPointsQuestionId(question.id);
-    setLoadError("");
-    try {
-      await requestJson<{ ok: true }>(`/api/questions/${question.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: question.prompt,
-          type: question.type,
-          options: question.options,
-          correctAnswer: question.type === "multipleChoice" ? question.correctAnswer : null,
-          points: nextPoints,
-        }),
-      });
-      await refreshRef.current();
-      setStatusMessage(t("session.watch.statusPointsUpdated"));
-    } catch (e) {
-      setLoadError(e instanceof Error ? e.message : t("session.errors.savePoints"));
-    } finally {
-      setSavingPointsQuestionId(null);
-    }
-  };
-
   const persistQuestionGrade = useCallback(
     async (question: Question) => {
       const maxPts = Math.max(1, Math.min(1000, Number(question.points) || 1));
-      const earned = Math.max(
-        0,
-        Math.min(maxPts, latestGradeDraftsRef.current[question.id] ?? 0),
-      );
+      const draft = latestGradeDraftsRef.current[question.id];
+      if (typeof draft !== "number") {
+        setGradeSaveStateByQuestionId((prev) => {
+          const next = { ...prev };
+          delete next[question.id];
+          return next;
+        });
+        return;
+      }
+      const earned = Math.max(0, Math.min(maxPts, draft));
       setGradeSaveStateByQuestionId((prev) => ({ ...prev, [question.id]: "saving" }));
       try {
         await requestJson<{ ok: true }>(
@@ -601,7 +684,7 @@ export default function WatchStudentExamPage() {
     gradeSaveTimerRef.current[question.id] = window.setTimeout(() => {
       delete gradeSaveTimerRef.current[question.id];
       void persistGradeRef.current(question);
-    }, 500);
+    }, 700);
   }, []);
 
   const flushAllGradeSaves = useCallback(async () => {
@@ -696,19 +779,27 @@ export default function WatchStudentExamPage() {
   const titleName = st.displayName || maskDeviceId(st.anonymousSessionId);
   const noTimeLimit = isNoTimeLimitSession(s.opensAt, s.closesAt);
 
-  // Derived grading progress + running total.
   const allQuestions = snapshot.form.questions;
   const possibleTotal = sumPossiblePoints(allQuestions);
-  // For the running total we want the latest local edits (so the score-strip
-  // reacts immediately as the teacher types), but for "fully graded" we rely
-  // on server-confirmed state to avoid premature enabling of the CTA.
+  const questionIds = allQuestions.map((q) => q.id);
+  const answeredCount = countAnsweredQuestions(displayAnswers, questionIds);
+
   const effectiveGrades: Record<string, number> = {};
+  let pointsAwarded = 0;
   for (const q of allQuestions) {
     const server = serverGradesByQuestionId[q.id];
     const draft = gradeDraftsByQuestionId[q.id];
-    effectiveGrades[q.id] = typeof server === "number" ? (draft ?? server) : (draft ?? 0);
+    // Draft is `null` until the teacher marks; prefer local draft once set.
+    const value = typeof draft === "number" ? draft : typeof server === "number" ? server : null;
+    if (typeof value === "number") {
+      effectiveGrades[q.id] = value;
+      pointsAwarded += value;
+    }
   }
-  const runningEarned = sumEarnedPoints(effectiveGrades, allQuestions);
+  const runningEarned = sumEarnedPoints(
+    Object.fromEntries(allQuestions.map((q) => [q.id, effectiveGrades[q.id] ?? 0])),
+    allQuestions,
+  );
   const gradedCount = allQuestions.filter(
     (q) => typeof serverGradesByQuestionId[q.id] === "number",
   ).length;
@@ -716,6 +807,74 @@ export default function WatchStudentExamPage() {
   const anyGradeSaving = Object.values(gradeSaveStateByQuestionId).some((v) => v === "saving");
   const canMarkGraded =
     st.finished && !st.graded && allQuestions.length > 0 && allGraded && !anyGradeSaving;
+
+  const rosterIndex = rosterDeviceIds.indexOf(deviceIdNorm);
+  const studentIndex = rosterIndex >= 0 ? rosterIndex + 1 : 1;
+  const studentCount = Math.max(rosterDeviceIds.length, 1);
+  const prevDeviceId =
+    rosterIndex > 0 ? rosterDeviceIds[rosterIndex - 1] : undefined;
+  const nextDeviceId =
+    rosterIndex >= 0 && rosterIndex < rosterDeviceIds.length - 1
+      ? rosterDeviceIds[rosterIndex + 1]
+      : undefined;
+
+  const navigateToStudent = (targetDeviceId: string) => {
+    const q =
+      activeFeedbackFocusQuestionId ||
+      st.focusQuestionId ||
+      handRaiseQuestionId ||
+      "";
+    const qs = q ? `?question=${encodeURIComponent(q)}` : "";
+    router.push(
+      `/dashboard/sessions/${liveSessionId}/watch/${encodeURIComponent(targetDeviceId)}${qs}`,
+    );
+  };
+
+  const jumpToQuestion = (questionId: string) => {
+    document.getElementById(`watch-q-${questionId}`)?.scrollIntoView({
+      behavior: "smooth",
+      block: "center",
+    });
+  };
+
+  const lastSeenStale =
+    Boolean(st.lastSeenAt) &&
+    nowTick - new Date(st.lastSeenAt!).getTime() > LIVE_PRESENCE_STALE_MS;
+  const typingRecently =
+    Boolean(st.lastTypingAt) &&
+    nowTick - new Date(st.lastTypingAt!).getTime() < LIVE_TYPING_INDICATOR_MS;
+  const focusQId = st.focusQuestionId ?? null;
+  const typingQuestionIndex =
+    focusQId && typingRecently
+      ? allQuestions.findIndex((q) => q.id === focusQId)
+      : -1;
+
+  let liveChip: WatchLiveChipState;
+  if (!st.hasJoined) {
+    liveChip = { kind: "notJoined" };
+  } else if (st.suspended) {
+    liveChip = { kind: "paused" };
+  } else if (st.finished || lastSeenStale || !s.sessionOpen) {
+    liveChip = {
+      kind: "offline",
+      lastSeenLabel: formatRelativeShort(st.lastSeenAt ?? st.lastActivityAt, nowTick) || undefined,
+    };
+  } else if (typingQuestionIndex >= 0) {
+    liveChip = { kind: "typing", questionIndex: typingQuestionIndex + 1 };
+  } else {
+    liveChip = { kind: "live" };
+  }
+
+  const lastActivityLabel = formatRelativeShort(st.lastActivityAt, nowTick);
+
+  const jumpSquares = allQuestions.map((q, index) => {
+    const server = serverGradesByQuestionId[q.id];
+    const draft = gradeDraftsByQuestionId[q.id];
+    const graded = typeof draft === "number" || typeof server === "number";
+    const answered = (displayAnswers[q.id] ?? "").trim().length > 0;
+    const state: JumpSquareState = graded ? "graded" : answered ? "answered" : "empty";
+    return { id: q.id, index, state };
+  });
 
   const removeStudentExam = async () => {
     if (!liveSessionId || !deviceIdNorm) {
@@ -783,33 +942,20 @@ export default function WatchStudentExamPage() {
   }
 
   return (
-    <div className="relative min-h-screen bg-[var(--tp-bg)] py-6 text-[var(--tp-text)] sm:py-8">
-      <main className="mx-auto w-full max-w-3xl space-y-5 px-4 sm:px-6">
+    <div className="relative min-h-screen bg-[var(--tp-watch-page-bg,#eef1f6)] py-6 text-[var(--tp-text)] sm:py-8">
+      <main className="mx-auto w-full max-w-3xl space-y-4 px-4 sm:px-6">
         <TeacherTopBar />
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <Breadcrumbs
-              items={[
-                { label: t("nav.dashboard"), href: "/dashboard" },
-                {
-                  label: snapshot.form.title || t("nav.liveSession"),
-                  href: `/dashboard/sessions/${liveSessionId}`,
-                },
-                { label: titleName },
-              ]}
-            />
-            <h1 className="mt-3 truncate text-2xl font-semibold tracking-tight">{titleName}</h1>
-            <p className="mt-1 text-sm text-[var(--tp-text-secondary)]">
-              {s.sessionOpen
-                ? noTimeLimit
-                  ? t("session.watch.sessionOpenNoLimit")
-                  : t("session.watch.sessionOpenTimeLeft", { timeLeft: formatCountdown(msLeft) })
-                : t("session.watch.sessionClosedCopy")}
-            </p>
-            <p className="sr-only">
-              {t("session.watch.device", { deviceId: maskDeviceId(st.anonymousSessionId) })}
-            </p>
-          </div>
+          <Breadcrumbs
+            items={[
+              { label: t("nav.dashboard"), href: "/dashboard" },
+              {
+                label: snapshot.form.title || t("nav.liveSession"),
+                href: `/dashboard/sessions/${liveSessionId}`,
+              },
+              { label: titleName },
+            ]}
+          />
           <div className="flex items-center gap-2">
             <SyncStatusIndicator
               status={feedbackSync.status}
@@ -817,144 +963,121 @@ export default function WatchStudentExamPage() {
               contextLabel={t("sync.context.yourFeedback")}
               onRetry={() => void feedbackSync.retry()}
             />
-            <OverflowMenu label={t("session.watch.moreActions")} items={overflowItems} />
+            {canMarkGraded ? (
+              <button
+                type="button"
+                disabled={markingGraded}
+                onClick={() => void markExamGraded()}
+                title={t("session.watch.markGradedTitle")}
+                className={`tp-mark-graded-cta ${focusRing}`}
+              >
+                {markingGraded ? t("common.marking") : t("session.watch.markGraded")}
+              </button>
+            ) : null}
           </div>
         </div>
+
+        <WatchStudentHeader
+          studentName={titleName}
+          chip={liveChip}
+          lastActivityLabel={lastActivityLabel || undefined}
+          studentIndex={studentIndex}
+          studentCount={studentCount}
+          onPrev={prevDeviceId ? () => navigateToStudent(prevDeviceId) : undefined}
+          onNext={nextDeviceId ? () => navigateToStudent(nextDeviceId) : undefined}
+          actions={
+            <OverflowMenu label={t("session.watch.moreActions")} items={overflowItems} />
+          }
+        />
+
+        <p className="sr-only">
+          {t("session.watch.device", { deviceId: maskDeviceId(st.anonymousSessionId) })}
+          {s.sessionOpen
+            ? noTimeLimit
+              ? t("session.watch.sessionOpenNoLimit")
+              : t("session.watch.sessionOpenTimeLeft", { timeLeft: formatCountdown(msLeft) })
+            : t("session.watch.sessionClosedCopy")}
+        </p>
 
         {st.finished ? (
           <div className="tp-grade-strip tp-anim-fade-up">
             <ScoreRing
               earned={st.graded ? (snapshot.pointsEarned ?? runningEarned) : runningEarned}
               possible={st.graded ? (snapshot.pointsPossible ?? possibleTotal) : possibleTotal}
-              size={84}
-              stroke={9}
+              size={72}
+              stroke={8}
               animate={st.graded}
             />
             <div className="tp-grade-strip__progress">
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
-                <p className="text-sm font-semibold text-[var(--tp-text)]">
-                  {st.graded ? (
-                    <span className="inline-flex items-center gap-2">
-                      <span className="tp-status tp-status-graded">
-                        <span className="tp-status-dot" />
-                        {t("session.status.graded")}
-                      </span>
-                      <span className="text-[var(--tp-text-secondary)] font-medium">
-                        {formatPointsScore(
-                          snapshot.pointsEarned ?? runningEarned,
-                          snapshot.pointsPossible ?? possibleTotal,
-                        )}
-                      </span>
+              <p className="text-sm font-semibold text-[var(--tp-text)]">
+                {st.graded ? (
+                  <span className="inline-flex items-center gap-2">
+                    <span className="tp-status tp-status-graded">
+                      <span className="tp-status-dot" />
+                      {t("session.status.graded")}
                     </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-2">
-                      <span className="tp-status tp-status-finished">
-                        <span className="tp-status-dot" />
-                        {t("session.status.submitted")}
-                      </span>
-                      <span className="text-[var(--tp-text-secondary)] font-medium">
-                        {t("session.watch.gradedProgress", {
-                          graded: gradedCount,
-                          total: allQuestions.length,
-                        })}
-                      </span>
+                    <span className="text-[var(--tp-text-secondary)] font-medium">
+                      {formatPointsScore(
+                        snapshot.pointsEarned ?? runningEarned,
+                        snapshot.pointsPossible ?? possibleTotal,
+                      )}
                     </span>
-                  )}
-                </p>
-                <p className="font-mono text-xs tabular-nums text-[var(--tp-text-secondary)]">
-                  {t("session.watch.pts", { earned: runningEarned, possible: possibleTotal })}
-                </p>
-              </div>
-              <div className="mt-2 tp-grade-strip__bar" aria-hidden>
-                <div
-                  className={`tp-grade-strip__bar-fill ${
-                    allGraded ? "tp-grade-strip__bar-fill--ready" : ""
-                  }`}
-                  style={{
-                    width: `${
-                      allQuestions.length === 0
-                        ? 0
-                        : Math.round((gradedCount / allQuestions.length) * 100)
-                    }%`,
-                  }}
-                />
-              </div>
-              {st.lastActivityAt ? (
-                <p className="mt-1.5 text-[11px] text-[var(--tp-text-muted)]">
-                  {t("session.watch.lastActivity", {
-                    datetime: new Date(st.lastActivityAt).toLocaleString(),
-                  })}
-                </p>
-              ) : null}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-2">
+                    <span className="tp-status tp-status-finished">
+                      <span className="tp-status-dot" />
+                      {t("session.status.submitted")}
+                    </span>
+                    <span className="text-[var(--tp-text-secondary)] font-medium">
+                      {t("session.watch.gradedProgress", {
+                        graded: gradedCount,
+                        total: allQuestions.length,
+                      })}
+                    </span>
+                  </span>
+                )}
+              </p>
             </div>
             {!st.graded ? (
-              <div className="flex items-center gap-2">
-                <HelpHint id="watch-grade" text={t("help.watch.grade")} />
-                <button
-                  type="button"
-                  disabled={!canMarkGraded || markingGraded}
-                  onClick={() => void markExamGraded()}
-                  title={
-                    canMarkGraded
-                      ? t("session.watch.markGradedTitle")
-                      : t("session.watch.markGradedDisabledTitle")
-                  }
-                  className={`tp-mark-graded-cta ${focusRing}`}
-                >
-                  {markingGraded ? (
-                    t("common.marking")
-                  ) : (
-                    <>
-                      <svg
-                        aria-hidden
-                        className="h-4 w-4"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2.4"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <path d="M5 12l5 5L20 7" />
-                      </svg>
-                      {t("session.watch.markGraded")}
-                    </>
-                  )}
-                </button>
-                <HelpHint id="watch-mark-graded" text={t("help.watch.markGraded")} />
-              </div>
+              <button
+                type="button"
+                disabled={!canMarkGraded || markingGraded}
+                onClick={() => void markExamGraded()}
+                title={
+                  canMarkGraded
+                    ? t("session.watch.markGradedTitle")
+                    : t("session.watch.markGradedDisabledTitle")
+                }
+                className={`tp-mark-graded-cta ${focusRing}`}
+              >
+                {markingGraded ? t("common.marking") : t("session.watch.markGraded")}
+              </button>
             ) : null}
           </div>
-        ) : (
-          <div
-            className={`rounded-[var(--tp-radius)] border px-4 py-3 text-sm ${
-              st.suspended
-                ? "border-[var(--tp-warning-border)] bg-[var(--tp-warning-soft)] text-[var(--tp-warning-text)]"
-                : "border-[var(--tp-border)] bg-[var(--tp-surface)] text-[var(--tp-text)]"
-            }`}
-          >
-            {!st.hasJoined ? (
-              <p className="font-medium">{t("session.watch.notJoined")}</p>
-            ) : st.suspended ? (
-              <p className="font-medium">{t("session.watch.pausedTab")}</p>
-            ) : (
-              <p className="font-medium">{t("session.watch.liveSync")}</p>
-            )}
-            {st.lastActivityAt ? (
-              <p className="mt-1 text-xs opacity-80">
-                {t("session.watch.lastActivity", {
-                  datetime: new Date(st.lastActivityAt).toLocaleString(),
-                })}
-              </p>
-            ) : null}
-          </div>
-        )}
+        ) : null}
+
+        <WatchProgressStrip
+          answeredCount={answeredCount}
+          questionCount={allQuestions.length}
+          pointsAwarded={pointsAwarded}
+          pointsMax={possibleTotal}
+          jumps={jumpSquares}
+          onJump={jumpToQuestion}
+        />
+
+        <WatchFormBrief
+          title={snapshot.form.title || t("common.untitledForm")}
+          description={snapshot.form.description || ""}
+          descriptionImagePath={snapshot.form.descriptionImagePath}
+          open={briefOpen}
+          onOpenChange={setBriefOpen}
+        />
+
         <p className="sr-only" aria-live="polite" role="status">
           {gradeAriaMessage}
         </p>
-        {loadError ? (
-          <p className={ui.alertError}>{loadError}</p>
-        ) : null}
+        {loadError ? <p className={ui.alertError}>{loadError}</p> : null}
         {feedback.failedCount > 0 ? (
           <p className={ui.alertWarning} role="alert">
             {t("feedback.composer.failedBanner", { count: feedback.failedCount })}
@@ -966,258 +1089,140 @@ export default function WatchStudentExamPage() {
           </p>
         ) : null}
 
-        <section className="tp-card p-6">
-          <header>
-            <h2 className="flex items-center gap-1.5 text-xl font-semibold">
-              {snapshot.form.title || t("common.untitledForm")}
-              {snapshot.form.liveTeacherFeedbackEnabled ? (
-                <HelpHint id="watch-live-feedback" text={t("help.watch.liveFeedback")} />
-              ) : null}
-            </h2>
-            {snapshot.form.description ? (
-              <p className="mt-1 text-sm text-[var(--tp-text-secondary)]">{snapshot.form.description}</p>
-            ) : null}
-            {snapshot.form.descriptionImagePath ? (
-              <FormAssetImage
-                path={snapshot.form.descriptionImagePath}
-                alt={t("home.exam.descriptionImageAlt")}
-                className="mt-3 overflow-hidden rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-white"
-              />
-            ) : null}
-          </header>
-
-          {snapshot.form.questions.length === 0 ? (
-            <p className="mt-4 rounded-lg border border-dashed border-[var(--tp-border)] p-4 text-sm text-[var(--tp-text-secondary)]">
-              {t("session.watch.noQuestions")}
-            </p>
-          ) : (
-            <div className={`mt-6 ${ui.questionList}`}>
-              {snapshot.form.questions.map((question, index) => {
-                const serverGrade = serverGradesByQuestionId[question.id];
-                const draftGrade = gradeDraftsByQuestionId[question.id] ?? 0;
-                const gradingState = gradingStateFor(question, serverGrade);
-                const isAutoMc = gradingState === "auto";
-                const showMcOverride = isAutoMc && mcOverriddenQuestionIds.has(question.id);
-                const saveState = gradeSaveStateByQuestionId[question.id];
-                const gradeInputDisabled =
-                  st.graded || (isAutoMc && !showMcOverride);
-                const handleGradeChange = (next: number) => {
-                  const maxPts = question.points;
-                  const clamped = Math.max(0, Math.min(maxPts, Math.round(next)));
-                  dirtyGradeRef.current[question.id] = true;
-                  setGradeDraftsByQuestionId((current) => ({
-                    ...current,
-                    [question.id]: clamped,
-                  }));
-                  scheduleGradeSave(question);
-                };
-                return (
+        {allQuestions.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-[var(--tp-border)] bg-white p-4 text-sm text-[var(--tp-text-secondary)]">
+            {t("session.watch.noQuestions")}
+          </p>
+        ) : (
+          <div className="tp-watch-q-list">
+            {allQuestions.map((question, index) => {
+              const serverGrade = serverGradesByQuestionId[question.id];
+              const draftGrade = gradeDraftsByQuestionId[question.id];
+              const gradingState = gradingStateFor(question, serverGrade);
+              const isAutoMc = gradingState === "auto";
+              const showMcOverride = isAutoMc && mcOverriddenQuestionIds.has(question.id);
+              const saveState = gradeSaveStateByQuestionId[question.id];
+              const scoreValue: number | null =
+                typeof draftGrade === "number"
+                  ? draftGrade
+                  : typeof serverGrade === "number"
+                    ? serverGrade
+                    : null;
+              const scoreDisabled =
+                st.graded || (isAutoMc && !showMcOverride);
+              const isTypingHere =
+                typingRecently && focusQId === question.id && !st.finished && !st.suspended;
+              const isHandHere = handRaiseQuestionId === question.id;
+              const handleGradeChange = (next: number) => {
+                const maxPts = question.points;
+                const clamped = Math.max(0, Math.min(maxPts, Math.round(next)));
+                dirtyGradeRef.current[question.id] = true;
+                setGradeDraftsByQuestionId((current) => ({
+                  ...current,
+                  [question.id]: clamped,
+                }));
+                scheduleGradeSave(question);
+              };
+              return (
                 <article
                   key={question.id}
                   id={`watch-q-${question.id}`}
-                  className={`${ui.questionCardNested} tp-question-grade tp-question-grade--${gradingState}${
-                    focusQuestionFromUrl === question.id ? " tp-watch-q--hand-focus" : ""
+                  className={`tp-watch-q${isTypingHere ? " tp-watch-q--typing" : ""}${
+                    isHandHere && !isTypingHere ? " tp-watch-q--hand" : ""
                   }`}
                 >
-                  <TeacherQuestionHeader
-                    index={index}
-                    type={question.type}
-                    title={question.prompt || t("common.untitledQuestion")}
-                    trailing={
-                      st.finished ? (
-                        gradingState === "needs-grading" ? (
-                          <span className="tp-grade-pill tp-grade-pill--needs">
-                            {t("session.watch.needsGradingPill")}
-                          </span>
-                        ) : gradingState === "auto" ? (
-                          <span className="tp-grade-pill tp-grade-pill--auto">
-                            {t("session.watch.autoPill", {
-                              earned: serverGrade ?? 0,
-                              possible: question.points,
-                            })}
-                          </span>
-                        ) : (
-                          <span className="tp-grade-pill tp-grade-pill--graded">
-                            {t("session.watch.gradedPill", {
-                              earned: serverGrade ?? 0,
-                              possible: question.points,
-                            })}
-                          </span>
-                        )
-                      ) : null
-                    }
-                  />
-
+                  <div className="tp-watch-q__meta">
+                    <span className="tp-watch-q__num">{index + 1}</span>
+                    <QuestionTypeBadge
+                      type={question.type}
+                      className={`tp-watch-type-badge tp-watch-type-badge--${question.type}`}
+                    />
+                    <span className="tp-watch-q__max">
+                      {t("session.watch.maxMarks", { max: question.points })}
+                    </span>
+                  </div>
+                  {isTypingHere ? (
+                    <p className="tp-watch-typing-hint">
+                      <span aria-hidden className="tp-watch-typing-hint__dot" />
+                      {t("session.watch.studentTypingHere")}
+                    </p>
+                  ) : null}
+                  {isHandHere ? (
+                    <p className="tp-watch-hand-hint">{t("session.watch.handRaisedBadge")}</p>
+                  ) : null}
+                  <div className="tp-watch-q__prompt">
+                    <ExamMarkdown>{question.prompt || t("common.untitledQuestion")}</ExamMarkdown>
+                  </div>
                   {question.promptImagePath ? (
                     <FormAssetImage
                       path={question.promptImagePath}
                       alt={t("home.exam.promptImageAlt")}
-                      className="mt-3 overflow-hidden rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-white"
+                      className="mt-3 overflow-hidden rounded-[10px] border border-[var(--tp-border)] bg-white"
                     />
                   ) : null}
 
-                  <div
-                    className={`${ui.questionScoring} mt-3 mb-4 flex flex-wrap items-end gap-3 rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] px-3 py-2`}
-                  >
-                    <label className={`${ui.label} block`}>
-                      {t("session.watch.points")}
-                      <div className="mt-1 flex items-center gap-2">
-                        <input
-                          type="number"
-                          min={1}
-                          max={1000}
-                          value={pointsDraftsByQuestionId[question.id] ?? question.points}
-                          onChange={(event) =>
-                            setPointsDraftsByQuestionId((current) => ({
-                              ...current,
-                              [question.id]: Math.max(
-                                1,
-                                Math.min(1000, Number(event.target.value) || 1),
-                              ),
-                            }))
-                          }
-                          className={ui.pointsInput}
-                        />
-                        <span className="text-sm font-medium text-[var(--tp-text-muted)]">
-                          {t("home.builder.pts")}
-                        </span>
-                      </div>
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => void saveQuestionPoints(question)}
-                      disabled={savingPointsQuestionId === question.id}
-                      className={`${ui.btnSecondary} min-h-11 px-3 text-sm disabled:opacity-50`}
-                    >
-                      {savingPointsQuestionId === question.id
-                        ? t("common.saving")
-                        : t("session.watch.savePoints")}
-                    </button>
-                  </div>
-
-                  {st.finished ? (
-                    <div className="mt-3 mb-4 rounded-[var(--tp-radius-sm)] border border-violet-200 bg-violet-50/50 px-3 py-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <p className={ui.sectionTitle}>{t("session.watch.earned")}</p>
-                        {!st.graded && saveState ? (
-                          <span
-                            className="tp-save-indicator"
-                            data-state={saveState === "error" ? "error" : saveState}
-                          >
-                            <span aria-hidden className="tp-save-dot" />
-                            <span>
-                              {saveState === "saving"
-                                ? t("common.saving")
-                                : saveState === "saved"
-                                  ? t("home.builder.saved")
-                                  : t("home.builder.saveFailed")}
-                            </span>
-                          </span>
-                        ) : null}
-                      </div>
-
-                      {isAutoMc && !showMcOverride ? (
-                        <div className="mt-2 flex flex-wrap items-center gap-3">
-                          <span className="text-sm font-semibold text-emerald-900">
-                            {serverGrade} / {question.points} pts
-                          </span>
-                          <span className="text-xs text-[var(--tp-text-secondary)]">
-                            {t("session.watch.autoScored")}
-                          </span>
-                          {!st.graded ? (
-                            <button
-                              type="button"
-                              className={`tp-link text-xs ${focusRing}`}
-                              onClick={() =>
-                                setMcOverriddenQuestionIds((prev) => {
-                                  const next = new Set(prev);
-                                  next.add(question.id);
-                                  return next;
-                                })
-                              }
-                            >
-                              {t("session.watch.override")}
-                            </button>
-                          ) : null}
-                        </div>
-                      ) : (
-                        <>
-                          {!st.graded ? (
-                            <div
-                              className="mt-2 flex flex-wrap items-center gap-2"
-                              role="group"
-                              aria-label={t("session.watch.quickScoreAria")}
-                            >
-                              <button
-                                type="button"
-                                onClick={() => handleGradeChange(question.points)}
-                                className={`tp-quick-chip tp-quick-chip--full ${
-                                  draftGrade === question.points ? "tp-quick-chip--active" : ""
-                                } ${focusRing}`}
-                              >
-                                {t("session.watch.full")}
-                              </button>
-                              {question.points >= 2 ? (
+                  <div className="tp-watch-q__response">
+                    <TeacherResponseWatch
+                      question={question}
+                      rawAnswer={displayAnswers[question.id]}
+                      feedbackStore={snapshot.liveTeacherFeedback}
+                      liveFeedbackEnabled={snapshot.form.liveTeacherFeedbackEnabled}
+                      feedbackFocusQuestionId={activeFeedbackFocusQuestionId}
+                      liveFeedbackDraftsByQuestionId={liveFeedbackDraftsByQuestionId}
+                      liveFeedbackSavingQuestionIds={liveFeedbackSavingQuestionIds}
+                      onFeedbackFocus={setFeedbackFocusQuestionId}
+                      onFeedbackBlur={(questionId) => flushLiveFeedbackSave(questionId)}
+                      onFeedbackChange={(questionId, next) => {
+                        dirtyLiveFeedbackRef.current[questionId] = true;
+                        setLiveFeedbackDraftsByQuestionId((current) => ({
+                          ...current,
+                          [questionId]: next,
+                        }));
+                        scheduleLiveFeedbackSave(questionId);
+                      }}
+                      onCanvasAnnotationSave={(questionId, strokes) => {
+                        void persistCanvasAnnotation(questionId, strokes);
+                      }}
+                      scoreSlot={
+                        <div className="tp-watch-q__score-row">
+                          {isAutoMc && !showMcOverride ? (
+                            <div className="tp-watch-score tp-watch-score--auto">
+                              <span className="tp-watch-score__label">
+                                {t("session.watch.score")}
+                              </span>
+                              <span className="tp-watch-score__auto-val">
+                                {serverGrade ?? 0} / {question.points}
+                              </span>
+                              <span className="tp-watch-score__auto-hint">
+                                {t("session.watch.autoScored")}
+                              </span>
+                              {!st.graded ? (
                                 <button
                                   type="button"
-                                  onClick={() => handleGradeChange(question.points / 2)}
-                                  className={`tp-quick-chip tp-quick-chip--half ${
-                                    draftGrade > 0 &&
-                                    draftGrade < question.points
-                                      ? "tp-quick-chip--active"
-                                      : ""
-                                  } ${focusRing}`}
+                                  className={`tp-link text-xs ${focusRing}`}
+                                  onClick={() =>
+                                    setMcOverriddenQuestionIds((prev) => {
+                                      const next = new Set(prev);
+                                      next.add(question.id);
+                                      return next;
+                                    })
+                                  }
                                 >
-                                  {t("session.watch.half")}
+                                  {t("session.watch.override")}
                                 </button>
                               ) : null}
-                              <button
-                                type="button"
-                                onClick={() => handleGradeChange(0)}
-                                className={`tp-quick-chip tp-quick-chip--zero ${
-                                  draftGrade === 0 ? "tp-quick-chip--active" : ""
-                                } ${focusRing}`}
-                              >
-                                {t("session.watch.zero")}
-                              </button>
-                              <span className="text-sm font-semibold text-[var(--tp-text)]">
-                                {draftGrade} / {question.points}
-                              </span>
                             </div>
                           ) : (
-                            <p className="mt-2 text-sm font-semibold text-[var(--tp-text)]">
-                              {draftGrade} / {question.points} pts
-                            </p>
+                            <WatchScoreStepper
+                              score={scoreValue}
+                              max={question.points}
+                              disabled={scoreDisabled}
+                              saveState={saveState}
+                              onChange={handleGradeChange}
+                            />
                           )}
-                          {!st.graded ? (
-                            <details className="mt-2">
-                              <summary className={`cursor-pointer text-xs font-medium text-[var(--tp-text-secondary)] ${focusRing}`}>
-                                {t("session.watch.customScore")}
-                              </summary>
-                              <label className={`${ui.label} mt-2 block`}>
-                                {t("session.watch.pointsForAnswer")}
-                                <div className="mt-1 flex items-center gap-2">
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    max={question.points}
-                                    value={draftGrade}
-                                    disabled={gradeInputDisabled}
-                                    onChange={(event) =>
-                                      handleGradeChange(Number(event.target.value) || 0)
-                                    }
-                                    className={ui.pointsInput}
-                                    aria-label={t("session.watch.pointsEarnedAria", { n: index + 1 })}
-                                  />
-                                  <span className="text-sm font-medium text-[var(--tp-text-muted)]">
-                                    / {question.points}
-                                  </span>
-                                </div>
-                              </label>
-                            </details>
-                          ) : null}
                           {isAutoMc && showMcOverride && !st.graded ? (
-                            <p className="mt-2 text-xs text-[var(--tp-text-secondary)]">
+                            <p className="mt-1 text-xs text-[var(--tp-text-secondary)]">
                               {t("session.watch.overriding")}{" "}
                               <button
                                 type="button"
@@ -1234,33 +1239,10 @@ export default function WatchStudentExamPage() {
                               </button>
                             </p>
                           ) : null}
-                        </>
-                      )}
-                    </div>
-                  ) : null}
-
-                  <TeacherResponseWatch
-                    question={question}
-                    rawAnswer={displayAnswers[question.id]}
-                    feedbackStore={snapshot.liveTeacherFeedback}
-                    liveFeedbackEnabled={snapshot.form.liveTeacherFeedbackEnabled}
-                    feedbackFocusQuestionId={activeFeedbackFocusQuestionId}
-                    liveFeedbackDraftsByQuestionId={liveFeedbackDraftsByQuestionId}
-                    liveFeedbackSavingQuestionIds={liveFeedbackSavingQuestionIds}
-                    onFeedbackFocus={setFeedbackFocusQuestionId}
-                    onFeedbackBlur={(questionId) => flushLiveFeedbackSave(questionId)}
-                    onFeedbackChange={(questionId, next) => {
-                      dirtyLiveFeedbackRef.current[questionId] = true;
-                      setLiveFeedbackDraftsByQuestionId((current) => ({
-                        ...current,
-                        [questionId]: next,
-                      }));
-                      scheduleLiveFeedbackSave(questionId);
-                    }}
-                    onCanvasAnnotationSave={(questionId, strokes) => {
-                      void persistCanvasAnnotation(questionId, strokes);
-                    }}
-                  />
+                        </div>
+                      }
+                    />
+                  </div>
 
                   {snapshot.form.liveTeacherFeedbackEnabled ? (
                     <TeacherFeedbackComposer
@@ -1278,19 +1260,10 @@ export default function WatchStudentExamPage() {
                     />
                   ) : null}
                 </article>
-                );
-              })}
-            </div>
-          )}
-        </section>
-
-        {snapshot.updatedAt ? (
-          <p className="text-center text-xs text-[var(--tp-text-muted)]">
-            {t("session.watch.lastServerUpdate", {
-              datetime: new Date(snapshot.updatedAt).toLocaleString(),
+              );
             })}
-          </p>
-        ) : null}
+          </div>
+        )}
       </main>
     </div>
   );

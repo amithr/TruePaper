@@ -142,7 +142,8 @@ flowchart LR
 - Response type config UI: `components/response-types/BuilderResponseConfig.tsx` / `BuilderQuestionFields.tsx`
 - Unsaved builder state: `lib/pending-builder-form.ts` (open-after-create stash); builder edits autosave to the API
 - **Prompt / description images:** teachers can attach one image to the form description and one image to each question prompt. Files are compressed client-side, uploaded to the public Supabase Storage bucket `form-assets`, and stored as paths on `forms.description_image_path` / `questions.prompt_image_path`. Upload/remove: `POST|DELETE /api/forms/[formId]/assets`. Helpers: `lib/form-assets.ts`; UI: `FormAssetImageEditor.tsx` / `FormAssetImage.tsx`. Students see images on join/resume/exam, review, and teacher watch. AI import and template library do not round-trip images yet.
-- **AI exam import:** teacher opens **AI guide** (popup with steps) or **Import exam** (popup), downloads a Markdown authoring guide (`GET /api/forms/ai-template`), feeds it to ChatGPT/Claude with their content, then uploads the generated JSON (`POST /api/forms/import`). The guide includes a task→type chooser (e.g. calculations → `mathInput` / `photoHandwritten`), rules for readable prompt wording, and instructions not to describe diagrams or put teacher notes / mark schemes in student-facing fields. Parser/guide: `lib/ai-exam-import.ts`. Modals: `AiGuideModal.tsx`, `ImportExamModal.tsx` in the form library.
+- **AI exam import:** teacher opens **AI guide** (popup with steps) or **Import exam** (popup), downloads a Markdown authoring guide (`GET /api/forms/ai-template`), feeds it to ChatGPT/Claude with their content, then uploads the generated JSON (`POST /api/forms/import`). The guide includes a task→type chooser (e.g. calculations → `mathInput` / `photoHandwritten`), rules for **Markdown-formatted** prompts (bold task, lists for givens, paragraph breaks), and instructions not to describe diagrams or put teacher notes / mark schemes in student-facing fields. Parser/guide: `lib/ai-exam-import.ts`. Modals: `AiGuideModal.tsx`, `ImportExamModal.tsx` in the form library.
+- **Exam Markdown:** student-facing prompts, form description, structured part stems, teacher watch headers, and review prompts render via `components/ExamMarkdown.tsx` (`react-markdown` + GFM). Builder edit fields stay plain text.
 
 ### Start & manage live sessions
 
@@ -159,11 +160,13 @@ flowchart LR
 ### Monitor students
 
 - Roster: `components/SessionExamRoster.tsx` — presence, typing, sync badges, suspensions, hand raises; flat divider rows (`tp-roster-list--flat`)
+- Hand raise highlight on teacher watch uses live presence (`handRaiseQuestionId` from exam-snapshot), not a sticky `?question=` URL — lowers clear the yellow border and roster ✋ icon
 - **Inactivity heatmap (teacher-only, client-side):** subtle per-tile treatment for students with no activity for N minutes. Derived entirely from the already-polled overview timestamps (`lastActivityAt`/`lastTypingAt`/`lastSeenAt`) via `lib/roster-activity.ts` (`deriveRosterActivity`) — zero added network calls; recomputes on a quantized ~20s clock. "Activity" = any interaction heartbeat (pointer/hover/focus + typing). Offline **and silently-disconnected** students are **suppressed** (distinct from inactive) so blackouts don't read as mass disengagement. Subtle dim + muted amber accent + small "Nm idle" label; never red, never a public callout. Per-session thresholds (default 4/9 min) stored locally on the teacher's device: `lib/use-roster-activity-thresholds.ts`, control `components/RosterActivityThresholds.tsx`.
 - **Presence keepalive (silent-disconnect detection):** the student client sends a low-frequency idle keepalive heartbeat (`interaction:false`, every `LIVE_PRESENCE_KEEPALIVE_MS`≈25s) that bumps `live_session_presence.last_seen_at` without resetting the activity timer. When `last_seen_at` goes stale (> `LIVE_PRESENCE_STALE_MS`≈75s) the roster treats the student as disconnected — the wifi dot shows offline (`rosterConnectionSyncState(p, nowMs)`) and the inactivity heatmap is suppressed — so a dropped connection is never mistaken for disengagement. Constants in `lib/participant-status.ts`.
   - **Clock-skew safe:** the overview payload carries `serverNow`; the teacher page computes `serverNow − Date.now()` once per poll and offsets its local clock (`activityNowMs`) so staleness is judged against the same server clock as `last_seen_at`, immune to a misset teacher device clock.
-- Watch one student: `app/[lang]/dashboard/sessions/[liveSessionId]/watch/[deviceId]/page.tsx`
-- Snapshot API: `GET .../participants/[deviceId]/exam-snapshot`
+- Watch one student: `app/[lang]/dashboard/sessions/[liveSessionId]/watch/[deviceId]/page.tsx` — live review redesign: Live/typing chip + prev/next student, progress strip with jump-to-question squares, collapsed form brief, question cards ordered prompt → response → score stepper → feedback. Scoring/feedback autosave (~700ms) while the student is still live (not only after finish). Empty answers use dashed italic “No response yet”. Typing highlight uses presence `focusQuestionId` + `lastTypingAt` (amber card border); hand-raise is a separate badge. Components under `components/watch/`.
+- Snapshot API: `GET .../participants/[deviceId]/exam-snapshot` (includes `lastTypingAt`, `lastSeenAt`, `focusQuestionId` from `live_session_presence`)
+- Student heartbeats may send `focusQuestionId` so the watch chip can show “Live · typing in Q{n}”
 - Live feedback (online-only, single mutable value per question): `PATCH .../participants/[deviceId]/live-feedback`
 - Structured feedback keys: `PATCH .../participants/[deviceId]/feedback-key`
 - **Queued feedback (offline-capable, `FeedbackItem`)**: timestamped, per-author text comments that queue locally and upload in the background. Composer per question in the watch page (`components/TeacherFeedbackComposer.tsx`); queue + drain in `lib/offline/use-offline-feedback.ts`. Edit/delete while still queued mutate the local row directly; failed uploads are surfaced (never dropped). API: `PUT/GET .../participants/[deviceId]/feedback-items`, `DELETE .../feedback-items/[feedbackId]`. See [Offline sync](#offline-sync--pwa).
@@ -227,14 +230,15 @@ Two complementary, teacher-scoped aids (students never see either):
 ### Take exam
 
 - One question component per type: `components/StudentExamQuestion.tsx` → `StudentResponseDispatcher.tsx`
+- **Exam shell redesign:** calm focused UI — sticky header (`components/exam/StudentExamHeader.tsx`: form title + sync line, question jump dots, timer + time-remaining bar with ambient urgency), intro “Before you start” card, large-prompt question cards with per-question ✓ Saved ticks, teacher feedback bubbles (`StudentTeacherFeedbackCard`), and bottom hand-in panel (`components/exam/StudentExamHandIn.tsx`) with blank-confirm + quiet resume-code hint. Page bg `#f6f7fa`, content max-width 760px.
 - **Anti-leak (best-effort):** copy/paste blocked on exam UI; `navigator.mediaDevices.getDisplayMedia` blocked during joined exams; repeating student watermark (`components/ExamCaptureWatermark.tsx`, `lib/exam-capture-protection.ts`); screenshot shortcut detection (informational). OS-level screenshots cannot be blocked from a browser — see Terms disclaimer.
 - **Autosave:** debounced PUT to `/api/public/live-sessions/[id]/responses` with optional `submissionId` (idempotent).
 - **State poll** every 3s: suspend, finish, hand-raise, window — `lib/use-student-exam-state-poll.ts` → `GET .../state`.
-- **Heartbeat:** typing + offline sync metadata — `POST .../heartbeat`.
+- **Heartbeat:** typing + offline sync metadata + optional `focusQuestionId` — `POST .../heartbeat`.
 - **Live teacher feedback:** polled — `GET .../feedback`.
-- **Raise hand:** `POST .../raise-hand` — `components/RaiseHandButton.tsx`.
+- **Raise hand:** `POST .../raise-hand` — `components/RaiseHandButton.tsx` (in question card header).
 - **Connection UI:** `components/StudentAutosaveBanner.tsx`. (`components/ConnectionIndicator.tsx` is legacy/retained for tests; the live student/teacher signal is now the unified sync indicator below.)
-- **Sync status indicator (unified):** `components/SyncStatusIndicator.tsx` — one ambient, 3-state signal (`synced` / `queued` / `attention`) shown to students (in the exam strip) and teachers (session + watch headers). State derives purely from local queue contents via `lib/sync-status.ts` (`deriveSyncStatus`), never from a standalone online flag. Student status: `lib/use-student-sync-status.ts` (answer + finish queues). Teacher status: `lib/offline/use-feedback-sync-status.ts` (session-wide feedback queue; also keeps draining + offers Retry). Reactive cross-route updates via `lib/sync-status-events.ts`. Teacher roster-level "who has unsynced work": `components/RosterSyncSummary.tsx` (derived from the polled overview presence, no extra round-trip). The two teacher sync signals are disambiguated: the header indicator is scoped "Your feedback" (`SyncStatusIndicator` `contextLabel`), the roster summary "Students' work" (people icon). Roster rows carry a trailing chevron + hover affordance to signal row-level clickability vs. nested controls; the hand-raise glyph is a lucide `Hand` SVG (not an emoji).
+- **Sync status (unified):** students see a plain header line (“All answers saved” / “Saving…” / reconnect copy) driven by `lib/use-student-sync-status.ts`. Teachers still use `components/SyncStatusIndicator.tsx` on session + watch headers. State derives from local queue contents via `lib/sync-status.ts` (`deriveSyncStatus`). Teacher status: `lib/offline/use-feedback-sync-status.ts`. Reactive cross-route updates via `lib/sync-status-events.ts`. Teacher roster-level "who has unsynced work": `components/RosterSyncSummary.tsx`.
 
 ### Resume after device loss
 
@@ -244,11 +248,12 @@ Two complementary, teacher-scoped aids (students never see either):
 
 ### Submit (finish)
 
-- Button calls `submitExam()` in `HomeClient.tsx`:
+- Hand-in panel calls `submitExam()` in `HomeClient.tsx` (confirm step if blanks remain):
   1. `PUT .../responses` (authoritative final save + `submissionId`)
   2. `POST .../finish` (sets `finished_at`, triggers MC autograde)
 - On retryable network failure → queued in `finish_queue` (IDB) and retried via `use-offline-finish-submit` + Background Sync.
 - After success → `app/[lang]/join/submitted/page.tsx`.
+- Resume code (when known from load/rejoin) is shown muted under the hand-in panel; otherwise a calm “ask your teacher” hint.
 
 ### What students cannot do
 
@@ -620,6 +625,7 @@ Run migrations in **filename order**. Latest migration wins for RPC definitions.
 | `20260630130000_presence_last_seen.sql` | `live_session_presence.last_seen_at` + keepalive write in `touch_live_session_presence` (silent-disconnect detection) |
 | `20260718120000_form_question_images.sql` | `forms.description_image_path`, `questions.prompt_image_path`, `form-assets` storage bucket + RLS; join/resume/review RPCs include image paths |
 | `20260718130000_autograde_short_math_tf.sql` | Finish autograde also scores `shortAnswer`, `trueFalse`, `mathInput` from `response_config` |
+| `20260719120000_presence_focus_question.sql` | `live_session_presence.focus_question_id`; heartbeat/touch accept optional focus UUID for teacher watch typing chip |
 
 </details>
 

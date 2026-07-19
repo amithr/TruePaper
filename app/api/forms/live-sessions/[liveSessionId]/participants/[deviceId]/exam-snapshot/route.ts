@@ -170,14 +170,87 @@ export async function GET(_request: Request, { params }: Params) {
     return NextResponse.json({ error: rowError.message }, { status: 500 });
   }
 
-  // Activity lives in the narrow presence table now (heartbeats stopped
-  // rewriting form_responses). Fall back to the row column for pre-migration data.
-  const presenceRow = await supabase
+  // Activity + hand-raise live in the narrow presence table now (heartbeats
+  // stopped rewriting form_responses). Fall back to the row column for
+  // pre-migration data. Match device id case-insensitively — presence rows
+  // may retain the casing from register.
+  const presencePrimary = await supabase
     .from("live_session_presence")
-    .select("last_activity_at")
-    .eq("live_session_id", liveSessionId)
-    .eq("anonymous_session_id", deviceId)
-    .maybeSingle();
+    .select(
+      "last_activity_at, last_typing_at, last_seen_at, focus_question_id, hand_raise_question_id, hand_raised_at, anonymous_session_id",
+    )
+    .eq("live_session_id", liveSessionId);
+
+  let presenceLastActivity: string | null = null;
+  let presenceLastTyping: string | null = null;
+  let presenceLastSeen: string | null = null;
+  let focusQuestionId: string | null = null;
+  let handRaiseQuestionId: string | null = null;
+  let handRaisedAt: string | null = null;
+  if (!presencePrimary.error) {
+    const match = (presencePrimary.data ?? []).find(
+      (p) =>
+        typeof p.anonymous_session_id === "string" &&
+        p.anonymous_session_id.toLowerCase() === deviceId,
+    );
+    if (match) {
+      presenceLastActivity =
+        typeof match.last_activity_at === "string" ? match.last_activity_at : null;
+      presenceLastTyping =
+        typeof match.last_typing_at === "string" ? match.last_typing_at : null;
+      presenceLastSeen = typeof match.last_seen_at === "string" ? match.last_seen_at : null;
+      focusQuestionId =
+        typeof match.focus_question_id === "string" ? match.focus_question_id : null;
+      handRaiseQuestionId =
+        typeof match.hand_raise_question_id === "string" ? match.hand_raise_question_id : null;
+      handRaisedAt = typeof match.hand_raised_at === "string" ? match.hand_raised_at : null;
+    }
+  } else if (
+    isMissingColumnError(presencePrimary.error, "focus_question_id") ||
+    isMissingColumnError(presencePrimary.error, "hand_raised_at")
+  ) {
+    const legacy = await supabase
+      .from("live_session_presence")
+      .select(
+        "last_activity_at, last_typing_at, last_seen_at, hand_raise_question_id, hand_raised_at, anonymous_session_id",
+      )
+      .eq("live_session_id", liveSessionId);
+    if (!legacy.error) {
+      const match = (legacy.data ?? []).find(
+        (p) =>
+          typeof p.anonymous_session_id === "string" &&
+          p.anonymous_session_id.toLowerCase() === deviceId,
+      );
+      if (match) {
+        presenceLastActivity =
+          typeof match.last_activity_at === "string" ? match.last_activity_at : null;
+        presenceLastTyping =
+          typeof match.last_typing_at === "string" ? match.last_typing_at : null;
+        presenceLastSeen = typeof match.last_seen_at === "string" ? match.last_seen_at : null;
+        handRaiseQuestionId =
+          typeof match.hand_raise_question_id === "string" ? match.hand_raise_question_id : null;
+        handRaisedAt = typeof match.hand_raised_at === "string" ? match.hand_raised_at : null;
+      }
+    } else if (isMissingColumnError(legacy.error, "hand_raised_at")) {
+      const older = await supabase
+        .from("live_session_presence")
+        .select("last_activity_at, last_typing_at, last_seen_at, anonymous_session_id")
+        .eq("live_session_id", liveSessionId);
+      if (!older.error) {
+        const match = (older.data ?? []).find(
+          (p) =>
+            typeof p.anonymous_session_id === "string" &&
+            p.anonymous_session_id.toLowerCase() === deviceId,
+        );
+        presenceLastActivity =
+          typeof match?.last_activity_at === "string" ? match.last_activity_at : null;
+        presenceLastTyping =
+          typeof match?.last_typing_at === "string" ? match.last_typing_at : null;
+        presenceLastSeen =
+          typeof match?.last_seen_at === "string" ? match.last_seen_at : null;
+      }
+    }
+  }
 
   const nowMs = Date.now();
   const answers = parseStudentAnswersJson(row?.answers);
@@ -188,10 +261,6 @@ export async function GET(_request: Request, { params }: Params) {
   const gradedAt = typeof row?.text_graded_at === "string" ? row.text_graded_at : null;
   const graded = Boolean(gradedAt);
   const questionGrades = parseQuestionGrades(row?.text_grades);
-  const presenceLastActivity =
-    !presenceRow.error && typeof presenceRow.data?.last_activity_at === "string"
-      ? presenceRow.data.last_activity_at
-      : null;
   const lastActivityAt =
     presenceLastActivity ?? (typeof row?.last_activity_at === "string" ? row.last_activity_at : null);
   const updatedAt = typeof row?.updated_at === "string" ? row.updated_at : null;
@@ -218,7 +287,13 @@ export async function GET(_request: Request, { params }: Params) {
       graded,
       gradedAt,
       lastActivityAt,
+      lastTypingAt: presenceLastTyping,
+      lastSeenAt: presenceLastSeen,
+      focusQuestionId,
       hasJoined: row != null,
+      handRaiseQuestionId:
+        handRaisedAt && handRaiseQuestionId ? handRaiseQuestionId : null,
+      handRaisedAt: handRaisedAt && handRaiseQuestionId ? handRaisedAt : null,
     },
     form: form as Form,
     answers,

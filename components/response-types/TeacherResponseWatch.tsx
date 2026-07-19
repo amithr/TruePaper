@@ -1,10 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 
 import { DrawingCanvas } from "@/components/DrawingCanvas";
 import { AnnotateSourceResponder } from "@/components/response-types/AnnotateSourceResponder";
 import { GraphCanvas } from "@/components/response-types/GraphCanvas";
+import { WatchResponseBox } from "@/components/watch/WatchResponseBox";
 import type { Question } from "@/lib/forms";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { parseResponseValue } from "@/lib/response-types/answers";
@@ -51,6 +58,8 @@ type Props = {
   onFeedbackBlur: (questionId: string) => void;
   onFeedbackChange: (questionId: string, value: string) => void;
   onCanvasAnnotationSave?: (questionId: string, strokes: DrawingStroke[]) => void;
+  /** Inserted between the response and feedback (score stepper). */
+  scoreSlot?: ReactNode;
 };
 
 function WrittenFeedbackBlock({
@@ -66,9 +75,6 @@ function WrittenFeedbackBlock({
   const t = useTranslations();
 
   if (!liveFeedbackEnabled && !showEditor) {
-    return null;
-  }
-  if (!showEditor) {
     return (
       <button
         type="button"
@@ -81,43 +87,47 @@ function WrittenFeedbackBlock({
   }
 
   return (
-    <div className="rounded-[var(--tp-radius-sm)] border border-sky-200 bg-sky-50/70 px-3 py-3">
-      <label className="block text-sm font-medium text-sky-950">
-        <span className="inline-flex flex-wrap items-center gap-2">
-          {t("session.watch.teacherFeedback")}
-          <span
-            data-testid="teacher-live-feedback-status"
-            data-state={isSaving ? "saving" : "saved"}
-            className="tp-save-indicator"
-          >
-            <span aria-hidden className="tp-save-dot" />
-            <span>{isSaving ? t("common.saving") : feedbackHint}</span>
-          </span>
+    <div className="tp-watch-feedback">
+      <div className="tp-watch-feedback__head">
+        <span className="tp-watch-feedback__label">{t("session.watch.feedback")}</span>
+        <span className="tp-watch-feedback__hint">
+          {liveFeedbackEnabled ? t("session.watch.feedbackLiveHint") : feedbackHint}
         </span>
-        <textarea
-          rows={3}
-          data-testid="teacher-live-feedback-input"
-          value={draftMessage}
-          onBlur={onBlur}
-          onChange={(event) => onChange(event.target.value)}
-          placeholder={t("session.watch.feedbackPlaceholder")}
-          className="mt-2 w-full rounded-md border border-[var(--tp-accent-border)] bg-[var(--tp-surface)] px-3 py-2 text-sm text-[var(--tp-text)]"
-        />
-      </label>
+        <span
+          data-testid="teacher-live-feedback-status"
+          data-state={isSaving ? "saving" : "saved"}
+          className="tp-watch-feedback__status"
+        >
+          {isSaving ? t("common.saving") : null}
+        </span>
+      </div>
+      <textarea
+        rows={3}
+        data-testid="teacher-live-feedback-input"
+        value={draftMessage}
+        onFocus={onFocus}
+        onBlur={onBlur}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={t("session.watch.feedbackPlaceholder")}
+        className={`tp-watch-feedback__input ${focusRing}`}
+      />
     </div>
   );
 }
 
 function WatchQuestionBlock({
   children,
+  scoreSlot,
   feedback,
 }: {
   children: ReactNode;
+  scoreSlot?: ReactNode;
   feedback: Omit<FeedbackEditorProps, "questionId"> & { liveFeedbackEnabled: boolean };
 }) {
   return (
     <div className="space-y-3">
       {children}
+      {scoreSlot}
       <WrittenFeedbackBlock {...feedback} />
     </div>
   );
@@ -135,6 +145,7 @@ export function TeacherResponseWatch({
   onFeedbackBlur,
   onFeedbackChange,
   onCanvasAnnotationSave,
+  scoreSlot,
 }: Props) {
   const t = useTranslations();
   const type = normalizeResponseType(question.type);
@@ -142,6 +153,7 @@ export function TeacherResponseWatch({
   const savedMsg = getDisplayMessage(feedbackStore, question.id);
   const draftMsg = liveFeedbackDraftsByQuestionId[question.id] ?? "";
   const showFeedbackEditor =
+    liveFeedbackEnabled ||
     feedbackFocusQuestionId === question.id ||
     savedMsg.trim().length > 0 ||
     draftMsg.trim().length > 0;
@@ -184,39 +196,43 @@ export function TeacherResponseWatch({
   };
 
   if (type === "multipleChoice" && value.type === "multipleChoice") {
+    const empty = !value.choice;
     return (
-      <WatchQuestionBlock feedback={feedbackBundle}>
-        <div className="space-y-2" data-testid="teacher-watch-answer">
-          {question.options.map((option, optionIndex) => (
-            <label
-              key={`${question.id}-${optionIndex}`}
-              className="flex cursor-default items-center gap-2 text-sm"
-            >
-              <input
-                type="radio"
-                name={`watch-${question.id}`}
-                value={option}
-                checked={value.choice === option}
-                disabled
-              />
-              <span>{option || t("review.optionN", { n: optionIndex + 1 })}</span>
-            </label>
-          ))}
-        </div>
+      <WatchQuestionBlock feedback={feedbackBundle} scoreSlot={scoreSlot}>
+        <WatchResponseBox empty={empty} testId="teacher-watch-answer">
+          <div className="space-y-2">
+            {question.options.map((option, optionIndex) => (
+              <label
+                key={`${question.id}-${optionIndex}`}
+                className="flex cursor-default items-center gap-2 text-sm"
+              >
+                <input
+                  type="radio"
+                  name={`watch-${question.id}`}
+                  value={option}
+                  checked={value.choice === option}
+                  disabled
+                />
+                <span>{option || t("review.optionN", { n: optionIndex + 1 })}</span>
+              </label>
+            ))}
+          </div>
+        </WatchResponseBox>
       </WatchQuestionBlock>
     );
   }
 
   if (type === "trueFalse" && value.type === "trueFalse") {
+    const empty = value.answer === null;
     return (
-      <WatchQuestionBlock feedback={feedbackBundle}>
-        <p className="text-sm font-medium" data-testid="teacher-watch-answer">
-          {value.answer === null
-            ? t("session.watch.noResponse")
-            : value.answer
+      <WatchQuestionBlock feedback={feedbackBundle} scoreSlot={scoreSlot}>
+        <WatchResponseBox empty={empty} testId="teacher-watch-answer">
+          <p className="text-sm font-medium">
+            {value.answer
               ? t("responseTypes.trueFalse.true")
               : t("responseTypes.trueFalse.false")}
-        </p>
+          </p>
+        </WatchResponseBox>
       </WatchQuestionBlock>
     );
   }
@@ -227,7 +243,7 @@ export function TeacherResponseWatch({
     const right = config.right ?? [];
     const rightById = Object.fromEntries(right.map((r) => [r.id, r.text]));
     return (
-      <WatchQuestionBlock feedback={feedbackBundle}>
+      <WatchQuestionBlock feedback={feedbackBundle} scoreSlot={scoreSlot}>
         <ul className="space-y-1 text-sm" data-testid="teacher-watch-answer">
           {left.map((item) => (
             <li key={item.id}>
@@ -248,7 +264,7 @@ export function TeacherResponseWatch({
     const itemById = Object.fromEntries((config.items ?? []).map((i) => [i.id, i.text]));
     const order = value.order.length > 0 ? value.order : (config.items ?? []).map((i) => i.id);
     return (
-      <WatchQuestionBlock feedback={feedbackBundle}>
+      <WatchQuestionBlock feedback={feedbackBundle} scoreSlot={scoreSlot}>
         <ol className="list-decimal space-y-1 pl-5 text-sm" data-testid="teacher-watch-answer">
           {order.map((id) => (
             <li key={id}>{itemById[id] ?? id}</li>
@@ -262,7 +278,7 @@ export function TeacherResponseWatch({
     const config = question.responseConfig as LabellingConfig;
     const termById = Object.fromEntries((config.terms ?? []).map((term) => [term.id, term.text]));
     return (
-      <WatchQuestionBlock feedback={feedbackBundle}>
+      <WatchQuestionBlock feedback={feedbackBundle} scoreSlot={scoreSlot}>
         <ul className="space-y-1 text-sm" data-testid="teacher-watch-answer">
           {(config.zones ?? []).map((zone) => (
             <li key={zone.id}>
@@ -282,24 +298,21 @@ export function TeacherResponseWatch({
     const working = value.working.trim();
     const answer = value.answer.trim() || (value.latex ?? "").trim();
     return (
-      <WatchQuestionBlock feedback={feedbackBundle}>
+      <WatchQuestionBlock feedback={feedbackBundle} scoreSlot={scoreSlot}>
         <div className="space-y-3" data-testid="teacher-watch-answer">
-          <div>
-            <p className="mb-1 text-xs font-medium uppercase tracking-wide text-[var(--tp-text-muted)]">
-              {t("responseTypes.mathInput.workingLabel")}
-            </p>
-            <pre className="overflow-x-auto whitespace-pre-wrap rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] px-3 py-2 font-mono text-sm text-[var(--tp-text-secondary)]">
-              {working || t("session.watch.noResponse")}
-            </pre>
-          </div>
-          <div>
-            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-[var(--tp-text)]">
-              {t("responseTypes.mathInput.answerLabel")}
-            </p>
-            <pre className="overflow-x-auto whitespace-pre-wrap rounded-[var(--tp-radius-sm)] border-2 border-[var(--tp-accent-border)] bg-[var(--tp-surface)] px-3 py-3 font-mono text-base font-semibold text-[var(--tp-text)]">
-              {answer || t("session.watch.noResponse")}
-            </pre>
-          </div>
+          <WatchResponseBox
+            empty={!working}
+            label={t("responseTypes.mathInput.workingLabel")}
+          >
+            <pre className="tp-watch-response__pre">{working}</pre>
+          </WatchResponseBox>
+          <WatchResponseBox
+            empty={!answer}
+            label={t("responseTypes.mathInput.answerLabel")}
+            emphasis
+          >
+            <pre className="tp-watch-response__pre tp-watch-response__pre--final">{answer}</pre>
+          </WatchResponseBox>
         </div>
       </WatchQuestionBlock>
     );
@@ -338,6 +351,7 @@ export function TeacherResponseWatch({
             />
           </div>
         ) : null}
+        {scoreSlot}
         <WrittenFeedbackBlock {...feedbackBundle} />
       </div>
     );
@@ -361,9 +375,7 @@ export function TeacherResponseWatch({
           readOnly
           data-testid="teacher-watch-answer"
         />
-        {!hasStudentWork ? (
-          <p className="text-sm text-[var(--tp-text-secondary)]">{t("session.watch.noResponse")}</p>
-        ) : null}
+        {!hasStudentWork ? <WatchResponseBox empty /> : null}
         {liveFeedbackEnabled ? (
           <div>
             <p className="mb-2 text-xs font-medium text-[var(--tp-text-secondary)]">
@@ -383,6 +395,7 @@ export function TeacherResponseWatch({
             />
           </div>
         ) : null}
+        {scoreSlot}
         <WrittenFeedbackBlock {...feedbackBundle} />
       </div>
     );
@@ -394,19 +407,19 @@ export function TeacherResponseWatch({
     return (
       <div className="space-y-3">
         {value.imageDataUrl ? (
-          <div className="relative overflow-hidden rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)]">
+          <div
+            className="relative overflow-hidden rounded-[10px] border border-[var(--tp-border)]"
+            data-testid="teacher-watch-answer"
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={value.imageDataUrl}
               alt={t("responseTypes.photoHandwritten.previewAlt")}
               className="max-h-[480px] w-full object-contain bg-white"
-              data-testid="teacher-watch-answer"
             />
           </div>
         ) : (
-          <p className="text-sm text-[var(--tp-text-secondary)]" data-testid="teacher-watch-answer">
-            {t("session.watch.noResponse")}
-          </p>
+          <WatchResponseBox empty testId="teacher-watch-answer" />
         )}
         {liveFeedbackEnabled && value.imageDataUrl ? (
           <div>
@@ -427,6 +440,7 @@ export function TeacherResponseWatch({
             />
           </div>
         ) : null}
+        {scoreSlot}
         <WrittenFeedbackBlock {...feedbackBundle} />
       </div>
     );
@@ -434,7 +448,7 @@ export function TeacherResponseWatch({
 
   if (type === "annotateSource" && value.type === "annotateSource") {
     return (
-      <WatchQuestionBlock feedback={feedbackBundle}>
+      <WatchQuestionBlock feedback={feedbackBundle} scoreSlot={scoreSlot}>
         <AnnotateSourceResponder
           passageId={`watch-passage-${question.id}`}
           highlights={value.highlights}
@@ -457,17 +471,12 @@ export function TeacherResponseWatch({
           ? value.highlights.map((h) => h.note ?? `[${h.start}-${h.end}]`).join("\n")
           : rawAnswer ?? "";
 
+  const textEmpty = !textPreview.trim();
   return (
-    <WatchQuestionBlock feedback={feedbackBundle}>
-      <textarea
-        readOnly
-        rows={6}
-        data-testid="teacher-watch-answer"
-        value={textPreview}
-        placeholder={t("session.watch.noResponse")}
-        onFocus={() => onFeedbackFocus(question.id)}
-        className="w-full resize-y rounded-md border border-[var(--tp-border)] bg-[var(--tp-surface)] px-3 py-2 text-sm text-[var(--tp-text)]"
-      />
+    <WatchQuestionBlock feedback={feedbackBundle} scoreSlot={scoreSlot}>
+      <WatchResponseBox empty={textEmpty} testId="teacher-watch-answer">
+        <pre className="tp-watch-response__pre whitespace-pre-wrap">{textPreview}</pre>
+      </WatchResponseBox>
     </WatchQuestionBlock>
   );
 }

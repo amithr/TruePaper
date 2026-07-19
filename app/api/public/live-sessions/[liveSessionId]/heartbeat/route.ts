@@ -17,6 +17,8 @@ type Body = {
   displayName?: string;
   pendingSyncCount?: number;
   syncState?: "synced" | "pending" | "offline";
+  /** Question the student is focused on / typing in (optional UUID). */
+  focusQuestionId?: string | null;
 };
 
 export async function POST(request: Request, { params }: Params) {
@@ -46,6 +48,11 @@ export async function POST(request: Request, { params }: Params) {
         ? body.syncState
         : "synced";
 
+    const focusQuestionId =
+      typeof body.focusQuestionId === "string" && body.focusQuestionId.trim()
+        ? body.focusQuestionId.trim()
+        : null;
+
     const legacyArgs = {
       p_live_session_id: liveSessionId,
       p_device_id: deviceId,
@@ -58,9 +65,22 @@ export async function POST(request: Request, { params }: Params) {
       ...legacyArgs,
       p_pending_sync_count: pendingSyncCount,
       p_sync_state: syncState,
+      p_focus_question_id: focusQuestionId,
     });
 
     let error = modernError;
+    if (
+      error &&
+      (error.message.includes("heartbeat_live_session_student") || error.code === "42883")
+    ) {
+      // Pre-focus migration: 7-arg heartbeat (sync metadata, no focus).
+      const withoutFocus = await supabase.rpc("heartbeat_live_session_student", {
+        ...legacyArgs,
+        p_pending_sync_count: pendingSyncCount,
+        p_sync_state: syncState,
+      });
+      error = withoutFocus.error;
+    }
     if (
       error &&
       (error.message.includes("heartbeat_live_session_student") || error.code === "42883")

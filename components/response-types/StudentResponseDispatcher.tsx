@@ -12,6 +12,7 @@ import { PhotoHandwrittenResponder } from "@/components/response-types/PhotoHand
 import { ShortAnswerResponder } from "@/components/response-types/ShortAnswerResponder";
 import { StructuredMultiPartResponder } from "@/components/response-types/StructuredMultiPartResponder";
 import { TrueFalseResponder } from "@/components/response-types/TrueFalseResponder";
+import { ExamMarkdown } from "@/components/ExamMarkdown";
 import { FormAssetImage } from "@/components/FormAssetImage";
 import { StudentTeacherFeedbackCard } from "@/components/StudentTeacherFeedbackCard";
 import type { Question } from "@/lib/forms";
@@ -27,10 +28,7 @@ import {
   migrateLegacyFeedback,
   type TeacherFeedbackStore,
 } from "@/lib/response-types/feedback";
-import {
-  getResponseTypeMeta,
-  questionSupportsLiveFeedback,
-} from "@/lib/response-types/registry";
+import { questionSupportsLiveFeedback } from "@/lib/response-types/registry";
 import type {
   AnnotateSourceConfig,
   DrawDiagramConfig,
@@ -46,6 +44,7 @@ import type {
 import { normalizeResponseType } from "@/lib/response-types/types";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { DrawingCanvas } from "@/components/DrawingCanvas";
+import type { ReactNode } from "react";
 
 type Props = {
   question: Question;
@@ -57,6 +56,9 @@ type Props = {
   protectTextarea: boolean;
   showLiveFeedbackFeature: boolean;
   feedbackStore: TeacherFeedbackStore;
+  /** Green ✓ Saved under the answer fields (reserved height). */
+  showSavedTick?: boolean;
+  headerExtra?: ReactNode;
   onAnswerChange: (serialized: string) => void;
   onChoiceChange: (value: string) => void;
 };
@@ -71,12 +73,13 @@ export function StudentResponseDispatcher({
   protectTextarea,
   showLiveFeedbackFeature,
   feedbackStore,
+  showSavedTick = false,
+  headerExtra,
   onAnswerChange,
   onChoiceChange,
 }: Props) {
   const t = useTranslations();
   const type = normalizeResponseType(question.type);
-  const meta = getResponseTypeMeta(type);
   const headingId = `exam-q-${question.id}`;
   const value = parseResponseValue(type, answer);
   const store = migrateLegacyFeedback(feedbackStore);
@@ -100,59 +103,32 @@ export function StudentResponseDispatcher({
     }
   }
 
-  const typeLabel = (() => {
-    switch (type) {
-      case "multipleChoice":
-        return t("responseTypes.multipleChoice.label");
-      case "shortAnswer":
-        return t("responseTypes.shortAnswer.label");
-      case "structuredMultiPart":
-        return t("responseTypes.structuredMultiPart.label");
-      case "annotateSource":
-        return t("responseTypes.annotateSource.label");
-      case "drawDiagram":
-        return t("responseTypes.drawDiagram.label");
-      case "graph":
-        return t("responseTypes.graph.label");
-      case "photoHandwritten":
-        return t("responseTypes.photoHandwritten.label");
-      case "trueFalse":
-        return t("responseTypes.trueFalse.label");
-      case "matching":
-        return t("responseTypes.matching.label");
-      case "ordering":
-        return t("responseTypes.ordering.label");
-      case "labelling":
-        return t("responseTypes.labelling.label");
-      case "mathInput":
-        return t("responseTypes.mathInput.label");
-      default:
-        return t("responseTypes.extendedWritten.label");
-    }
-  })();
-
   return (
     <article
-      className={`tp-question-card tp-question-card--exam${
-        answered && examActive ? " tp-question-card--answered" : ""
-      }`}
+      id={`exam-card-${question.id}`}
+      className="tp-question-card tp-question-card--exam"
+      data-answered={answered ? "true" : "false"}
+      aria-labelledby={headingId}
     >
-      <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-        <h3 id={headingId} className="tp-exam-prompt text-[var(--tp-text)]">
-          {index + 1}. {question.prompt || t("common.untitledQuestion")}
-        </h3>
-        {answered && examActive ? (
-          <span className="tp-answered-badge" aria-label={t("home.exam.answered")}>
-            {t("home.exam.answered")}
-          </span>
-        ) : null}
+      <div className="tp-exam-q-head">
+        <span className="tp-exam-q-head__num">Q{index + 1}</span>
+        <span className="tp-exam-q-head__marks">
+          {t("home.exam.marksLabel", { n: question.points })}
+        </span>
+        {headerExtra}
+      </div>
+
+      <div id={headingId} className="tp-exam-prompt">
+        <ExamMarkdown className="min-w-0">
+          {question.prompt || t("common.untitledQuestion")}
+        </ExamMarkdown>
       </div>
 
       {question.promptImagePath ? (
         <FormAssetImage
           path={question.promptImagePath}
           alt={t("home.exam.promptImageAlt")}
-          className="mb-3 overflow-hidden rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-white"
+          className="mt-3 overflow-hidden rounded-[12px] border border-[var(--tp-border)] bg-white"
         />
       ) : null}
 
@@ -333,12 +309,18 @@ export function StudentResponseDispatcher({
         />
       ) : null}
 
+      <div className="tp-exam-saved" aria-live="polite">
+        {showSavedTick && examActive ? (
+          <span className="tp-exam-saved__tick">
+            <span aria-hidden>✓</span> {t("home.exam.questionSaved")}
+          </span>
+        ) : null}
+      </div>
+
       {showFeedback ? (
-        <div className="mt-3 space-y-2">
+        <div className="tp-exam-feedback-stack">
           {quickNudge ? (
-            <p className="rounded-[var(--tp-radius-sm)] border border-[var(--tp-sky-border)] bg-[var(--tp-sky-soft)] px-3 py-2 text-sm text-[var(--tp-text)]">
-              {quickNudge}
-            </p>
+            <p className="tp-exam-nudge">{quickNudge}</p>
           ) : null}
           {wholeMessage ? <StudentTeacherFeedbackCard message={wholeMessage} /> : null}
           {canvasAnnotation.length > 0 && value.type === "photoHandwritten" && value.imageDataUrl ? (
@@ -383,18 +365,6 @@ export function StudentResponseDispatcher({
           ) : null}
         </div>
       ) : null}
-
-      <div className="tp-exam-q-meta">
-        <span className="tp-exam-q-badge tp-exam-q-badge--points">
-          {t("home.exam.questionPts", { n: question.points })}
-        </span>
-        <span className="tp-exam-q-badge tp-exam-q-badge--type">{typeLabel}</span>
-        {showLiveFeedbackFeature && meta.supportsLiveFeedback ? (
-          <span className="tp-exam-q-badge tp-exam-q-badge--feature">
-            {t("home.exam.liveFeedbackOn")}
-          </span>
-        ) : null}
-      </div>
     </article>
   );
 }

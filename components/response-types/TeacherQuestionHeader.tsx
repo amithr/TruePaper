@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 
+import { ExamMarkdown } from "@/components/ExamMarkdown";
 import { QuestionTypeBadge } from "@/components/response-types/QuestionTypeBadge";
 import type { ResponseTypeId } from "@/lib/response-types/types";
 
@@ -42,7 +43,9 @@ export function TeacherQuestionHeader({
           <QuestionTypeBadge type={type} />
         </div>
         {title ? (
-          <h3 className="text-base font-semibold leading-snug text-[var(--tp-text)]">{title}</h3>
+          <div className="text-base font-semibold leading-snug text-[var(--tp-text)]">
+            <ExamMarkdown>{title}</ExamMarkdown>
+          </div>
         ) : null}
       </div>
       {trailing ? <div className="flex shrink-0 flex-wrap items-center gap-2">{trailing}</div> : null}

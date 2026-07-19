@@ -32,8 +32,7 @@ describe("TeacherResponseWatch", () => {
     expect(block).toHaveTextContent("7.35");
     expect(screen.getByText(/working/i)).toBeInTheDocument();
     expect(screen.getByText(/final answer/i)).toBeInTheDocument();
-    // Final answer is visually emphasized vs muted working.
-    const answerPre = block.querySelectorAll("pre")[1];
-    expect(answerPre?.className).toMatch(/font-semibold|text-base/);
+    // Final answer uses the emphasis response surface.
+    expect(block.querySelector(".tp-watch-response--emphasis")).toBeTruthy();
   });
 });

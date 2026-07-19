@@ -68,6 +68,7 @@ export async function GET(request: Request, { params }: Params) {
       pointsEarned,
       pointsPossible,
       displayName,
+      resumeCode,
       liveTeacherFeedback,
       liveTeacherFeedbackEnabled,
     } = parseLiveSessionStudentGet(data);
@@ -79,6 +80,7 @@ export async function GET(request: Request, { params }: Params) {
       pointsEarned,
       pointsPossible,
       displayName,
+      resumeCode: resumeCode || null,
       liveTeacherFeedback,
       liveTeacherFeedbackEnabled,
     });

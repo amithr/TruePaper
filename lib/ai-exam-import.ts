@@ -259,7 +259,8 @@ const GUIDE_TYPE_DOCS: GuideTypeDoc[] = [
       "Student shows workings plus a final answer. Auto-graded from `config.acceptedAnswers` (comma-separated variants). Optional `config.placeholder` for the final-answer field.",
     example: {
       type: "mathInput",
-      prompt: "A ball is thrown upward at 12 m/s. Calculate the maximum height. Take g = 9.8 m/s².",
+      prompt:
+        "A ball is thrown vertically upward with speed **12 m/s**.\n\n**Calculate** the maximum height reached.\n\n- Take `g = 9.8 m/s²`\n- Show your working",
       points: 2,
       config: {
         acceptedAnswers: ["7.35", "7.3", "7.347"],
@@ -395,20 +396,37 @@ Rules of thumb:
 - If the teacher’s prompt names formats (e.g. “questions 1–5 multiple choice”),
   follow those instructions first.
 
-## Writing clear, readable question text
+## Writing clear, readable question text (Markdown)
 
-Students see \`prompt\` on a phone or laptop during a live exam. Write so the task
-is obvious at a glance:
+Students see \`prompt\` (and form \`description\` / part prompts) rendered as
+**Markdown** on phone and laptop during the live exam. Format stems so they
+scan cleanly — do not dump one long unformatted paragraph.
 
-- Lead with the **task** (what to do), then give any data, context, or constraints.
-- Prefer short sentences and plain classroom language over dense paragraphs.
-- For longer stems, break the text with blank lines (\`\\n\\n\` in the JSON string):
-  context first, then the question, then any “Show your working” / word-count
-  instructions on their own line.
-- Put lists and given values on separate lines when that helps scanning
-  (e.g. given measurements, vocabulary to use, or part labels).
-- Keep the stem focused: one main ask per question (use \`structuredMultiPart\`
-  when there are genuine a/b/c parts).
+### Markdown you should use
+
+| Need | Markdown in the JSON string |
+|------|-----------------------------|
+| Paragraph break | blank line (\`\\n\\n\`) |
+| Soft line break | single \`\\n\` (also fine) |
+| Emphasis | \`**bold**\` for the task verb / key ask; \`*italic*\` sparingly |
+| Bullet list | lines starting with \`- \` or \`* \` |
+| Numbered list | \`1. \` \`2. \` … |
+| Inline code / formula fragment | backticks, e.g. \`\`g = 9.8 m/s²\`\` |
+| Simple table (given data) | GFM pipe table |
+
+Do **not** rely on raw HTML. Keep headings light (\`###\` at most) — most stems
+need paragraphs + lists only.
+
+### Structure each prompt
+
+1. **Context** (optional): short setup or given data.
+2. **Task** (required): what the student must do — bold the action when helpful.
+3. **Constraints** (optional): units, word count, “show your working”, etc.
+
+Also:
+
+- Prefer short sentences and plain classroom language.
+- Keep one main ask per question (use \`structuredMultiPart\` for genuine a/b/c).
 - **Never** put teacher-only material in student-facing fields (\`prompt\`,
   \`description\`, options, part prompts, or \`config.passageText\`): no
   “Teacher note:”, mark schemes, answers, hints for the teacher, or commentary
@@ -422,15 +440,17 @@ is obvious at a glance:
 - For \`annotateSource\`, put the full passage in \`config.passageText\`, not the
   prompt; keep the prompt as the instruction only.
 - For \`structuredMultiPart\`, keep the overall stem in \`prompt\` and put each
-  sub-question in \`config.parts[].prompt\`.
+  sub-question in \`config.parts[].prompt\` (Markdown allowed in both).
 
-Good prompt shape (example):
+Good prompt shape (example — note Markdown in the JSON string):
 
-${FENCE}text
-A ball is thrown vertically upward with speed 12 m/s.
-
-Calculate the maximum height reached. Take g = 9.8 m/s².
-Show your working.
+${FENCE}json
+{
+  "type": "mathInput",
+  "prompt": "A ball is thrown vertically upward with speed **12 m/s**.\\n\\n**Calculate** the maximum height reached.\\n\\n- Take \`g = 9.8 m/s²\`\\n- Show your working",
+  "points": 2,
+  "config": { "acceptedAnswers": ["7.35", "7.3"] }
+}
 ${FENCE}
 
 ## Top-level shape
@@ -464,7 +484,8 @@ ${FENCE}
 ## Notes for the assistant
 
 - Choose each \`type\` using the table above (task → type), then write a clear
-  \`prompt\` using the readability guidance.
+  Markdown \`prompt\` using the readability guidance (bold the task, use lists
+  for givens, blank lines between paragraphs).
 - Prefer a mix of question types appropriate to the content and skills assessed.
 - For objective types (\`matching\`, \`ordering\`, \`labelling\`) always include the
   full \`config\` with ids that are consistent between the items and the answer key.

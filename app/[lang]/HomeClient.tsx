@@ -6,8 +6,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import dynamic from "next/dynamic";
 
-import { SyncStatusIndicator } from "@/components/SyncStatusIndicator";
 import { JoinCodeInput } from "@/components/JoinCodeInput";
+import { StudentExamHeader } from "@/components/exam/StudentExamHeader";
+import { StudentExamHandIn } from "@/components/exam/StudentExamHandIn";
 import { useBodyFocusMode } from "@/lib/use-body-focus-mode";
 import { BUILDER_TOUR_PENDING_KEY } from "@/lib/onboarding-tour-key";
 import { LoadingBar } from "@/components/LoadingBar";
@@ -31,7 +32,7 @@ const StudentExamQuestion = dynamic(
   { ssr: false },
 );
 import { ExamCaptureWatermark } from "@/components/ExamCaptureWatermark";
-import { StudentFeedbackNotes } from "@/components/StudentFeedbackNotes";
+import { ExamMarkdown } from "@/components/ExamMarkdown";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { FormAssetImage } from "@/components/FormAssetImage";
 import { FormAssetImageEditor } from "@/components/FormAssetImageEditor";
@@ -72,7 +73,11 @@ import type { Form, Question, QuestionType, StudentAnswers } from "@/lib/forms";
 import { isValidLiveSessionDisplayName, normalizeLiveSessionDisplayName } from "@/lib/live-session-display-name";
 import { parseLiveSessionStudentGet } from "@/lib/live-session-student-get";
 import { isValidJoinCodeFormat, normalizeJoinCode } from "@/lib/join-code";
-import { isValidResumeCodeFormat, normalizeResumeCode } from "@/lib/resume-code";
+import {
+  formatResumeCodeForDisplay,
+  isValidResumeCodeFormat,
+  normalizeResumeCode,
+} from "@/lib/resume-code";
 import { isNoTimeLimitSession } from "@/lib/session-window";
 import type { StudentExamRemotePatch } from "@/lib/student-exam-remote-patch";
 import { mergeStudentAnswersForSave } from "@/lib/collect-student-exam-answers";
@@ -296,6 +301,12 @@ export default function HomeClient({
   const [previewAnswers, setPreviewAnswers] = useState<StudentAnswers>({});
   const [examSuspended, setExamSuspended] = useState(false);
   const [airAlertPaused, setAirAlertPaused] = useState(false);
+  const [examResumeCode, setExamResumeCode] = useState("");
+  const [handInConfirming, setHandInConfirming] = useState(false);
+  const [savedTickByQuestionId, setSavedTickByQuestionId] = useState<Record<string, boolean>>(
+    {},
+  );
+  const savedTickTimerRef = useRef<Record<string, number>>({});
   const [examFinished, setExamFinished] = useState(false);
   const [handRaiseQuestionId, setHandRaiseQuestionId] = useState<string | null>(null);
   const [raiseHandBusyQuestionId, setRaiseHandBusyQuestionId] = useState<string | null>(null);
@@ -308,6 +319,8 @@ export default function HomeClient({
   const [builderSaveError, setBuilderSaveError] = useState("");
   const typingHeartbeatTimerRef = useRef<number | undefined>(undefined);
   const lastPointerInteractionPingAtRef = useRef(0);
+  /** Question the student last focused / typed in — sent on interaction heartbeats. */
+  const focusQuestionIdRef = useRef<string | null>(null);
   const loadedExamNamePrefillRef = useRef(false);
   const examFormRef = useRef<HTMLFormElement>(null);
   const latestStudentAnswersRef = useRef<StudentAnswers>({});
@@ -504,6 +517,7 @@ export default function HomeClient({
               displayName,
               isTyping: true,
               interaction: true,
+              focusQuestionId: focusQuestionIdRef.current,
               ...syncMeta,
             }),
           });
@@ -551,6 +565,7 @@ export default function HomeClient({
             displayName,
             isTyping: false,
             interaction: true,
+            focusQuestionId: focusQuestionIdRef.current,
             ...syncMeta,
           }),
         });
@@ -1125,6 +1140,9 @@ export default function HomeClient({
           }
           setExamSuspended(parsed.suspended);
           setExamFinished(parsed.finished);
+          if (parsed.resumeCode) {
+            setExamResumeCode(formatResumeCodeForDisplay(parsed.resumeCode));
+          }
           setLiveTeacherFeedback((prev) => ({ ...prev, ...parsed.liveTeacherFeedback }));
           if (parsed.liveTeacherFeedbackEnabled) {
             setLiveTeacherFeedbackEnabledLive(true);
@@ -1281,30 +1299,48 @@ export default function HomeClient({
 
   const scheduleStudentAutosaveRef = useLatestRef(scheduleStudentAutosave);
 
+  const scheduleQuestionSavedTick = useCallback((questionId: string) => {
+    setSavedTickByQuestionId((prev) =>
+      prev[questionId] ? { ...prev, [questionId]: false } : prev,
+    );
+    const existing = savedTickTimerRef.current[questionId];
+    if (existing !== undefined) {
+      window.clearTimeout(existing);
+    }
+    savedTickTimerRef.current[questionId] = window.setTimeout(() => {
+      delete savedTickTimerRef.current[questionId];
+      setSavedTickByQuestionId((prev) => ({ ...prev, [questionId]: true }));
+    }, 600);
+  }, []);
+
   const patchTextAnswer = useCallback(
     (questionId: string, next: string) => {
+      focusQuestionIdRef.current = questionId;
       setExamAnswers((prev) => {
         const updated = { ...prev, [questionId]: next };
         latestStudentAnswersRef.current = updated;
         return updated;
       });
+      scheduleQuestionSavedTick(questionId);
       scheduleTypingHeartbeat();
       scheduleStudentAutosave();
     },
-    [scheduleTypingHeartbeat, scheduleStudentAutosave],
+    [scheduleTypingHeartbeat, scheduleStudentAutosave, scheduleQuestionSavedTick],
   );
 
   const patchChoiceAnswer = useCallback(
     (questionId: string, next: string) => {
+      focusQuestionIdRef.current = questionId;
       setExamAnswers((prev) => {
         const updated = { ...prev, [questionId]: next };
         latestStudentAnswersRef.current = updated;
         return updated;
       });
+      scheduleQuestionSavedTick(questionId);
       scheduleTypingHeartbeat();
       scheduleStudentAutosave();
     },
-    [scheduleTypingHeartbeat, scheduleStudentAutosave],
+    [scheduleTypingHeartbeat, scheduleStudentAutosave, scheduleQuestionSavedTick],
   );
 
   const toggleRaiseHand = useCallback(
@@ -2056,6 +2092,9 @@ export default function HomeClient({
         deliveryMode: data.deliveryMode ?? "live",
       });
       setLiveTeacherFeedbackEnabledLive(data.form.liveTeacherFeedbackEnabled);
+      if (data.resumeCode) {
+        setExamResumeCode(formatResumeCodeForDisplay(data.resumeCode));
+      }
       void cacheExamSession({
         liveSessionId: data.liveSessionId,
         deviceId: data.deviceId,
@@ -2072,6 +2111,7 @@ export default function HomeClient({
       setStudentAnswersHydrated(false);
       setExamSuspended(false);
       setExamFinished(false);
+      setHandInConfirming(false);
       setStatusMessage("");
       void clearJoinDraft();
     } catch (error) {
@@ -2307,14 +2347,6 @@ export default function HomeClient({
     );
   }, [studentExamForm]);
 
-  const studentExamQuestionNumberById = useMemo(() => {
-    const map: Record<string, number> = {};
-    studentExamQuestions.forEach((question, index) => {
-      map[question.id] = index + 1;
-    });
-    return map;
-  }, [studentExamQuestions]);
-
   const showLiveTeacherFeedback =
     Boolean(joinedSession) &&
     (isLiveTeacherFeedbackEnabled || hasLiveTeacherFeedbackContent(liveTeacherFeedback));
@@ -2334,20 +2366,6 @@ export default function HomeClient({
     [studentExamQuestions, isQuestionAnswered],
   );
   const examTotalQuestions = studentExamQuestions.length;
-  const examProgressPct =
-    examTotalQuestions > 0
-      ? Math.min(100, Math.round((examAnsweredCount / examTotalQuestions) * 100))
-      : 0;
-  const examAllAnswered =
-    examTotalQuestions > 0 && examAnsweredCount === examTotalQuestions;
-
-  const examProgressFillVariant = examAllAnswered
-    ? "ready"
-    : examProgressPct >= 80
-      ? "almost"
-      : examProgressPct >= 50
-        ? "mid"
-        : "";
 
   const isJoinRoute = guestView === "join";
   const inStudentExam =
@@ -2604,16 +2622,19 @@ export default function HomeClient({
   );
 
   const isGuestMarketing = !session && guestView === "landing" && guestLandingReady;
+  const takingStudentExam = Boolean(studentExamForm && !showTeacherTools);
   const mainClassName = isGuestMarketing
     ? "tp-guest-landing-main"
-    : `${ui.pageMain} tp-card p-6 sm:p-8`;
+    : takingStudentExam
+      ? "tp-exam-main"
+      : `${ui.pageMain} tp-card p-6 sm:p-8`;
 
   return (
     <HomeChrome
       guestHeader={isGuestMarketing}
       hideLanguageToggle={inStudentExam || isJoinRoute}
     >
-      <div className={ui.page}>
+      <div className={takingStudentExam ? "tp-exam-page" : ui.page}>
         <main className={mainClassName}>
         {urlAuthNotice ? (
           <div
@@ -3116,7 +3137,7 @@ export default function HomeClient({
           </section>
         ) : studentExamForm && !showTeacherTools ? (
           <section
-            className="relative space-y-5"
+            className="tp-exam-shell relative"
             data-exam-protected={joinedSession ? "" : undefined}
             onPointerMove={schedulePointerInteractionHeartbeat}
             onPointerOver={schedulePointerInteractionHeartbeat}
@@ -3127,305 +3148,193 @@ export default function HomeClient({
               <ExamCaptureWatermark label={examWatermarkLabel} />
             ) : null}
             {isBuilderStudentPreview ? (
-              <div className="rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] px-4 py-3 text-sm">
-                <p className="font-medium text-[var(--tp-text)]">{t("home.exam.previewTitle")}</p>
-                <p className="mt-1 text-[var(--tp-text-secondary)]">
-                  {t("home.exam.previewDesc")}
-                </p>
+              <div className="tp-exam-body !pb-2">
+                <div className="rounded-[12px] border border-[var(--tp-border)] bg-white px-4 py-3 text-sm">
+                  <p className="font-medium text-[var(--tp-text)]">{t("home.exam.previewTitle")}</p>
+                  <p className="mt-1 text-[var(--tp-text-secondary)]">
+                    {t("home.exam.previewDesc")}
+                  </p>
+                </div>
               </div>
             ) : null}
             {joinedSession && examSuspended ? (
               <div
-                className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 rounded-[var(--tp-radius)] border border-[var(--tp-warning-border)] bg-[var(--tp-surface)]/95 p-6 text-center shadow-lg backdrop-blur-sm tp-anim-fade-in"
+                className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-[var(--tp-surface)]/95 p-6 text-center shadow-lg backdrop-blur-sm tp-anim-fade-in"
                 role="alert"
               >
-                <span aria-hidden>
-                  <svg
-                    className="h-10 w-10 text-[var(--tp-amber)]"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <circle cx="12" cy="12" r="10" />
-                    <path d="M10 9v6M14 9v6" />
-                  </svg>
-                </span>
                 <p className="text-lg font-semibold text-[var(--tp-text)]">{t("home.exam.overlay.paused")}</p>
                 <p className="max-w-md text-sm text-[var(--tp-text-secondary)]">
                   {t("home.exam.overlay.pausedHint")}
                 </p>
               </div>
             ) : null}
-            {isBuilderStudentPreview && examTotalQuestions > 0 ? (
-              <div className="tp-exam-strip">
-                <span className="font-medium text-[var(--tp-text)]">{t("common.noTimeLimit")}</span>
-                <div
-                  className="tp-exam-progress"
-                  role="progressbar"
-                  aria-label={t("home.exam.progressAria")}
-                  aria-valuemin={0}
-                  aria-valuemax={examTotalQuestions}
-                  aria-valuenow={examAnsweredCount}
-                >
-                  <div className="tp-exam-progress__bar" aria-hidden>
-                    <div
-                      className={`tp-exam-progress__fill${
-                        examProgressFillVariant
-                          ? ` tp-exam-progress__fill--${examProgressFillVariant}`
-                          : ""
-                      }`}
-                      style={{ width: `${examProgressPct}%` }}
-                    />
-                  </div>
-                  <div className="tp-exam-progress__label">
-                    <span className="tp-exam-progress__count">
-                      {examAnsweredCount} / {examTotalQuestions}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-            {joinedSession ? (
-              <div
-                className={`tp-exam-strip${
-                  sessionOpen ? "" : " tp-exam-strip--closed"
-                }`}
-              >
-                <span className="tp-exam-strip__timer">
-                  {sessionOpen && !joinedSessionNoTimeLimit && !examFinished ? (
-                    <>
-                      <svg
-                        aria-hidden
-                        className="h-4 w-4 text-[var(--tp-accent)]"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <circle cx="12" cy="12" r="9" />
-                        <path d="M12 7v5l3 2" />
-                      </svg>
-                      <span className="font-mono text-base">
-                        {closesAtForStudent ? (
-                          <LiveCountdown
-                            closesAt={closesAtForStudent}
-                            render={(msLeft) => formatCountdown(msLeft)}
-                          />
-                        ) : (
-                          formatCountdown(0)
-                        )}
-                      </span>
-                    </>
-                  ) : (
-                    <span>
-                      {examFinished
-                        ? t("home.exam.submitted")
-                        : sessionOpen
-                          ? t("common.noTimeLimit")
-                          : nowTick < new Date(joinedSession.opensAt).getTime()
-                            ? t("home.exam.sessionNotOpen")
-                            : t("home.exam.sessionEnded")}
-                    </span>
-                  )}
-                </span>
-                {examTotalQuestions > 0 && !examFinished && sessionOpen ? (
-                  <div
-                    className="tp-exam-progress"
-                    role="progressbar"
-                    aria-label={t("home.exam.progressAria")}
-                    aria-valuemin={0}
-                    aria-valuemax={examTotalQuestions}
-                    aria-valuenow={examAnsweredCount}
-                  >
-                    <div className="tp-exam-progress__bar" aria-hidden>
-                      <div
-                        className={`tp-exam-progress__fill${
-                          examProgressFillVariant
-                            ? ` tp-exam-progress__fill--${examProgressFillVariant}`
-                            : ""
-                        }`}
-                        style={{ width: `${examProgressPct}%` }}
-                      />
-                    </div>
-                    <div className="tp-exam-progress__label">
-                      <span className="tp-exam-progress__count">
-                        {examAnsweredCount} / {examTotalQuestions}
-                      </span>
-                    </div>
-                  </div>
-                ) : null}
-                {!isBuilderStudentPreview ? (
-                  <SyncStatusIndicator
-                    status={studentSyncStatus}
-                    viewer="student"
-                    className="tp-exam-strip__sync"
-                  />
-                ) : null}
-              </div>
-            ) : null}
 
-            <header>
-              <h2 className="text-2xl font-semibold">{studentExamForm.title || t("common.untitledForm")}</h2>
-              {studentExamForm.description ? (
-                <p className="mt-1 text-[var(--tp-text-secondary)]">{studentExamForm.description}</p>
-              ) : null}
-              {studentExamForm.descriptionImagePath ? (
-                <FormAssetImage
-                  path={studentExamForm.descriptionImagePath}
-                  alt={t("home.exam.descriptionImageAlt")}
-                  className="mt-3 overflow-hidden rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-white"
-                />
-              ) : null}
-            </header>
-
-            {!isBuilderStudentPreview && joinedSession ? (
-              <StudentFeedbackNotes
-                liveSessionId={joinedLiveSessionId || null}
-                deviceId={anonymousSessionId || null}
-                enabled={showLiveTeacherFeedback}
-                questionNumberById={studentExamQuestionNumberById}
+            {joinedSession || isBuilderStudentPreview ? (
+              <StudentExamHeader
+                title={studentExamForm.title || t("common.untitledForm")}
+                syncStatus={
+                  isBuilderStudentPreview
+                    ? {
+                        state: "synced",
+                        count: 0,
+                        oldestQueuedAt: null,
+                        breakdown: { responses: 0, submission: 0, comments: 0 },
+                        hasFailed: false,
+                      }
+                    : studentSyncStatus
+                }
+                dots={studentExamQuestions.map((q, index) => ({
+                  id: q.id,
+                  index,
+                  answered: isQuestionAnswered(q),
+                }))}
+                onJump={(questionId) => {
+                  document
+                    .getElementById(`exam-card-${questionId}`)
+                    ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+                closesAt={
+                  isBuilderStudentPreview
+                    ? null
+                    : closesAtForStudent
+                }
+                opensAt={isBuilderStudentPreview ? null : joinedSession?.opensAt}
+                sessionOpen={isBuilderStudentPreview ? true : sessionOpen}
+                examFinished={examFinished}
+                formatCountdown={formatCountdown}
               />
             ) : null}
 
-            {studentExamQuestions.length === 0 ? (
-              <p className="rounded-lg border border-dashed border-[var(--tp-border-strong)] p-4 text-[var(--tp-text-secondary)]">
-                {t("home.exam.noQuestions")}
-              </p>
-            ) : (
-              <form ref={examFormRef} className={ui.questionList}>
-                {studentExamQuestions.map((question, index) => {
-                  const answered = isQuestionAnswered(question);
-                  const examActive = Boolean(
-                    isBuilderStudentPreview ||
-                      (joinedSession && examWritable && !examFinished),
-                  );
-                  const inputsDisabled =
-                    !isBuilderStudentPreview &&
-                    (examAnswersLoading ||
-                      (Boolean(joinedSession) &&
-                        !sessionAllowsAnswerSync(sessionOpen, deliveryMode)) ||
-                      Boolean(examSuspended) ||
-                      Boolean(airAlertPaused) ||
-                      Boolean(examFinished));
-                  const showRaiseHand = Boolean(
-                    joinedSession &&
-                      examWritable &&
-                      !examFinished &&
-                      !examSuspended &&
-                      !airAlertPaused &&
-                      !isBuilderStudentPreview,
-                  );
-                  return (
-                    <StudentExamQuestion
-                      key={question.id}
-                      question={question}
-                      index={index}
-                      answer={effectiveExamAnswers[question.id]}
-                      answered={answered}
-                      examActive={examActive}
-                      disabled={inputsDisabled}
-                      protectTextarea={Boolean(
-                        !isBuilderStudentPreview &&
-                          joinedSession &&
-                          studentAnswersHydrated &&
-                          examWritable &&
-                          !examFinished,
-                      )}
-                      showLiveFeedbackFeature={showLiveTeacherFeedback}
-                      feedbackStore={liveTeacherFeedback}
-                      showRaiseHand={showRaiseHand}
-                      handRaised={handRaiseQuestionId === question.id}
-                      raiseHandBusy={raiseHandBusyQuestionId === question.id}
-                      onToggleRaiseHand={() => void toggleRaiseHand(question.id)}
-                      onChoiceChange={(value) => {
-                        if (isBuilderStudentPreview) {
-                          setPreviewAnswers((prev) => ({
-                            ...prev,
-                            [question.id]: value,
-                          }));
-                          return;
-                        }
-                        scheduleTypingHeartbeat();
-                        patchChoiceAnswer(question.id, value);
-                      }}
-                      onTextChange={(next) => {
-                        if (isBuilderStudentPreview) {
-                          setPreviewAnswers((prev) => ({
-                            ...prev,
-                            [question.id]: next,
-                          }));
-                          return;
-                        }
-                        scheduleTypingHeartbeat();
-                        patchTextAnswer(question.id, next);
-                      }}
+            <div className="tp-exam-body">
+              {studentExamForm.description || studentExamForm.descriptionImagePath ? (
+                <div className="tp-exam-intro">
+                  <p className="tp-exam-intro__label">{t("home.exam.beforeYouStart")}</p>
+                  {studentExamForm.description ? (
+                    <ExamMarkdown variant="body" className="tp-exam-intro__body">
+                      {studentExamForm.description}
+                    </ExamMarkdown>
+                  ) : null}
+                  {studentExamForm.descriptionImagePath ? (
+                    <FormAssetImage
+                      path={studentExamForm.descriptionImagePath}
+                      alt={t("home.exam.descriptionImageAlt")}
+                      className="mt-3 overflow-hidden rounded-[12px] border border-[var(--tp-border)] bg-white"
                     />
-                  );
-                })}
-              </form>
-            )}
+                  ) : null}
+                </div>
+              ) : null}
 
-            {airAlertPaused && joinedSession ? (
-              <p className="rounded-lg border border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] px-3 py-2 text-sm text-[var(--tp-text-secondary)]">
-                {t("offline.airAlertPaused")}
-              </p>
-            ) : null}
+              {studentExamQuestions.length === 0 ? (
+                <p className="rounded-[12px] border border-dashed border-[var(--tp-border-strong)] bg-white p-4 text-[var(--tp-text-secondary)]">
+                  {t("home.exam.noQuestions")}
+                </p>
+              ) : (
+                <form ref={examFormRef} className="tp-exam-q-list">
+                  {studentExamQuestions.map((question, index) => {
+                    const answered = isQuestionAnswered(question);
+                    const examActive = Boolean(
+                      isBuilderStudentPreview ||
+                        (joinedSession && examWritable && !examFinished),
+                    );
+                    const inputsDisabled =
+                      !isBuilderStudentPreview &&
+                      (examAnswersLoading ||
+                        (Boolean(joinedSession) &&
+                          !sessionAllowsAnswerSync(sessionOpen, deliveryMode)) ||
+                        Boolean(examSuspended) ||
+                        Boolean(airAlertPaused) ||
+                        Boolean(examFinished));
+                    const showRaiseHand = Boolean(
+                      joinedSession &&
+                        examWritable &&
+                        !examFinished &&
+                        !examSuspended &&
+                        !airAlertPaused &&
+                        !isBuilderStudentPreview,
+                    );
+                    return (
+                      <StudentExamQuestion
+                        key={question.id}
+                        question={question}
+                        index={index}
+                        answer={effectiveExamAnswers[question.id]}
+                        answered={answered}
+                        examActive={examActive}
+                        disabled={inputsDisabled}
+                        protectTextarea={Boolean(
+                          !isBuilderStudentPreview &&
+                            joinedSession &&
+                            studentAnswersHydrated &&
+                            examWritable &&
+                            !examFinished,
+                        )}
+                        showLiveFeedbackFeature={showLiveTeacherFeedback}
+                        feedbackStore={liveTeacherFeedback}
+                        showRaiseHand={showRaiseHand}
+                        handRaised={handRaiseQuestionId === question.id}
+                        raiseHandBusy={raiseHandBusyQuestionId === question.id}
+                        showSavedTick={savedTickByQuestionId[question.id] === true}
+                        onToggleRaiseHand={() => void toggleRaiseHand(question.id)}
+                        onFocusQuestion={() => {
+                          focusQuestionIdRef.current = question.id;
+                        }}
+                        onChoiceChange={(value) => {
+                          if (isBuilderStudentPreview) {
+                            setPreviewAnswers((prev) => ({
+                              ...prev,
+                              [question.id]: value,
+                            }));
+                            scheduleQuestionSavedTick(question.id);
+                            return;
+                          }
+                          scheduleTypingHeartbeat();
+                          patchChoiceAnswer(question.id, value);
+                        }}
+                        onTextChange={(next) => {
+                          if (isBuilderStudentPreview) {
+                            setPreviewAnswers((prev) => ({
+                              ...prev,
+                              [question.id]: next,
+                            }));
+                            scheduleQuestionSavedTick(question.id);
+                            return;
+                          }
+                          scheduleTypingHeartbeat();
+                          patchTextAnswer(question.id, next);
+                        }}
+                      />
+                    );
+                  })}
+                </form>
+              )}
 
-            {!isBuilderStudentPreview ? (
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex flex-wrap items-center gap-3">
-                <p
-                  ref={autosaveStatusElRef}
-                  data-testid="student-autosave-status"
-                  aria-live="polite"
-                  className="text-xs text-[var(--tp-text-secondary)]"
+              {airAlertPaused && joinedSession ? (
+                <p className="rounded-[12px] border border-[var(--tp-border)] bg-white px-3 py-2 text-sm text-[var(--tp-text-secondary)]">
+                  {t("offline.airAlertPaused")}
+                </p>
+              ) : null}
+
+              {!isBuilderStudentPreview && joinedSession && examWritable && !examFinished ? (
+                <StudentExamHandIn
+                  blankCount={Math.max(0, examTotalQuestions - examAnsweredCount)}
+                  questionCount={examTotalQuestions}
+                  confirming={handInConfirming}
+                  submitting={isMutating}
+                  resumeCode={examResumeCode || null}
+                  autosaveStatusRef={autosaveStatusElRef}
+                  onCancelConfirm={() => setHandInConfirming(false)}
+                  onHandIn={() => {
+                    const blanks = Math.max(0, examTotalQuestions - examAnsweredCount);
+                    if (blanks > 0 && !handInConfirming) {
+                      setHandInConfirming(true);
+                      return;
+                    }
+                    setHandInConfirming(false);
+                    void submitExam();
+                  }}
                 />
-              </div>
-              {joinedSession && examWritable && !examFinished ? (
-                <button
-                  type="button"
-                  onClick={() => void submitExam()}
-                  disabled={isMutating}
-                  className={`${
-                    examAllAnswered
-                      ? `tp-submit-ready ${focusRing}`
-                      : `${ui.btnPrimary} min-h-11 disabled:opacity-50`
-                  }${isMutating ? " tp-submit-ready--busy" : ""}`}
-                  aria-busy={isMutating}
-                  aria-label={
-                    isMutating
-                      ? t("common.submitting")
-                      : examAllAnswered
-                        ? t("home.exam.submitReadyAria")
-                        : t("home.exam.submitAria")
-                  }
-                >
-                  <svg
-                    aria-hidden
-                    className="h-4 w-4"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M5 12l5 5L20 7" />
-                  </svg>
-                  {isMutating
-                    ? t("common.submitting")
-                    : examAllAnswered
-                      ? t("home.exam.submitReady")
-                      : t("home.exam.submitExam")}
-                </button>
               ) : null}
             </div>
-            ) : null}
           </section>
         ) : !showTeacherTools &&
           isTeacher &&
