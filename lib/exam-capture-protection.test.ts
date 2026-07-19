@@ -46,6 +46,19 @@ describe("installExamCaptureGuards", () => {
     restore();
   });
 
+  it("does not throw when getDisplayMedia is missing (mobile Safari)", () => {
+    Object.defineProperty(navigator, "mediaDevices", {
+      configurable: true,
+      value: {},
+    });
+
+    expect(() =>
+      installExamCaptureGuards({
+        onViolation: () => undefined,
+      })(),
+    ).not.toThrow();
+  });
+
   it("detects PrintScreen and macOS screenshot shortcuts", () => {
     const violations: CaptureViolationKind[] = [];
     const restore = installExamCaptureGuards({

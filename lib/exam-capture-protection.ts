@@ -30,7 +30,12 @@ export function installExamCaptureGuards(options: ExamCaptureGuardOptions): () =
   const { onViolation } = options;
   const cleanups: Array<() => void> = [];
 
-  if (typeof navigator !== "undefined" && navigator.mediaDevices) {
+  // Mobile Safari exposes mediaDevices but not getDisplayMedia — skip patching.
+  if (
+    typeof navigator !== "undefined" &&
+    navigator.mediaDevices &&
+    typeof navigator.mediaDevices.getDisplayMedia === "function"
+  ) {
     const mediaDevices = navigator.mediaDevices;
     const original = mediaDevices.getDisplayMedia.bind(mediaDevices);
     mediaDevices.getDisplayMedia = async function getDisplayMediaBlocked(
