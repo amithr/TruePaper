@@ -1,29 +1,20 @@
 "use client";
 
-import { ChevronRight, Hand } from "lucide-react";
-import { memo } from "react";
+import { ChevronRight } from "lucide-react";
+import { memo, useMemo } from "react";
 
-import { scoreTier } from "@/lib/exam-grades";
 import type { StudentAnswers } from "@/lib/forms";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
-import { useScoreCopy } from "@/lib/i18n/score-copy";
 import type { LiveSessionOverviewParticipant } from "@/lib/live-session-overview";
 import {
-  liveSessionRosterPreview,
-  type RosterPreviewQuestion,
-} from "@/lib/live-typing-preview";
-import {
-  participantAvatarGradient,
-  participantInitials,
-} from "@/lib/participant-display";
-import { HelpHint } from "@/components/HelpHint";
-import { RosterWifiIcon, rosterConnectionSyncState } from "@/components/RosterWifiIcon";
-import type { LiveParticipantUiStatus } from "@/lib/participant-status";
+  deriveLiveRosterRow,
+  type LiveRosterKind,
+  type LiveRosterRowModel,
+} from "@/lib/live-roster";
+import type { RosterPreviewQuestion } from "@/lib/live-typing-preview";
+import { participantInitials } from "@/lib/participant-display";
 import {
   DEFAULT_ROSTER_ACTIVITY_THRESHOLDS,
-  deriveRosterActivity,
-  inactiveMinutes,
-  type RosterActivity,
   type RosterActivityThresholds,
 } from "@/lib/roster-activity";
 import { focusRing } from "@/lib/ui";
@@ -31,7 +22,9 @@ import { focusRing } from "@/lib/ui";
 type Props = {
   previewQuestions: RosterPreviewQuestion[];
   participants: LiveSessionOverviewParticipant[];
+  /** Kept for API compat; live drafts no longer drive the row subtitle. */
   liveDraftsByDevice: Record<string, StudentAnswers>;
+  questionTotal: number;
   onOpenExam: (deviceId: string, questionId?: string | null) => void;
   onResumeStudent?: (deviceId: string) => void;
   resumeBusyDeviceId?: string | null;
@@ -41,150 +34,73 @@ type Props = {
   activityNowMs?: number;
 };
 
-function statusBadgeClass(status: LiveParticipantUiStatus): string {
-  switch (status) {
-    case "blocked":
-      return "tp-status tp-status-blocked";
-    case "finished":
-      return "tp-status tp-status-finished";
-    case "graded":
-      return "tp-status tp-status-graded";
-    case "typing":
-      return "tp-status tp-status-typing";
-    case "idle":
-      return "tp-status tp-status-idle";
-    case "started":
-      return "tp-status tp-status-started";
-    default:
-      return "tp-status tp-status-neutral";
+function formatHandedInTime(iso: string | null): string {
+  if (!iso) {
+    return "";
   }
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) {
+    return "";
+  }
+  return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
-function StatusChip({
-  status,
-  label,
-}: {
-  status: LiveParticipantUiStatus;
-  label: string;
-}) {
-  return (
-    <span className={statusBadgeClass(status)} data-testid="roster-status-badge" data-status={status}>
-      <span className="tp-status-dot" aria-hidden />
-      {label}
-    </span>
-  );
-}
-
-function ConnectionWifiIndicator({
-  participant: p,
-  t,
-  nowMs,
-}: {
-  participant: LiveSessionOverviewParticipant;
-  t: ReturnType<typeof useTranslations>;
-  nowMs: number;
-}) {
-  if (p.finishedAt || p.gradedAt) {
-    return null;
-  }
-  const syncState = rosterConnectionSyncState(p, nowMs);
-  const label =
-    syncState === "offline"
-      ? t("session.status.syncOffline")
-      : syncState === "pending"
-        ? t("session.status.syncSaving")
-        : t("session.status.syncOnline");
-  return <RosterWifiIcon syncState={syncState} label={label} />;
-}
-
-function RosterStatusBadge({
-  participant: p,
-  t,
-}: {
-  participant: LiveSessionOverviewParticipant;
-  t: ReturnType<typeof useTranslations>;
-}) {
-  if (p.finishedAt && !p.gradedAt) {
-    return <StatusChip status="finished" label={t("session.status.submittedPill")} />;
-  }
-  if (p.gradedAt || p.status === "graded") {
-    return <StatusChip status="graded" label={t("session.status.gradedPill")} />;
-  }
-
-  switch (p.status) {
-    case "typing":
-      return <StatusChip status="typing" label={t("session.status.typingLive")} />;
-    case "blocked":
-      return <StatusChip status="blocked" label={t("session.status.paused")} />;
-    case "idle":
-      return <StatusChip status="idle" label={t("session.status.idle")} />;
-    case "started":
-      return <StatusChip status="started" label={t("session.status.workingPill")} />;
-    case "finished":
-      return <StatusChip status="finished" label={t("session.status.submittedPill")} />;
-    default:
-      return <StatusChip status="idle" label={t("session.status.idle")} />;
-  }
-}
-
-function rosterSubtitle(
-  p: LiveSessionOverviewParticipant,
-  liveDraft: StudentAnswers | undefined,
-  previewQuestions: RosterPreviewQuestion[],
+function statusCopy(
+  model: LiveRosterRowModel,
+  finishedAt: string | null,
   t: ReturnType<typeof useTranslations>,
-  scoreTierMessage: (tier: ReturnType<typeof scoreTier>) => string,
-): string {
-  if (
-    p.status === "graded" &&
-    p.pointsEarned != null &&
-    p.pointsPossible != null &&
-    p.pointsPossible > 0
-  ) {
-    const tier = scoreTier(p.pointsEarned, p.pointsPossible);
-    return t("session.roster.subtitleGraded", { message: scoreTierMessage(tier) });
+): { tone: "waiting" | "stalled" | "working" | "offline" | "done" | "help"; label: string } {
+  if (model.kind === "done") {
+    const time = formatHandedInTime(finishedAt);
+    return {
+      tone: "done",
+      label: time ? t("session.roster.statusHandedInAt", { time }) : t("session.roster.statusHandedIn"),
+    };
   }
-
-  if (p.finishedAt && !p.gradedAt) {
-    const count = p.textWordCount;
-    return count === 1
-      ? t("session.roster.subtitleSubmittedOne", { count })
-      : t("session.roster.subtitleSubmittedOther", { count });
+  if (model.kind === "waiting") {
+    return { tone: "waiting", label: t("session.roster.statusWaiting") };
   }
-
-  const draftPreview = liveDraft ? liveSessionRosterPreview(liveDraft, previewQuestions) : "";
-  const showLive = p.status === "typing" || draftPreview.length > 0;
-  if (showLive && draftPreview) {
-    return draftPreview;
+  if (model.offline) {
+    return { tone: "offline", label: t("session.roster.statusOffline") };
   }
-
-  if (p.textPreview) {
-    return p.textPreview;
+  if (model.kind === "help") {
+    return {
+      tone: "help",
+      label: model.questionIndex
+        ? t("session.roster.statusNeedsHelpOn", { n: model.questionIndex })
+        : t("session.roster.statusNeedsHelp"),
+    };
   }
-
-  return "";
+  if (model.kind === "stalled") {
+    return {
+      tone: "stalled",
+      label: model.questionIndex
+        ? t("session.roster.statusIdleOn", { m: model.idleMinutes, n: model.questionIndex })
+        : t("session.roster.statusIdle", { m: model.idleMinutes }),
+    };
+  }
+  return {
+    tone: "working",
+    label: model.questionIndex
+      ? t("session.roster.statusWorkingOn", { n: model.questionIndex })
+      : t("session.roster.statusWorking"),
+  };
 }
 
-function InactivityHint({ activity, t }: { activity: RosterActivity; t: ReturnType<typeof useTranslations> }) {
-  if (activity.level !== "soft" && activity.level !== "strong") {
-    return null;
+function chipTone(kind: LiveRosterKind, attention: boolean, done: boolean): "attention" | "done" | "neutral" {
+  if (done) {
+    return "done";
   }
-  const mins = inactiveMinutes(activity.inactiveMs);
-  return (
-    <span
-      className="tp-roster-inactive"
-      data-level={activity.level}
-      data-testid="roster-inactive-hint"
-      title={t("session.activity.inactiveTitle", { minutes: mins })}
-    >
-      {t("session.activity.inactiveLabel", { minutes: mins })}
-    </span>
-  );
+  if (attention) {
+    return "attention";
+  }
+  return "neutral";
 }
 
 const RosterRow = memo(function RosterRow({
   previewQuestions,
   participant: p,
-  liveDraftsByDevice,
+  questionTotal,
   onOpenExam,
   onResumeStudent,
   resumeBusyDeviceId,
@@ -194,7 +110,7 @@ const RosterRow = memo(function RosterRow({
 }: {
   previewQuestions: RosterPreviewQuestion[];
   participant: LiveSessionOverviewParticipant;
-  liveDraftsByDevice: Record<string, StudentAnswers>;
+  questionTotal: number;
   onOpenExam: (deviceId: string, questionId?: string | null) => void;
   onResumeStudent?: (deviceId: string) => void;
   resumeBusyDeviceId?: string | null;
@@ -203,128 +119,90 @@ const RosterRow = memo(function RosterRow({
   activityNowMs: number;
 }) {
   const t = useTranslations();
-  const activity = deriveRosterActivity(p, activityThresholds, sessionOpen, activityNowMs);
-  const { scoreTierMessage } = useScoreCopy();
   const deviceNorm = p.anonymousSessionId.toLowerCase();
-  const liveDraft = liveDraftsByDevice[deviceNorm];
   const initials = participantInitials(p.displayName, p.anonymousSessionId);
-  const gradient = participantAvatarGradient(p.anonymousSessionId);
-  const draftPreview = liveDraft ? liveSessionRosterPreview(liveDraft, previewQuestions) : "";
-  const subtitle = rosterSubtitle(p, liveDraft, previewQuestions, t, scoreTierMessage);
-  const isLivePreview = p.status === "typing" || draftPreview.length > 0;
-
+  const model = deriveLiveRosterRow(p, {
+    previewQuestions,
+    questionTotal,
+    activityThresholds,
+    sessionOpen,
+    nowMs: activityNowMs,
+  });
+  const status = statusCopy(model, p.finishedAt, t);
   const isResumeBusy = resumeBusyDeviceId === deviceNorm;
-  const isBlocked = p.status === "blocked";
   const open = (questionId?: string | null) => onOpenExam(p.anonymousSessionId, questionId);
-  const handRaised = Boolean(p.handRaisedAt && p.handRaiseQuestionId);
-
-  if (isBlocked && onResumeStudent) {
-    return (
-      <div className="tp-roster-row tp-roster-row--card">
-        <span
-          className="tp-roster-avatar"
-          style={{ background: gradient }}
-          aria-hidden
-        >
-          {initials}
-        </span>
-        <div className="tp-roster-row__body">
-          <div className="tp-roster-row__top">
-            <div className="tp-roster-row__identity">
-              <span className="tp-roster-row__name">
-                {p.displayName || (
-                  <span className="text-[var(--tp-text-muted)] italic">{t("session.roster.noName")}</span>
-                )}
-              </span>
-            </div>
-            <div className="tp-roster-row__statuses">
-              <ConnectionWifiIndicator participant={p} t={t} nowMs={activityNowMs} />
-              <RosterStatusBadge participant={p} t={t} />
-            </div>
-          </div>
-          <div className="mt-3 flex items-center gap-2">
-            <button
-              type="button"
-              disabled={Boolean(resumeBusyDeviceId) && !isResumeBusy}
-              onClick={() => onResumeStudent(p.anonymousSessionId)}
-              className={`tp-btn-primary min-h-11 w-full sm:w-auto ${focusRing}`}
-            >
-              {isResumeBusy ? t("common.lettingIn") : t("session.actions.letIn")}
-            </button>
-            <HelpHint id="roster-suspended" text={t("help.roster.suspended")} />
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const progressPct =
+    model.total > 0 ? Math.min(100, Math.round((model.answered / model.total) * 100)) : 0;
+  const chip = chipTone(model.kind, model.attention, model.done);
 
   return (
     <div
       role="link"
       tabIndex={0}
-      data-activity={activity.level === "none" ? undefined : activity.level}
-      className={`tp-roster-row tp-roster-row--card ${focusRing}`}
-      onClick={() => open()}
+      className={`tp-live-roster-row ${focusRing}`}
+      data-kind={model.kind}
+      data-testid="roster-row"
+      onClick={() => open(model.kind === "help" ? p.handRaiseQuestionId : undefined)}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
-          open();
+          open(model.kind === "help" ? p.handRaiseQuestionId : undefined);
         }
       }}
     >
-      <span
-        className="tp-roster-avatar"
-        style={{ background: gradient }}
-        aria-hidden
-      >
+      <span className="tp-live-roster-chip" data-tone={chip} aria-hidden>
         {initials}
       </span>
-      <div className="tp-roster-row__body">
-        <div className="tp-roster-row__top">
-          <div className="tp-roster-row__identity">
-            <span className="tp-roster-row__name">
-              {p.displayName ? (
-                p.displayName
-              ) : (
-                <span className="text-[var(--tp-text-muted)] italic">{t("session.roster.noName")}</span>
-              )}
-            </span>
-            {subtitle ? (
-              <p
-                className={`tp-roster-row__preview${
-                  isLivePreview ? " tp-roster-row__preview--live" : ""
-                }`}
-              >
-                {subtitle}
-              </p>
-            ) : null}
-          </div>
-          <div className="tp-roster-row__statuses">
-            {handRaised ? (
-              <button
-                type="button"
-                className={`tp-roster-hand-btn ${focusRing}`}
-                aria-label={t("session.roster.answerHandRaise")}
-                title={t("session.roster.answerHandRaise")}
-                data-testid="roster-hand-button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  open(p.handRaiseQuestionId);
-                }}
-              >
-                <Hand aria-hidden className="h-4 w-4" />
-              </button>
-            ) : null}
-            {handRaised ? (
-              <HelpHint id="roster-hand-raise" text={t("help.roster.handRaise")} />
-            ) : null}
-            <InactivityHint activity={activity} t={t} />
-            <ConnectionWifiIndicator participant={p} t={t} nowMs={activityNowMs} />
-            <RosterStatusBadge participant={p} t={t} />
-            <ChevronRight aria-hidden className="tp-roster-row__chevron" />
-          </div>
-        </div>
+
+      <div className="tp-live-roster-identity">
+        <span className="tp-live-roster-name">
+          {p.displayName ? (
+            p.displayName
+          ) : (
+            <span className="text-[var(--tp-text-muted)] italic">{t("session.roster.noName")}</span>
+          )}
+        </span>
+        <p className="tp-live-roster-status" data-tone={status.tone} data-testid="roster-status-line">
+          <span aria-hidden className="tp-live-roster-status__dot" />
+          {status.label}
+        </p>
       </div>
+
+      <div
+        className="tp-live-roster-progress"
+        aria-label={t("session.roster.progressQuestionsAria", {
+          answered: model.answered,
+          total: model.total,
+        })}
+      >
+        <div className="tp-live-roster-progress__bar" aria-hidden>
+          <div
+            className="tp-live-roster-progress__fill"
+            data-done={model.done ? "true" : "false"}
+            style={{ width: `${progressPct}%` }}
+          />
+        </div>
+        <span className="tp-live-roster-progress__count">
+          {t("session.roster.answeredShort", { a: model.answered, n: model.total })}
+        </span>
+      </div>
+
+      {model.kind === "waiting" && onResumeStudent ? (
+        <button
+          type="button"
+          className={`tp-live-roster-letin ${focusRing}`}
+          disabled={Boolean(resumeBusyDeviceId) && !isResumeBusy}
+          data-testid="roster-let-in"
+          onClick={(event) => {
+            event.stopPropagation();
+            onResumeStudent(p.anonymousSessionId);
+          }}
+        >
+          {isResumeBusy ? t("common.lettingIn") : t("session.actions.letIn")}
+        </button>
+      ) : null}
+
+      <ChevronRight aria-hidden className="tp-live-roster-chevron" />
     </div>
   );
 });
@@ -332,7 +210,8 @@ const RosterRow = memo(function RosterRow({
 export function SessionExamRoster({
   previewQuestions,
   participants,
-  liveDraftsByDevice,
+  liveDraftsByDevice: _liveDraftsByDevice,
+  questionTotal,
   onOpenExam,
   onResumeStudent,
   resumeBusyDeviceId,
@@ -340,18 +219,18 @@ export function SessionExamRoster({
   sessionOpen = true,
   activityNowMs,
 }: Props) {
-  // 0 keeps the heatmap inert (no flags) when no clock is supplied; the live
-  // session page always passes a quantized clock. Avoids an impure Date.now()
-  // in render.
+  void _liveDraftsByDevice;
   const nowMs = activityNowMs ?? 0;
-  return (
-    <div className="tp-roster-list tp-roster-list--cards tp-roster-list--flat">
-      {participants.map((p) => (
+  const total = questionTotal > 0 ? questionTotal : previewQuestions.length;
+
+  const rows = useMemo(
+    () =>
+      participants.map((p) => (
         <RosterRow
           key={p.anonymousSessionId}
           previewQuestions={previewQuestions}
           participant={p}
-          liveDraftsByDevice={liveDraftsByDevice}
+          questionTotal={total}
           onOpenExam={onOpenExam}
           onResumeStudent={onResumeStudent}
           resumeBusyDeviceId={resumeBusyDeviceId}
@@ -359,7 +238,19 @@ export function SessionExamRoster({
           sessionOpen={sessionOpen}
           activityNowMs={nowMs}
         />
-      ))}
-    </div>
+      )),
+    [
+      participants,
+      previewQuestions,
+      total,
+      onOpenExam,
+      onResumeStudent,
+      resumeBusyDeviceId,
+      activityThresholds,
+      sessionOpen,
+      nowMs,
+    ],
   );
+
+  return <div className="tp-live-roster-list">{rows}</div>;
 }

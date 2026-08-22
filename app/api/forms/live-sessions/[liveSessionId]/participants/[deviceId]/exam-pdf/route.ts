@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 
 import { isValidAnonymousSessionId } from "@/lib/anonymous-session";
-import { loadSessionForPdf, loadStudentForPdf } from "@/lib/exam-pdf-load";
+import { loadExamPdfImages, loadSessionForPdf, loadStudentForPdf } from "@/lib/exam-pdf-load";
 import { buildSingleStudentExamPdf, safeFilenameSlug } from "@/lib/exam-pdf";
+import { nodeExamPdfEngine } from "@/lib/exam-pdf-node";
 import { getSessionUser } from "@/lib/request-auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -57,10 +58,13 @@ export async function GET(_request: Request, { params }: Params) {
     return NextResponse.json({ error: "This student has not joined the session." }, { status: 404 });
   }
 
+  const images = await loadExamPdfImages(loaded.form);
   const pdf = await buildSingleStudentExamPdf({
+    engine: nodeExamPdfEngine(),
     session: loaded.session,
     form: loaded.form,
     student,
+    questionImages: images.questions,
   });
 
   const nameSlug = safeFilenameSlug(student.displayName, "student");

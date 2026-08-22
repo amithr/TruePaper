@@ -8,10 +8,18 @@ type Props = {
   strokes: DrawingStroke[];
   disabled: boolean;
   config: DrawDiagramConfig;
+  /** Resolved background (e.g. the question image); falls back to config.backgroundDataUrl. */
+  backgroundImageUrl?: string;
   onChange: (strokes: DrawingStroke[]) => void;
 };
 
-export function DrawDiagramResponder({ strokes, disabled, config, onChange }: Props) {
+export function DrawDiagramResponder({
+  strokes,
+  disabled,
+  config,
+  backgroundImageUrl,
+  onChange,
+}: Props) {
   const width = Math.max(320, Math.min(800, config.width ?? 600));
   const height = Math.max(200, Math.min(600, config.height ?? 360));
 
@@ -20,7 +28,7 @@ export function DrawDiagramResponder({ strokes, disabled, config, onChange }: Pr
       width={width}
       height={height}
       strokes={strokes}
-      backgroundImageUrl={config.backgroundDataUrl}
+      backgroundImageUrl={backgroundImageUrl ?? config.backgroundDataUrl}
       disabled={disabled}
       onChange={onChange}
       data-testid="student-draw-canvas"

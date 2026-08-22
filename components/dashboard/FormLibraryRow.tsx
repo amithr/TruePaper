@@ -242,7 +242,6 @@ export function FormLibraryRow({
           items={menuItems}
           open={menuOpen}
           onOpenChange={(open) => onOpenPopoverChange(open ? "menu" : null)}
-          showClose={false}
           className="tp-form-library-row__overflow"
         />
       </div>

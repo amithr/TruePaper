@@ -29,6 +29,7 @@ import { stashPendingBuilderForm } from "@/lib/pending-builder-form";
 import { ui } from "@/lib/ui";
 import { requestJson } from "@/lib/request-json";
 import { startLiveSession } from "@/lib/start-live-session";
+import { Copy, Link2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 const FORM_LIBRARY_PAGE_SIZE = 5;
@@ -239,6 +240,8 @@ export function DashboardFormLibrary({ onError }: Props) {
       {
         type: "button",
         label: t("formLibrary.startLink.copy"),
+        tooltip: t("formLibrary.startLink.hint"),
+        icon: Link2,
         onClick: () => {
           const url = buildFormStartUrl(origin, locale, form.id, sessionOptionsForForm(form.id));
           if (url) {
@@ -254,6 +257,8 @@ export function DashboardFormLibrary({ onError }: Props) {
       {
         type: "button",
         label: t("templateLibrary.save.action"),
+        tooltip: t("templateLibrary.save.menuHint"),
+        icon: Copy,
         onClick: () => {
           setSaveTemplateFormId(form.id);
           setSaveTemplateTitle(form.title || "");
@@ -266,7 +271,12 @@ export function DashboardFormLibrary({ onError }: Props) {
         node: (
           <ConfirmButton
             tone="danger"
-            label={t("formLibrary.deleteEllipsis")}
+            label={
+              <>
+                <Trash2 aria-hidden className="tp-overflow-menu__icon" width={16} height={16} />
+                {t("formLibrary.deleteEllipsis")}
+              </>
+            }
             confirmLabel={t("common.tapAgainDelete")}
             busy={deletingFormId === form.id}
             busyLabel={t("common.deleting")}

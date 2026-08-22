@@ -30,6 +30,7 @@ export type OverviewFingerprintPresence = {
   lastSeenAt: string | null;
   handRaiseQuestionId: string | null;
   handRaisedAt: string | null;
+  focusQuestionId: string | null;
 };
 
 export type OverviewFingerprintInput = {
@@ -89,6 +90,7 @@ export function overviewFingerprint(input: OverviewFingerprintInput): string {
         field(p?.lastSeenAt),
         field(p?.handRaiseQuestionId),
         field(p?.handRaisedAt),
+        field(p?.focusQuestionId),
       ].join("|"),
     );
   }

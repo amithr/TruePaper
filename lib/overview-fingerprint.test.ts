@@ -15,6 +15,7 @@ function presence(over: Partial<OverviewFingerprintPresence> = {}): OverviewFing
     lastSeenAt: null,
     handRaiseQuestionId: null,
     handRaisedAt: null,
+    focusQuestionId: null,
     ...over,
   };
 }

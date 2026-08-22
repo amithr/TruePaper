@@ -129,6 +129,7 @@ flowchart LR
 - Running sessions, past sessions, form library sections — all use the **flat entity list** pattern (`docs/LISTS.md`, `components/lists/EntityList.tsx`, CSS `tp-entity-list-*` in `app/globals.css`).
 - **Running sessions rows:** large click-to-copy join-code chip, QR icon (`SessionJoinShare` `qrIcon` variant), waiting state when nobody has joined (no zero-count chips), funnel status pills when active, labeled countdown + progress bar, primary **Open →** to the roster, and Stop session under ⋯. Manual Refresh control removed (list still polls).
 - **Form library rows** show identity (avatar, 2-line title, question count, last run, auto-grade coverage) with a **Start** popover (duration / delivery / late sync) and a lean ⋯ menu (copy start link, save template, delete). Session setup is no longer repeated inline on every row. Summary payload from `GET /api/forms?summary=1` includes `lastRunAt`, `autogradeCount`, and `lastSessionDefaults`.
+- **Shared overflow menus:** `components/OverflowMenu.tsx` — compact ⋯ menus (12px radius, 13.5px items, lucide icons, inset divider before destructive, side tooltips after ~350ms). No “Close” row; one menu open app-wide. Used by form library, running sessions, session/watch headers, and builder.
 - Session list API: `GET /api/teacher/sessions`
 - **Quick-start link:** per-form bookmarkable URL (`/dashboard/forms/[formId]/start?…`) copied from each form row's overflow menu (⋯); opening it (while logged in as the form owner) auto-creates a live session with the encoded duration/delivery settings and redirects to the session roster. Builder: `lib/form-start-link.ts`, page `app/[lang]/dashboard/forms/[formId]/start/page.tsx`.
 
@@ -141,7 +142,9 @@ flowchart LR
 - Shared teacher question chrome on watch: number + type badge (`TeacherQuestionHeader`).
 - Response type config UI: `components/response-types/BuilderResponseConfig.tsx` / `BuilderQuestionFields.tsx`
 - Unsaved builder state: `lib/pending-builder-form.ts` (open-after-create stash); builder edits autosave to the API
-- **Prompt / description images:** teachers can attach one image to the form description and one image to each question prompt. Files are compressed client-side, uploaded to the public Supabase Storage bucket `form-assets`, and stored as paths on `forms.description_image_path` / `questions.prompt_image_path`. Upload/remove: `POST|DELETE /api/forms/[formId]/assets`. Helpers: `lib/form-assets.ts`; UI: `FormAssetImageEditor.tsx` / `FormAssetImage.tsx`. Students see images on join/resume/exam, review, and teacher watch. AI import and template library do not round-trip images yet.
+- **Prompt / description images:** teachers can attach one image to the form description and one image to each question prompt. Files are compressed client-side, uploaded to the public Supabase Storage bucket `form-assets`, and stored as paths on `forms.description_image_path` / `questions.prompt_image_path`. Upload/remove: `POST|DELETE /api/forms/[formId]/assets`. Helpers: `lib/form-assets.ts`; UI: `FormAssetImageEditor.tsx` / `FormAssetImage.tsx`. Students see images on join/resume/exam, review, teacher watch, and PDF exports. AI import and template library do not round-trip images yet.
+- **Canvas background image (`drawDiagram`):** the question image can be used as the drawing-canvas background — opt-in checkbox in the canvas response settings (`promptImageAsBackground` in `response_config`, helpers `drawDiagramBackgroundUrl` / `promptImageUsedAsCanvasBackground` in `lib/response-types/drawing.ts`). When enabled, the image renders inside the canvas (student responder, student feedback-annotation canvas, teacher watch answer + annotate canvases, review page, PDF export) instead of above the prompt, so strokes/points land on top of the image.
+- **Student-safe `responseConfig` in public payloads:** `lookup_join_code` / `lookup_student_resume_code` / `get_student_review_by_token` include per-question `responseConfig` with answer-bearing keys stripped (`acceptedAnswers`, `caseSensitive`, `correct`, `correctOrder`, `correctAnswer`) — migration `20260807120000_student_response_config.sql`. Before this, students always fell back to type defaults (canvas size, matching pairs, passage text were lost in the join flow).
 - **AI exam import:** teacher opens **AI guide** (popup with steps) or **Import exam** (popup), downloads a Markdown authoring guide (`GET /api/forms/ai-template`), feeds it to ChatGPT/Claude with their content, then uploads the generated JSON (`POST /api/forms/import`). The guide includes a task→type chooser (e.g. calculations → `mathInput` / `photoHandwritten`), rules for **Markdown-formatted** prompts (bold task, lists for givens, paragraph breaks), and instructions not to describe diagrams or put teacher notes / mark schemes in student-facing fields. Parser/guide: `lib/ai-exam-import.ts`. Modals: `AiGuideModal.tsx`, `ImportExamModal.tsx` in the form library.
 - **Exam Markdown:** student-facing prompts, form description, structured part stems, teacher watch headers, and review prompts render via `components/ExamMarkdown.tsx` (`react-markdown` + GFM). Builder edit fields stay plain text.
 
@@ -159,11 +162,12 @@ flowchart LR
 
 ### Monitor students
 
-- Roster: `components/SessionExamRoster.tsx` — presence, typing, sync badges, suspensions, hand raises; flat divider rows (`tp-roster-list--flat`)
-- Hand raise highlight on teacher watch uses live presence (`handRaiseQuestionId` from exam-snapshot), not a sticky `?question=` URL — lowers clear the yellow border and roster ✋ icon
-- **Inactivity heatmap (teacher-only, client-side):** subtle per-tile treatment for students with no activity for N minutes. Derived entirely from the already-polled overview timestamps (`lastActivityAt`/`lastTypingAt`/`lastSeenAt`) via `lib/roster-activity.ts` (`deriveRosterActivity`) — zero added network calls; recomputes on a quantized ~20s clock. "Activity" = any interaction heartbeat (pointer/hover/focus + typing). Offline **and silently-disconnected** students are **suppressed** (distinct from inactive) so blackouts don't read as mass disengagement. Subtle dim + muted amber accent + small "Nm idle" label; never red, never a public callout. Per-session thresholds (default 4/9 min) stored locally on the teacher's device: `lib/use-roster-activity-thresholds.ts`, control `components/RosterActivityThresholds.tsx`.
-- **Presence keepalive (silent-disconnect detection):** the student client sends a low-frequency idle keepalive heartbeat (`interaction:false`, every `LIVE_PRESENCE_KEEPALIVE_MS`≈25s) that bumps `live_session_presence.last_seen_at` without resetting the activity timer. When `last_seen_at` goes stale (> `LIVE_PRESENCE_STALE_MS`≈75s) the roster treats the student as disconnected — the wifi dot shows offline (`rosterConnectionSyncState(p, nowMs)`) and the inactivity heatmap is suppressed — so a dropped connection is never mistaken for disengagement. Constants in `lib/participant-status.ts`.
+- Roster: `components/SessionExamRoster.tsx` + `lib/live-roster.ts` — single-line attention-first rows (flat initials chip, status subtitle with colored dot, answered progress bar, inline **Let in** on waiting, chevron). Status copy: waiting / idle on Qn / working on Qn / offline / handed in. Sort: waiting → help → stalled → working → done, then alpha. Filters on the live session page: **All / Needs attention / Working / Done** (counts on pills; amber attention pill when count > 0). “Needs grading” stays on the exam-list/history view only. No per-row wifi icons or gradient avatars.
+- Hand raise highlight on teacher watch uses live presence (`handRaiseQuestionId` from exam-snapshot), not a sticky `?question=` URL — lowers clear the yellow border; roster shows “Needs help on Qn” and opens watch focused on that question
+- **Inactivity / stalled status (teacher-only):** derived from polled overview timestamps via `lib/roster-activity.ts` (`deriveRosterActivity`) — zero added network calls; recomputes on a quantized ~20s clock. Soft/strong thresholds (default 4/9 min) from `lib/use-roster-activity-thresholds.ts` / `components/RosterActivityThresholds.tsx` drive the “Idle {m}m on Q{n}” subtitle and attention bucket.
+- **Presence keepalive (silent-disconnect detection):** the student client sends a low-frequency idle keepalive heartbeat (`interaction:false`, every `LIVE_PRESENCE_KEEPALIVE_MS`≈25s) that bumps `live_session_presence.last_seen_at` without resetting the activity timer. When `last_seen_at` goes stale (> `LIVE_PRESENCE_STALE_MS`≈75s) the roster shows offline status copy (no wifi icon) so a dropped connection is never mistaken for disengagement. Constants in `lib/participant-status.ts`.
   - **Clock-skew safe:** the overview payload carries `serverNow`; the teacher page computes `serverNow − Date.now()` once per poll and offsets its local clock (`activityNowMs`) so staleness is judged against the same server clock as `last_seen_at`, immune to a misset teacher device clock.
+- Overview participants include `focusQuestionId` (from `live_session_presence`) so the roster can show “Working on Q{n}”
 - Watch one student: `app/[lang]/dashboard/sessions/[liveSessionId]/watch/[deviceId]/page.tsx` — live review redesign: Live/typing chip + prev/next student, progress strip with jump-to-question squares, collapsed form brief, question cards ordered prompt → response → score stepper → feedback. Scoring/feedback autosave (~700ms) while the student is still live (not only after finish). Empty answers use dashed italic “No response yet”. Typing highlight uses presence `focusQuestionId` + `lastTypingAt` (amber card border); hand-raise is a separate badge. Components under `components/watch/`.
 - Snapshot API: `GET .../participants/[deviceId]/exam-snapshot` (includes `lastTypingAt`, `lastSeenAt`, `focusQuestionId` from `live_session_presence`)
 - Student heartbeats may send `focusQuestionId` so the watch chip can show “Live · typing in Q{n}”
@@ -188,9 +192,10 @@ flowchart LR
 
 - Manual grades: `PATCH .../participants/[deviceId]/grades`
 - Mark complete: `POST .../participants/[deviceId]/mark-graded`
-- Single PDF: `GET .../participants/[deviceId]/exam-pdf`
-- Bundle PDF: `GET .../exam-bundle-pdf`
-- Logic: `lib/exam-grades.ts`, `lib/exam-pdf.ts`, fonts `lib/exam-pdf-fonts.ts` (IBM Plex)
+- Single PDF: `GET .../participants/[deviceId]/exam-pdf` (server fallback)
+- Bundle PDF: `GET .../exam-bundle-pdf` (server fallback)
+- Client-side generation data: `GET .../exam-pdf-data` (`?deviceId=` for one student) + `GET /api/pdf-fonts/[face]` (Plex woff, immutable cache)
+- Logic: `lib/exam-grades.ts`, `lib/exam-pdf.ts` (isomorphic, engine-injected), `lib/exam-pdf-node.ts` (server engine), `lib/exam-pdf-client.ts` (browser engine + progress), font constants `lib/exam-pdf-fonts.ts` (IBM Plex)
 
 ### Review share links
 
@@ -437,7 +442,7 @@ flowchart TD
 | `extendedWritten` | `ExtendedWrittenResponder.tsx` | No | Yes |
 | `structuredMultiPart` | `StructuredMultiPartResponder.tsx` | No | Yes |
 | `annotateSource` | `AnnotateSourceResponder.tsx` | No | Yes |
-| `drawDiagram` | `DrawDiagramResponder.tsx` | No | Yes |
+| `drawDiagram` | `DrawDiagramResponder.tsx` (optional question-image canvas background via `promptImageAsBackground`) | No | Yes |
 | `graph` | `GraphResponder.tsx` | No | Yes |
 | `photoHandwritten` | `PhotoHandwrittenResponder.tsx` | No | Yes |
 | `trueFalse` | `TrueFalseResponder.tsx` | Yes | Yes |
@@ -457,7 +462,9 @@ Registry & rubrics: `lib/response-types/registry.ts`, `feedback.ts`, `autograde.
 - **On finish:** `autograde_mc_for_response` (SQL) writes `text_grades` for `multipleChoice`, `shortAnswer`, `trueFalse`, and `mathInput` (final answer vs `response_config.acceptedAnswers`). Client mirror: `lib/response-types/autograde.ts`. Matching/ordering/labelling still need teacher grades unless keys are applied manually. Restored/extended from `20260605260000_restore_mc_autograde_on_finish.sql` + `20260718130000_autograde_short_math_tf.sql`.
 - **Manual:** teacher sets text grades via grades API → `lib/exam-grades.ts`.
 - **Tiers / score copy:** `lib/i18n/score-copy.ts`, `components/ScoreMeter.tsx`.
-- **Review page:** token-based public read — `lib/parse-student-review.ts`.
+- **Review page:** token-based public read — `lib/parse-student-review.ts`. All answer types render read-only via `components/ReviewResponseView.tsx` (exam responders in disabled mode; canvas/graph/photo include teacher canvas annotations; drawDiagram shows the background image).
+- **PDF export:** `lib/exam-pdf.ts` embeds question prompt images (natural aspect, capped height) and the description image on the bundle cover. Every answer type renders graphically: `drawDiagram` as vector strokes over the background image, `graph` as a vector plot (grid/axes/points/lines/labels via `lib/response-types/graph-coords.ts`), `photoHandwritten` from its data URL — all three with teacher canvas annotations overlaid — plus marker rows (trueFalse), pair rows (matching/labelling), numbered lists (ordering), labeled boxes (structured/mathInput), and highlight excerpts (annotateSource).
+- **Client-side PDF generation:** teacher downloads generate in the browser with a determinate progress toast (data → fonts → images → per-student render), falling back to the server routes on failure. Generator `lib/exam-pdf-client.ts` (pdfkit standalone build via dynamic import); hook + toast `components/ExamPdfDownload.tsx`; wired on the session page, exam list, and watch page. `lib/exam-pdf.ts` is isomorphic — callers inject an `ExamPdfEngine` (PDFDocument + font bytes); server engine `lib/exam-pdf-node.ts` (also backs `GET /api/pdf-fonts/[face]`); server images still via `loadExamPdfImages` in `lib/exam-pdf-load.ts`.
 
 ---
 
@@ -522,7 +529,7 @@ Teacher-facing **collection views** (forms, sessions, roster) share one flat lis
 | Control tooltips | `components/HoverTooltip.tsx` |
 | Form rows | `components/dashboard/FormLibraryRow.tsx` |
 | Running / past sessions | `DashboardRunningSessions.tsx`, `DashboardPastSessions.tsx` |
-| Live roster (flat rows) | `SessionExamRoster.tsx` + `tp-roster-list--flat` |
+| Live roster (attention-first) | `SessionExamRoster.tsx` + `lib/live-roster.ts` + `tp-live-roster-*` |
 
 **Not entity lists:** question stacks (`tp-question-list`), template catalog grid (`tp-template-card`), exam MC choices — see `docs/LISTS.md` exclusions.
 
@@ -626,6 +633,7 @@ Run migrations in **filename order**. Latest migration wins for RPC definitions.
 | `20260718120000_form_question_images.sql` | `forms.description_image_path`, `questions.prompt_image_path`, `form-assets` storage bucket + RLS; join/resume/review RPCs include image paths |
 | `20260718130000_autograde_short_math_tf.sql` | Finish autograde also scores `shortAnswer`, `trueFalse`, `mathInput` from `response_config` |
 | `20260719120000_presence_focus_question.sql` | `live_session_presence.focus_question_id`; heartbeat/touch accept optional focus UUID for teacher watch typing chip |
+| `20260807120000_student_response_config.sql` | join/resume/review RPCs include per-question `responseConfig` with answer keys stripped (canvas background flag, sizes, matching pairs reach students) |
 
 </details>
 
@@ -667,12 +675,13 @@ PATCH, DELETE — edit / delete question.
 | `DELETE /` | Delete closed session |
 | `POST /stop` | End session, finish all |
 | `GET /overview` | Roster + presence + sync |
-| `GET /exam-bundle-pdf` | All-students PDF |
+| `GET /exam-bundle-pdf` | All-students PDF (server fallback) |
+| `GET /exam-pdf-data` | JSON for client-side PDF generation (`?deviceId=` for one student) |
 | `GET /suspensions` | Suspended list |
 | `POST /resume-student` | Clear suspension |
 | `POST /participants/[deviceId]/rejoin-code` | Create resume code |
 | `DELETE /participants/[deviceId]` | Remove student |
-| `GET /participants/[deviceId]/exam-pdf` | One student PDF |
+| `GET /participants/[deviceId]/exam-pdf` | One student PDF (server fallback) |
 | `GET /participants/[deviceId]/exam-snapshot` | Watch view snapshot |
 | `PATCH /participants/[deviceId]/live-feedback` | Live feedback text (online-only) |
 | `PATCH /participants/[deviceId]/feedback-key` | Structured feedback |
@@ -681,6 +690,10 @@ PATCH, DELETE — edit / delete question.
 | `PATCH /participants/[deviceId]/grades` | Manual grades |
 | `POST /participants/[deviceId]/mark-graded` | Mark grading done |
 | `POST /participants/[deviceId]/review-link` | Review share token |
+
+### PDF fonts — `app/api/pdf-fonts/[face]/`
+
+GET — IBM Plex woff bytes for client-side PDF generation (allowlisted faces, immutable cache).
 
 ### Public (student) — `app/api/public/`
 
@@ -728,11 +741,13 @@ Dashboard session summaries.
 | Student answer hydration | `lib/student-exam-answer-hydration.ts` |
 | Join / resume codes | `lib/join-code.ts`, `lib/resume-code.ts` |
 | Roster status | `lib/participant-status.ts` |
-| Inactivity heatmap | `lib/roster-activity.ts`, `lib/use-roster-activity-thresholds.ts` |
+| Live roster derive/filter | `lib/live-roster.ts` |
+| Inactivity / stalled thresholds | `lib/roster-activity.ts`, `lib/use-roster-activity-thresholds.ts` |
 | Session window | `lib/session-window.ts` |
 | Forms domain types | `lib/forms.ts` |
 | DB row mappers | `lib/forms-api.ts` |
 | AI exam import (parser + guide) | `lib/ai-exam-import.ts` |
+| Overflow / ⋯ menus | `components/OverflowMenu.tsx` |
 | Onboarding hints (pref + hook + UI) | `lib/help-prefs.ts`, `lib/use-help-prefs.ts`, `components/HelpHint.tsx` |
 | First-login guided tour | `lib/onboarding-tour.ts`, `lib/onboarding-tour-key.ts` |
 | Anon Supabase client | `lib/supabase/anon-service.ts` |
@@ -860,4 +875,4 @@ Requires `.env.local`: `E2E_TEACHER_EMAIL`, `E2E_TEACHER_PASSWORD`, Supabase URL
 - Duplicate README setup steps here (link to `README.md` for install/deploy basics).
 - Document every component — only entry points and non-obvious wiring.
 
-*Last reviewed: 2026-07-18 (IBM Plex typography system; mathInput autograde).*
+*Last reviewed: 2026-08-07 (client-side exam PDF generation with progress; all answer types render graphically in PDFs).*

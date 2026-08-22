@@ -6,6 +6,7 @@ import { useLocaleRouter as useRouter } from "@/lib/i18n/client";
 import { useCallback, useEffect, useState } from "react";
 
 import { Breadcrumbs } from "@/components/Breadcrumbs";
+import { ExamPdfProgressToast, useExamPdfDownload } from "@/components/ExamPdfDownload";
 import { LoadingBar } from "@/components/LoadingBar";
 import { SessionExamRoster } from "@/components/SessionExamRoster";
 import { SessionJoinShare } from "@/components/SessionJoinShare";
@@ -48,6 +49,7 @@ export default function SessionExamListPage() {
   const [loadError, setLoadError] = useState("");
   const [rosterFilter, setRosterFilter] = useState<GradingRosterFilter>("all");
   const [filterInitialized, setFilterInitialized] = useState(false);
+  const pdfDownload = useExamPdfDownload(liveSessionId);
 
   const liveDraftsByDevice = useLiveSessionAnswerDrafts(
     Boolean(overview?.session.sessionOpen),
@@ -182,14 +184,15 @@ export default function SessionExamListPage() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <a
-              href={`/api/forms/live-sessions/${liveSessionId}/exam-bundle-pdf`}
-              download
+            <button
+              type="button"
+              onClick={() => void pdfDownload.start()}
+              disabled={pdfDownload.progress !== null}
               className={`tp-btn-ghost text-sm ${focusRing}`}
               title={t("session.downloadAllPdfTitle")}
             >
               {t("session.downloadAllPdfShort")}
-            </a>
+            </button>
             <button
               type="button"
               onClick={() => void refreshOverview()}
@@ -280,6 +283,7 @@ export default function SessionExamListPage() {
               <SessionExamRoster
                 previewQuestions={s.previewQuestions ?? s.textQuestionIds.map((id) => ({ id, type: "text" }))}
                 liveDraftsByDevice={liveDraftsByDevice}
+                questionTotal={s.questionTotal}
                 participants={displayedParticipants}
                 onOpenExam={(deviceId, questionId) => {
                   const base = `/dashboard/sessions/${liveSessionId}/watch/${encodeURIComponent(deviceId)}`;
@@ -292,6 +296,7 @@ export default function SessionExamListPage() {
           )}
         </section>
       </main>
+      <ExamPdfProgressToast progress={pdfDownload.progress} />
     </div>
   );
 }

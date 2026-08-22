@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { parseQuestionGrades, sumEarnedPoints, sumPossiblePoints } from "@/lib/exam-grades";
+import { formAssetPublicUrl } from "@/lib/form-assets";
 import type { Form } from "@/lib/forms";
 import { buildForms } from "@/lib/forms-api";
 import { isMissingColumnError } from "@/lib/is-missing-db-column";
@@ -211,6 +212,50 @@ export async function loadStudentForPdf(
     return null;
   }
   return mapStudentRow(rows[0], form);
+}
+
+export type ExamPdfImages = {
+  /** Prompt image bytes by question id (all question types). */
+  questions: Record<string, Buffer>;
+  /** Form description image bytes, when present. */
+  description: Buffer | null;
+};
+
+async function fetchAssetBytes(path: string | null): Promise<Buffer | null> {
+  const url = formAssetPublicUrl(path);
+  if (!url) {
+    return null;
+  }
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) {
+      return null;
+    }
+    return Buffer.from(await res.arrayBuffer());
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch the form description image and every question prompt image so PDF
+ * rendering can embed them (inline, or as the drawing-canvas background for
+ * opted-in `drawDiagram` questions). Failures are skipped silently.
+ */
+export async function loadExamPdfImages(form: Form): Promise<ExamPdfImages> {
+  const questions: Record<string, Buffer> = {};
+  const [description] = await Promise.all([
+    fetchAssetBytes(form.descriptionImagePath),
+    ...form.questions
+      .filter((question) => Boolean(question.promptImagePath))
+      .map(async (question) => {
+        const bytes = await fetchAssetBytes(question.promptImagePath);
+        if (bytes) {
+          questions[question.id] = bytes;
+        }
+      }),
+  ]);
+  return { questions, description };
 }
 
 export async function loadAllStudentsForPdf(

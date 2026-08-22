@@ -40,6 +40,8 @@ export type LiveSessionOverviewParticipant = {
   /** When set, the student raised their hand on this question. */
   handRaiseQuestionId: string | null;
   handRaisedAt: string | null;
+  /** Question the student last focused / typed in (teacher roster “on Qn”). */
+  focusQuestionId: string | null;
 };
 
 export type LiveSessionOverviewPayload = {

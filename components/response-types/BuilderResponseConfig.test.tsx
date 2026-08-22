@@ -37,6 +37,52 @@ describe("BuilderResponseConfig", () => {
     });
   });
 
+  it("disables the canvas background toggle until a question image exists", () => {
+    renderWithI18n(
+      <BuilderResponseConfig
+        question={makeQuestion("drawDiagram", { id: "q-draw" })}
+        updateActiveForm={vi.fn()}
+      />,
+    );
+    const toggle = screen.getByRole("checkbox", {
+      name: /use question image as canvas background/i,
+    });
+    expect(toggle).toBeDisabled();
+    expect(screen.getByText(/add an image to this question first/i)).toBeInTheDocument();
+  });
+
+  it("patches promptImageAsBackground when the question has an image", () => {
+    const question = makeQuestion("drawDiagram", {
+      id: "q-draw",
+      promptImagePath: "t1/f1/q-q-draw.jpg",
+    });
+    const form: Form = {
+      id: "f1",
+      title: "Quiz",
+      description: "",
+      descriptionImagePath: null,
+      createdBy: "t1",
+      liveTeacherFeedbackEnabled: false,
+      questions: [question],
+    };
+    const updateActiveForm = vi.fn((updater: (f: Form) => Form) => updater(form));
+
+    renderWithI18n(
+      <BuilderResponseConfig question={question} updateActiveForm={updateActiveForm} />,
+    );
+
+    const toggle = screen.getByRole("checkbox", {
+      name: /use question image as canvas background/i,
+    });
+    expect(toggle).toBeEnabled();
+    fireEvent.click(toggle);
+
+    const next = updateActiveForm.mock.results.at(-1)?.value as Form;
+    expect(next.questions[0].responseConfig).toMatchObject({
+      promptImageAsBackground: true,
+    });
+  });
+
   it("returns null for types without builder config UI", () => {
     const { container } = renderWithI18n(
       <BuilderResponseConfig

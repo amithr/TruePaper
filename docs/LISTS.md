@@ -80,7 +80,7 @@ Import from `@/components/lists/EntityList`:
 | Form library | `DashboardFormLibrary.tsx`, `FormLibraryRow.tsx` | `--form` (identity row + Start / ⋯ popovers; no inline session-setup column). Start popover includes late sync + live teacher feedback. |
 | Running sessions | `DashboardRunningSessions.tsx` | `tp-running-session-row` |
 | Past sessions | `DashboardPastSessions.tsx` | `--past` |
-| Live roster | `SessionExamRoster.tsx` | Roster uses flat `--flat` modifier on `tp-roster-list` |
+| Live roster | `SessionExamRoster.tsx` | Attention-first `tp-live-roster-*` rows (not entity-list) |
 
 ### Intentionally different patterns
 

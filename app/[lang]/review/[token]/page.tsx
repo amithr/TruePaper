@@ -6,8 +6,8 @@ import { useEffect, useMemo, useState } from "react";
 import { ExamMarkdown } from "@/components/ExamMarkdown";
 import { FormAssetImage } from "@/components/FormAssetImage";
 import { LoadingBar } from "@/components/LoadingBar";
+import { ReviewResponseView } from "@/components/ReviewResponseView";
 import { ScoreRing } from "@/components/ScoreMeter";
-import { StudentTeacherFeedbackCard } from "@/components/StudentTeacherFeedbackCard";
 import {
   questionScoreTone,
   scoreTier,
@@ -17,7 +17,8 @@ import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { useScoreCopy } from "@/lib/i18n/score-copy";
 import type { StudentReviewPayload } from "@/lib/parse-student-review";
 import { hasLiveTeacherFeedbackContent } from "@/lib/live-teacher-feedback";
-import { parseResponseValue } from "@/lib/response-types/answers";
+import { promptImageUsedAsCanvasBackground } from "@/lib/response-types/drawing";
+import type { DrawDiagramConfig } from "@/lib/response-types/types";
 import { ui } from "@/lib/ui";
 
 export default function StudentReviewPage() {
@@ -180,7 +181,14 @@ export default function StudentReviewPage() {
                     )}
                   </div>
 
-                  {question.promptImagePath ? (
+                  {question.promptImagePath &&
+                  !(
+                    question.type === "drawDiagram" &&
+                    promptImageUsedAsCanvasBackground(
+                      question.responseConfig as DrawDiagramConfig,
+                      question.promptImagePath,
+                    )
+                  ) ? (
                     <FormAssetImage
                       path={question.promptImagePath}
                       alt={t("home.exam.promptImageAlt")}
@@ -188,87 +196,14 @@ export default function StudentReviewPage() {
                     />
                   ) : null}
 
-                  {question.type === "multipleChoice" ? (
-                    <div className="space-y-2">
-                      {question.options.map((option, optionIndex) => (
-                        <label
-                          key={`${question.id}-${optionIndex}`}
-                          className="flex cursor-default items-center gap-2 text-sm"
-                        >
-                          <input
-                            type="radio"
-                            name={question.id}
-                            value={option}
-                            checked={review.answers[question.id] === option}
-                            disabled
-                            readOnly
-                          />
-                          <span>{option || t("review.optionN", { n: optionIndex + 1 })}</span>
-                        </label>
-                      ))}
-                    </div>
-                  ) : question.type === "mathInput" ? (
-                    <div className="space-y-3">
-                      {(() => {
-                        const math = parseResponseValue("mathInput", review.answers[question.id]);
-                        const working =
-                          math.type === "mathInput" ? math.working.trim() : "";
-                        const answer =
-                          math.type === "mathInput"
-                            ? math.answer.trim() || (math.latex ?? "").trim()
-                            : "";
-                        return (
-                          <>
-                            <div>
-                              <p className="mb-1 text-xs font-medium uppercase tracking-wide text-[var(--tp-text-muted)]">
-                                {t("responseTypes.mathInput.workingLabel")}
-                              </p>
-                              <textarea
-                                readOnly
-                                rows={4}
-                                value={working}
-                                placeholder={t("review.noAnswer")}
-                                className="w-full resize-y rounded-md border border-[var(--tp-border-strong)] bg-[var(--tp-bg-subtle)] px-3 py-2 font-mono text-sm text-[var(--tp-text)]"
-                              />
-                            </div>
-                            <div>
-                              <p className="mb-1 text-xs font-medium uppercase tracking-wide text-[var(--tp-text-muted)]">
-                                {t("responseTypes.mathInput.answerLabel")}
-                              </p>
-                              <input
-                                readOnly
-                                value={answer}
-                                placeholder={t("review.noAnswer")}
-                                className="w-full rounded-md border border-[var(--tp-border-strong)] bg-[var(--tp-bg-subtle)] px-3 py-2 font-mono text-sm text-[var(--tp-text)]"
-                              />
-                            </div>
-                          </>
-                        );
-                      })()}
-                      {showFeedback &&
-                      (review.liveTeacherFeedback[question.id] ?? "").trim().length > 0 ? (
-                        <StudentTeacherFeedbackCard
-                          message={review.liveTeacherFeedback[question.id] ?? ""}
-                        />
-                      ) : null}
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      <textarea
-                        readOnly
-                        rows={6}
-                        value={review.answers[question.id] ?? ""}
-                        placeholder={t("review.noAnswer")}
-                        className="w-full resize-y rounded-md border border-[var(--tp-border-strong)] bg-[var(--tp-bg-subtle)] px-3 py-2 text-sm text-[var(--tp-text)]"
-                      />
-                      {showFeedback &&
-                      (review.liveTeacherFeedback[question.id] ?? "").trim().length > 0 ? (
-                        <StudentTeacherFeedbackCard
-                          message={review.liveTeacherFeedback[question.id] ?? ""}
-                        />
-                      ) : null}
-                    </div>
-                  )}
+                  <ReviewResponseView
+                    question={question}
+                    answer={review.answers[question.id]}
+                    feedbackMessage={
+                      showFeedback ? review.liveTeacherFeedback[question.id] ?? "" : ""
+                    }
+                    feedbackStore={review.liveTeacherFeedback}
+                  />
                 </article>
               );
             })}

@@ -66,6 +66,8 @@ export type DrawDiagramConfig = {
   width?: number;
   height?: number;
   backgroundDataUrl?: string;
+  /** Use the question's uploaded image (`promptImagePath`) as the canvas background. */
+  promptImageAsBackground?: boolean;
 };
 
 export type GraphConfig = {

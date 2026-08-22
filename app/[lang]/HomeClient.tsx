@@ -47,6 +47,7 @@ import {
 } from "@/lib/builder/summary-tokens";
 import { typeBadgeFamily } from "@/lib/response-types/builder-groups";
 import { SaveTemplateModal } from "@/components/library/SaveTemplateModal";
+import { Bookmark, Copy, ImagePlus, Trash2 } from "lucide-react";
 import {
   createFreshAnonymousSessionId,
   getOrCreateAnonymousSessionId,
@@ -2753,11 +2754,12 @@ export default function HomeClient({
                 </button>
                 <OverflowMenu
                   label={t("home.builder.moreActions")}
-                  showClose={false}
                   items={[
                     {
                       type: "button",
                       label: t("templateLibrary.save.action"),
+                      icon: Bookmark,
+                      tooltip: t("templateLibrary.save.menuHint"),
                       onClick: () =>
                         setSaveTemplateTarget({
                           kind: "form",
@@ -3027,7 +3029,6 @@ export default function HomeClient({
                         </div>
                         <OverflowMenu
                           label={t("home.builder.moreActions")}
-                          showClose={false}
                           open={builderOpenMenuId === question.id}
                           onOpenChange={(open) => {
                             setBuilderOpenMenuId(open ? question.id : null);
@@ -3040,12 +3041,14 @@ export default function HomeClient({
                             {
                               type: "button",
                               label: t("home.builder.duplicate"),
+                              icon: Copy,
                               disabled: isMutating,
                               onClick: () => void duplicateQuestion(question.id),
                             },
                             {
                               type: "button",
                               label: t("home.builder.addImage"),
+                              icon: ImagePlus,
                               onClick: () => {
                                 setBuilderOpenPanel({
                                   questionId: question.id,
@@ -3057,6 +3060,7 @@ export default function HomeClient({
                             {
                               type: "button",
                               label: t("home.builder.deleteEllipsis"),
+                              icon: Trash2,
                               tone: "danger",
                               disabled: isMutating,
                               onClick: () => void removeQuestion(question.id),

@@ -21,6 +21,10 @@ import {
   serializeResponseValue,
 } from "@/lib/response-types/answers";
 import {
+  drawDiagramBackgroundUrl,
+  promptImageUsedAsCanvasBackground,
+} from "@/lib/response-types/drawing";
+import {
   getCanvasAnnotation,
   getDisplayMessage,
   getPartFeedback,
@@ -93,6 +97,15 @@ export function StudentResponseDispatcher({
       quickNudge.trim().length > 0 ||
       canvasAnnotation.length > 0);
 
+  const drawConfig =
+    type === "drawDiagram" ? (question.responseConfig as DrawDiagramConfig) : null;
+  const drawBackgroundUrl = drawConfig
+    ? drawDiagramBackgroundUrl(drawConfig, question.promptImagePath)
+    : undefined;
+  const imageInsideCanvas =
+    drawConfig !== null &&
+    promptImageUsedAsCanvasBackground(drawConfig, question.promptImagePath);
+
   const partFeedback: Record<string, string> = {};
   if (type === "structuredMultiPart" && "parts" in question.responseConfig) {
     for (const part of (question.responseConfig as StructuredMultiPartConfig).parts) {
@@ -124,7 +137,7 @@ export function StudentResponseDispatcher({
         </ExamMarkdown>
       </div>
 
-      {question.promptImagePath ? (
+      {question.promptImagePath && !imageInsideCanvas ? (
         <FormAssetImage
           path={question.promptImagePath}
           alt={t("home.exam.promptImageAlt")}
@@ -219,6 +232,7 @@ export function StudentResponseDispatcher({
           strokes={value.strokes}
           disabled={disabled}
           config={question.responseConfig as DrawDiagramConfig}
+          backgroundImageUrl={drawBackgroundUrl}
           onChange={(strokes) =>
             onAnswerChange(serializeResponseValue({ type: "drawDiagram", strokes }))
           }
@@ -346,6 +360,7 @@ export function StudentResponseDispatcher({
                 width={(question.responseConfig as DrawDiagramConfig).width ?? 600}
                 height={(question.responseConfig as DrawDiagramConfig).height ?? 360}
                 strokes={canvasAnnotation}
+                backgroundImageUrl={drawBackgroundUrl}
                 readOnly
               />
             </div>

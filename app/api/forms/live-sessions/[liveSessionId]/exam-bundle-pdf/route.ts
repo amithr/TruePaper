@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { buildSessionExamBundlePdf, safeFilenameSlug } from "@/lib/exam-pdf";
-import { loadAllStudentsForPdf, loadSessionForPdf } from "@/lib/exam-pdf-load";
+import { loadAllStudentsForPdf, loadExamPdfImages, loadSessionForPdf } from "@/lib/exam-pdf-load";
+import { nodeExamPdfEngine } from "@/lib/exam-pdf-node";
 import { getSessionUser } from "@/lib/request-auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -47,10 +48,14 @@ export async function GET(_request: Request, { params }: Params) {
     );
   }
 
+  const images = await loadExamPdfImages(loaded.form);
   const pdf = await buildSessionExamBundlePdf({
+    engine: nodeExamPdfEngine(),
     session: loaded.session,
     form: loaded.form,
     students,
+    questionImages: images.questions,
+    descriptionImage: images.description,
   });
 
   const formSlug = safeFilenameSlug(loaded.session.formTitle, "exam");

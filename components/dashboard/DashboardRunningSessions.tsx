@@ -28,6 +28,7 @@ import { usePollingRefresh } from "@/lib/use-polling-refresh";
 import { focusRing } from "@/lib/ui";
 import { messageForBackgroundRefreshError } from "@/lib/background-network-error";
 import { requestJson } from "@/lib/request-json";
+import { Link2, Presentation, Square } from "lucide-react";
 import { toast } from "sonner";
 
 type Props = {
@@ -147,12 +148,14 @@ export function DashboardRunningSessions({
     {
       type: "button",
       label: t("runningSessions.copyJoinLink"),
+      icon: Link2,
       disabled: !origin,
       onClick: () => void copyJoinLink(s.joinCode),
     },
     {
       type: "button",
       label: t("home.teacher.classDisplay"),
+      icon: Presentation,
       onClick: () => {
         window.open(
           `/${locale}/live/${encodeURIComponent(s.joinCode)}`,
@@ -168,7 +171,12 @@ export function DashboardRunningSessions({
       node: (
         <ConfirmButton
           tone="danger"
-          label={t("runningSessions.stopEllipsis")}
+          label={
+            <>
+              <Square aria-hidden className="tp-overflow-menu__icon" width={16} height={16} />
+              {t("runningSessions.stopEllipsis")}
+            </>
+          }
           confirmLabel={t("common.tapAgainStop")}
           busy={stoppingSessionId === s.id}
           busyLabel={
@@ -357,7 +365,6 @@ export function DashboardRunningSessions({
                     <OverflowMenu
                       label={t("runningSessions.moreActions")}
                       items={menuItemsFor(s)}
-                      showClose={false}
                       open={openMenuId === s.id}
                       onOpenChange={(open) => setOpenMenuId(open ? s.id : null)}
                     />

@@ -92,6 +92,22 @@ export function BuilderResponseConfig({ question, updateActiveForm }: Props) {
             className="tp-input"
           />
         </label>
+        <div className="sm:col-span-2">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={config.promptImageAsBackground === true && Boolean(question.promptImagePath)}
+              disabled={!question.promptImagePath}
+              onChange={(event) => patchConfig({ promptImageAsBackground: event.target.checked })}
+            />
+            {t("responseTypes.builder.canvasImageBackground")}
+          </label>
+          {!question.promptImagePath ? (
+            <p className="mt-1 text-xs text-[var(--tp-text-muted)]">
+              {t("responseTypes.builder.canvasImageBackgroundHint")}
+            </p>
+          ) : null}
+        </div>
       </div>
     );
   }

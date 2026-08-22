@@ -22,7 +22,10 @@ import {
   serializeFeedbackPayload,
   type TeacherFeedbackStore,
 } from "@/lib/response-types/feedback";
-import type { DrawingStroke } from "@/lib/response-types/drawing";
+import {
+  drawDiagramBackgroundUrl,
+  type DrawingStroke,
+} from "@/lib/response-types/drawing";
 import {
   normalizeResponseType,
   type AnnotateSourceConfig,
@@ -322,13 +325,14 @@ export function TeacherResponseWatch({
     const config = question.responseConfig as DrawDiagramConfig;
     const width = Math.max(320, Math.min(800, config.width ?? 600));
     const height = Math.max(200, Math.min(600, config.height ?? 360));
+    const backgroundUrl = drawDiagramBackgroundUrl(config, question.promptImagePath);
     return (
       <div className="space-y-3">
         <DrawingCanvas
           width={width}
           height={height}
           strokes={value.strokes}
-          backgroundImageUrl={config.backgroundDataUrl}
+          backgroundImageUrl={backgroundUrl}
           readOnly
           data-testid="teacher-watch-answer"
         />
@@ -341,7 +345,7 @@ export function TeacherResponseWatch({
               width={width}
               height={height}
               strokes={annotationDraft}
-              backgroundImageUrl={undefined}
+              backgroundImageUrl={backgroundUrl}
               strokeColor="#c2410c"
               strokeWidth={3}
               onChange={(strokes) => {

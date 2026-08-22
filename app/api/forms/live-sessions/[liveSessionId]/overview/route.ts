@@ -48,6 +48,7 @@ type PresenceOverviewRow = {
   pending_sync_count?: number | null;
   hand_raise_question_id?: string | null;
   hand_raised_at?: string | null;
+  focus_question_id?: string | null;
 };
 
 type Params = {
@@ -148,15 +149,18 @@ export async function GET(request: Request, { params }: Params) {
       pendingSyncCount: number;
       handRaiseQuestionId: string | null;
       handRaisedAt: string | null;
+      focusQuestionId: string | null;
     }
   >();
   const presencePrimary = await supabase
     .from("live_session_presence")
     .select(
-      "anonymous_session_id, last_activity_at, last_typing_at, last_seen_at, sync_state, pending_sync_count, hand_raise_question_id, hand_raised_at",
+      "anonymous_session_id, last_activity_at, last_typing_at, last_seen_at, sync_state, pending_sync_count, hand_raise_question_id, hand_raised_at, focus_question_id",
     )
     .eq("live_session_id", liveSessionId);
 
+  const presenceMissingFocus =
+    presencePrimary.error && isMissingColumnError(presencePrimary.error, "focus_question_id");
   const presenceMissingHand = presencePrimary.error
     ? isMissingColumnError(presencePrimary.error, "hand_raised_at") ||
       isMissingColumnError(presencePrimary.error, "hand_raise_question_id")
@@ -166,14 +170,19 @@ export async function GET(request: Request, { params }: Params) {
   const presenceMissingLastSeen =
     presencePrimary.error && isMissingColumnError(presencePrimary.error, "last_seen_at");
   const presenceNeedsRetry =
-    Boolean(presenceMissingSync) || Boolean(presenceMissingHand) || Boolean(presenceMissingLastSeen);
+    Boolean(presenceMissingSync) ||
+    Boolean(presenceMissingHand) ||
+    Boolean(presenceMissingLastSeen) ||
+    Boolean(presenceMissingFocus);
 
   // Retry with progressively fewer columns for DBs that predate a migration.
   const reducedPresenceSelect = presenceMissingSync
     ? "anonymous_session_id, last_activity_at, last_typing_at"
     : presenceMissingHand
       ? "anonymous_session_id, last_activity_at, last_typing_at, sync_state, pending_sync_count"
-      : "anonymous_session_id, last_activity_at, last_typing_at, sync_state, pending_sync_count, hand_raise_question_id, hand_raised_at";
+      : presenceMissingFocus
+        ? "anonymous_session_id, last_activity_at, last_typing_at, last_seen_at, sync_state, pending_sync_count, hand_raise_question_id, hand_raised_at"
+        : "anonymous_session_id, last_activity_at, last_typing_at, last_seen_at, sync_state, pending_sync_count, hand_raise_question_id, hand_raised_at, focus_question_id";
 
   const presenceRows = (
     presenceNeedsRetry
@@ -204,6 +213,8 @@ export async function GET(request: Request, { params }: Params) {
           handRaiseQuestionId:
             typeof p.hand_raise_question_id === "string" ? p.hand_raise_question_id : null,
           handRaisedAt: typeof p.hand_raised_at === "string" ? p.hand_raised_at : null,
+          focusQuestionId:
+            typeof p.focus_question_id === "string" ? p.focus_question_id : null,
         });
       }
     }
@@ -246,6 +257,7 @@ export async function GET(request: Request, { params }: Params) {
       lastSeenAt: pres.lastSeenAt,
       handRaiseQuestionId: pres.handRaiseQuestionId,
       handRaisedAt: pres.handRaisedAt,
+      focusQuestionId: pres.focusQuestionId,
     });
   }
   const canonical = overviewFingerprint({
@@ -314,6 +326,7 @@ export async function GET(request: Request, { params }: Params) {
       pendingSyncCount,
       handRaiseQuestionId: pres?.handRaiseQuestionId ?? null,
       handRaisedAt: pres?.handRaisedAt ?? null,
+      focusQuestionId: pres?.focusQuestionId ?? null,
       updatedAt: r.updated_at as string,
     };
   });

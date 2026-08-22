@@ -609,6 +609,40 @@ code,
   background: var(--tp-loading-segment-dark);
 }
 
+/* —— Client PDF generation progress toast —— */
+.tp-pdf-progress {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 60;
+  width: min(320px, calc(100vw - 32px));
+  padding: 14px 16px;
+  border: 1px solid var(--tp-border);
+  border-radius: var(--tp-radius-sm);
+  background: var(--tp-surface, #fff);
+  box-shadow: 0 8px 24px rgba(24, 24, 27, 0.14);
+}
+
+.tp-pdf-progress__title {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--tp-text);
+}
+
+.tp-pdf-progress__phase {
+  margin-top: 2px;
+  margin-bottom: 8px;
+  font-size: 0.75rem;
+  color: var(--tp-text-muted);
+}
+
+.tp-pdf-progress__fill {
+  height: 100%;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, var(--tp-accent), var(--tp-accent-hover), var(--tp-violet));
+  transition: width 160ms ease-out;
+}
+
 /* —— OTP-style join code input —— */
 .tp-join-code {
   display: inline-flex;
@@ -1549,14 +1583,16 @@ code,
   top: calc(100% + 0.35rem);
   z-index: 40;
   display: flex;
-  min-width: 12rem;
+  width: max-content;
+  min-width: 12.5rem;
+  max-width: 14.375rem;
   flex-direction: column;
-  gap: 0.15rem;
-  border-radius: var(--tp-radius-sm);
-  border: 1px solid var(--tp-border);
-  background: var(--tp-surface);
-  padding: 0.35rem;
-  box-shadow: var(--tp-shadow-lg);
+  gap: 0;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  padding: 6px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.14);
 }
 
 .tp-overflow-menu--portal {
@@ -1568,54 +1604,109 @@ code,
 
 .tp-overflow-menu__item {
   display: flex;
-  min-height: 2.75rem;
   width: 100%;
   align-items: center;
+  gap: 10px;
   border: none;
-  border-radius: var(--tp-radius-xs);
+  border-radius: 8px;
   background: transparent;
-  padding: 0.55rem 0.75rem;
+  padding: 9px 12px;
   text-align: left;
-  font-size: 0.875rem;
+  font-family: inherit;
+  font-size: 13.5px;
   font-weight: 500;
-  color: var(--tp-text);
+  line-height: 1.3;
+  color: #0f172a;
   cursor: pointer;
-  transition: background 0.12s;
+  text-decoration: none;
+  transition: background 0.1s;
 }
 
-.tp-overflow-menu__item:hover:not(:disabled) {
-  background: var(--tp-bg-subtle);
+.tp-overflow-menu__item:hover:not(:disabled),
+.tp-overflow-menu__item:focus-visible:not(:disabled) {
+  background: #f1f5f9;
+  outline: none;
 }
 
 .tp-overflow-menu__item:disabled {
-  opacity: 0.5;
+  color: #94a3b8;
   cursor: not-allowed;
 }
 
-.tp-overflow-menu__item--danger {
-  color: var(--tp-danger-text-strong);
+.tp-overflow-menu__item:disabled:hover {
+  background: transparent;
 }
 
-.tp-overflow-menu__item--muted {
-  color: var(--tp-text-muted);
-  font-size: 0.8125rem;
+.tp-overflow-menu__item--danger {
+  color: #dc2626;
+}
+
+.tp-overflow-menu__item--danger:hover:not(:disabled),
+.tp-overflow-menu__item--danger:focus-visible:not(:disabled) {
+  background: #fef2f2;
+}
+
+.tp-overflow-menu__item--danger .tp-overflow-menu__icon {
+  opacity: 0.7;
+  color: #dc2626;
+}
+
+.tp-overflow-menu__icon {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  color: #94a3b8;
+}
+
+.tp-overflow-menu__icon-spacer {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+}
+
+.tp-overflow-menu__label {
+  min-width: 0;
+  flex: 1;
+}
+
+.tp-overflow-menu__tooltip {
+  z-index: 90;
+  max-width: 190px;
+  pointer-events: none;
+  border-radius: 8px;
+  background: #0f172a;
+  padding: 8px 11px;
+  color: #e2e8f0;
+  font-size: 12px;
   font-weight: 400;
+  line-height: 1.45;
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.25);
+}
+
+.tp-overflow-menu__tooltip-arrow {
+  fill: #0f172a;
+}
+
+.tp-overflow-menu__custom {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
 }
 
 .tp-overflow-menu__divider {
   height: 1px;
-  margin: 0.35rem 0.25rem;
-  background: var(--tp-border);
+  margin: 5px 4px;
+  background: #f1f5f9;
 }
 
 .tp-overflow-menu__toggle {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.55rem 0.75rem;
-  font-size: 0.875rem;
+  padding: 9px 12px;
+  font-size: 13.5px;
   font-weight: 500;
-  color: var(--tp-text);
+  color: #0f172a;
   cursor: pointer;
   user-select: none;
 }
@@ -1629,25 +1720,34 @@ code,
 }
 
 .tp-overflow-menu__confirm.tp-btn-danger {
+  display: flex;
   width: 100%;
+  align-items: center;
   justify-content: flex-start;
-  min-height: 2.75rem;
+  gap: 10px;
+  min-height: 0;
   border: none;
-  border-radius: var(--tp-radius-xs);
+  border-radius: 8px;
   background: transparent;
   box-shadow: none;
-  padding: 0.55rem 0.75rem;
-  font-size: 0.875rem;
+  padding: 9px 12px;
+  font-size: 13.5px;
   font-weight: 500;
-  color: var(--tp-danger-text-strong);
+  color: #dc2626;
 }
 
-.tp-overflow-menu__confirm.tp-btn-danger:hover:not(:disabled) {
-  background: var(--tp-bg-subtle);
+.tp-overflow-menu__confirm.tp-btn-danger:hover:not(:disabled),
+.tp-overflow-menu__confirm.tp-btn-danger:focus-visible:not(:disabled) {
+  background: #fef2f2;
 }
 
 .tp-overflow-menu__confirm.tp-btn-danger:active:not(:disabled) {
   transform: none;
+}
+
+.tp-overflow-menu__confirm .tp-overflow-menu__icon {
+  opacity: 0.7;
+  color: #dc2626;
 }
 
 /* —— Student exam: question cards & choices —— */
@@ -1921,7 +2021,291 @@ code,
   letter-spacing: 0;
 }
 
-/* —— Session exam roster (teacher exam list) —— */
+/* —— Live session roster (attention-first redesign) —— */
+.tp-live-roster-title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: var(--tp-text);
+  letter-spacing: -0.01em;
+}
+
+.tp-live-roster-title__count {
+  font-family: var(--font-mono-stack);
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+}
+
+.tp-live-roster-filters {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.tp-live-roster-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 9999px;
+  border: 1px solid var(--tp-border);
+  background: var(--tp-surface);
+  color: var(--tp-text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    color 0.12s;
+}
+
+.tp-live-roster-filter:hover:not([aria-pressed="true"]) {
+  border-color: var(--tp-border-strong);
+  color: var(--tp-text);
+}
+
+.tp-live-roster-filter[aria-pressed="true"] {
+  background: #0f172a;
+  border-color: #0f172a;
+  color: #fff;
+}
+
+.tp-live-roster-filter[data-attention="true"] {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #b45309;
+}
+
+.tp-live-roster-filter__count {
+  font-family: var(--font-mono-stack);
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+.tp-live-roster-filter[aria-pressed="true"] .tp-live-roster-filter__count {
+  opacity: 0.9;
+}
+
+.tp-live-roster-hint {
+  margin: 0.75rem 0 0;
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.tp-live-roster-empty {
+  text-align: center;
+  font-size: 0.84375rem;
+  color: #94a3b8;
+}
+
+.tp-live-roster-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.tp-live-roster-row {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 0.8125rem 0.5rem;
+  border-bottom: 1px solid #f1f5f9;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.tp-live-roster-row:last-child {
+  border-bottom: 0;
+}
+
+.tp-live-roster-row:hover {
+  background: #f8fafc;
+}
+
+.tp-live-roster-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 2.125rem;
+  height: 2.125rem;
+  border-radius: 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.tp-live-roster-chip[data-tone="attention"] {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.tp-live-roster-chip[data-tone="done"] {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.tp-live-roster-chip[data-tone="neutral"] {
+  background: #eef2f7;
+  color: #475569;
+}
+
+.tp-live-roster-identity {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.tp-live-roster-name {
+  font-size: 0.90625rem;
+  font-weight: 500;
+  color: var(--tp-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tp-live-roster-status {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-size: 0.78125rem;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tp-live-roster-status__dot {
+  flex-shrink: 0;
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 9999px;
+  background: #94a3b8;
+}
+
+.tp-live-roster-status[data-tone="waiting"],
+.tp-live-roster-status[data-tone="stalled"],
+.tp-live-roster-status[data-tone="help"] {
+  color: #b45309;
+}
+
+.tp-live-roster-status[data-tone="waiting"] .tp-live-roster-status__dot,
+.tp-live-roster-status[data-tone="stalled"] .tp-live-roster-status__dot,
+.tp-live-roster-status[data-tone="help"] .tp-live-roster-status__dot {
+  background: #f59e0b;
+}
+
+.tp-live-roster-status[data-tone="working"] .tp-live-roster-status__dot {
+  background: #3b82f6;
+}
+
+.tp-live-roster-status[data-tone="offline"] {
+  color: #64748b;
+}
+
+.tp-live-roster-status[data-tone="offline"] .tp-live-roster-status__dot {
+  background: #cbd5e1;
+}
+
+.tp-live-roster-status[data-tone="done"] {
+  color: #64748b;
+}
+
+.tp-live-roster-status[data-tone="done"] .tp-live-roster-status__dot {
+  background: #22c55e;
+}
+
+.tp-live-roster-progress {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.3rem;
+  flex-shrink: 0;
+  min-width: 9.5rem;
+}
+
+.tp-live-roster-progress__bar {
+  width: 4.5rem;
+  height: 4px;
+  border-radius: 9999px;
+  background: #f1f5f9;
+  overflow: hidden;
+}
+
+.tp-live-roster-progress__fill {
+  height: 100%;
+  border-radius: inherit;
+  background: #93c5fd;
+  transition: width 0.2s ease;
+}
+
+.tp-live-roster-progress__fill[data-done="true"] {
+  background: #22c55e;
+}
+
+.tp-live-roster-progress__count {
+  font-family: var(--font-mono-stack);
+  font-size: 0.78125rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: #64748b;
+}
+
+.tp-live-roster-letin {
+  flex-shrink: 0;
+  min-height: 2rem;
+  padding: 0.3rem 0.85rem;
+  border: none;
+  border-radius: 9999px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.tp-live-roster-letin:hover:not(:disabled) {
+  background: #1d4ed8;
+}
+
+.tp-live-roster-letin:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.tp-live-roster-chevron {
+  flex-shrink: 0;
+  width: 1.1rem;
+  height: 1.1rem;
+  color: #cbd5e1;
+}
+
+@media (max-width: 640px) {
+  .tp-live-roster-progress {
+    min-width: 0;
+  }
+
+  .tp-live-roster-progress__bar {
+    display: none;
+  }
+}
+
+/* —— Session exam roster (legacy / shared row primitives) —— */
 .tp-roster-list {
   display: flex;
   flex-direction: column;

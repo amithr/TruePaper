@@ -7,24 +7,25 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { ConfirmButton } from "@/components/ConfirmButton";
-import { HelpHint } from "@/components/HelpHint";
+import { ExamPdfProgressToast, useExamPdfDownload } from "@/components/ExamPdfDownload";
 import { LoadingBar } from "@/components/LoadingBar";
 import { SaveTemplateModal } from "@/components/library/SaveTemplateModal";
 import { OverflowMenu, type OverflowMenuItem } from "@/components/OverflowMenu";
 import { RosterActivityThresholds } from "@/components/RosterActivityThresholds";
-import { RosterSyncSummary } from "@/components/RosterSyncSummary";
 import { SessionExamRoster } from "@/components/SessionExamRoster";
 import { SessionJoinShare } from "@/components/SessionJoinShare";
 import { SyncStatusIndicator } from "@/components/SyncStatusIndicator";
 import { TeacherTopBar } from "@/components/TeacherTopBar";
 import { useFeedbackSyncStatus } from "@/lib/offline/use-feedback-sync-status";
-import {
-  countNeedsGrading,
-  compareRosterParticipants,
-  matchesFilter,
-  type GradingRosterFilter,
-} from "@/lib/grading-roster";
+import { countNeedsGrading } from "@/lib/grading-roster";
 import type { LiveSessionOverviewPayload } from "@/lib/live-session-overview";
+import {
+  compareLiveRosterParticipants,
+  countLiveRosterBuckets,
+  deriveLiveRosterRow,
+  matchesLiveRosterFilter,
+  type LiveRosterFilter,
+} from "@/lib/live-roster";
 import { isNoTimeLimitSession } from "@/lib/session-window";
 import { deferEffect } from "@/lib/defer-effect";
 import { notifyStudentExamResumed } from "@/lib/notify-student-exam-resumed";
@@ -35,7 +36,8 @@ import { useLiveSessionAnswerDrafts } from "@/lib/use-live-session-answer-drafts
 import { useLiveSessionOverviewRefresh } from "@/lib/use-live-session-overview-refresh";
 import { usePollingRefresh } from "@/lib/use-polling-refresh";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
-import { ui } from "@/lib/ui";
+import { focusRing, ui } from "@/lib/ui";
+import { Bookmark, Download, RefreshCw, Square, Trash2 } from "lucide-react";
 
 import { messageForBackgroundRefreshError } from "@/lib/background-network-error";
 import { requestJson } from "@/lib/request-json";
@@ -67,9 +69,10 @@ export default function LiveSessionDetailPage() {
   const overviewEtagRef = useRef<string | null>(null);
   const [loadError, setLoadError] = useState("");
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
+  const pdfDownload = useExamPdfDownload(liveSessionId);
   const [sessionActionBusy, setSessionActionBusy] = useState(false);
   const [participantBusyDeviceId, setParticipantBusyDeviceId] = useState<string | null>(null);
-  const [rosterFilter, setRosterFilter] = useState<GradingRosterFilter>("all");
+  const [rosterFilter, setRosterFilter] = useState<LiveRosterFilter>("all");
   const [filterInitialized, setFilterInitialized] = useState(false);
 
   const feedbackSync = useFeedbackSyncStatus({
@@ -135,20 +138,13 @@ export default function LiveSessionDetailPage() {
         overviewEtagRef.current = etag;
       }
       setOverview(data);
-      if (!filterInitialized) {
-        const needs = countNeedsGrading(data.participants);
-        if (needs > 0) {
-          setRosterFilter("needs-grading");
-        }
-        setFilterInitialized(true);
-      }
     } catch (e) {
       const message = messageForBackgroundRefreshError(e, t("session.errors.loadSession"));
       if (message) {
         setLoadError(message);
       }
     }
-  }, [applyServerClock, filterInitialized, liveSessionId, t]);
+  }, [applyServerClock, liveSessionId, t]);
 
   // Coalesce the two refresh sources (3s poll + realtime broadcast) into at most
   // one fetch per OVERVIEW_MIN_REFRESH_MS, with no concurrent runs.
@@ -269,21 +265,55 @@ export default function LiveSessionDetailPage() {
     return sess.previewQuestions ?? sess.textQuestionIds.map((id) => ({ id, type: "text" }));
   }, [overview?.session]);
 
-  const displayedParticipants = useMemo(() => {
+  const rosterModels = useMemo(() => {
     const list = overview?.participants;
-    if (!list) {
+    if (!list || !overview) {
       return [];
     }
-    return [...list]
-      .filter((p) => matchesFilter(p, rosterFilter))
-      .sort((a, b) => {
-        const byHand = compareRosterParticipants(a, b);
-        if (byHand !== 0) {
-          return byHand;
-        }
-        return (a.displayName || "").localeCompare(b.displayName || "");
-      });
-  }, [overview?.participants, rosterFilter]);
+    const preview =
+      overview.session.previewQuestions ??
+      overview.session.textQuestionIds.map((id) => ({ id, type: "text" }));
+    const total = overview.session.questionTotal || preview.length;
+    return list.map((p) => ({
+      participant: p,
+      model: deriveLiveRosterRow(p, {
+        previewQuestions: preview,
+        questionTotal: total,
+        activityThresholds,
+        sessionOpen: overview.session.sessionOpen,
+        nowMs:
+          Math.floor((nowTick + serverClockOffsetMs) / ROSTER_ACTIVITY_TICK_MS) *
+          ROSTER_ACTIVITY_TICK_MS,
+      }),
+    }));
+  }, [overview, activityThresholds, nowTick, serverClockOffsetMs]);
+
+  const rosterBuckets = useMemo(
+    () => countLiveRosterBuckets(rosterModels.map((r) => r.model)),
+    [rosterModels],
+  );
+
+  const displayedParticipants = useMemo(() => {
+    return [...rosterModels]
+      .filter((r) => matchesLiveRosterFilter(r.model, rosterFilter))
+      .sort((a, b) =>
+        compareLiveRosterParticipants(
+          { displayName: a.participant.displayName, model: a.model },
+          { displayName: b.participant.displayName, model: b.model },
+        ),
+      )
+      .map((r) => r.participant);
+  }, [rosterModels, rosterFilter]);
+
+  useEffect(() => {
+    if (!overview || filterInitialized) {
+      return;
+    }
+    if (rosterBuckets.attention > 0) {
+      setRosterFilter("attention");
+    }
+    setFilterInitialized(true);
+  }, [overview, filterInitialized, rosterBuckets.attention]);
 
   if (!overview) {
     return (
@@ -341,46 +371,57 @@ export default function LiveSessionDetailPage() {
 
   const sessionOverflowItems: OverflowMenuItem[] = [
     {
-      type: "link",
+      type: "button",
       label: t("session.downloadAllPdf"),
-      href: `/api/forms/live-sessions/${liveSessionId}/exam-bundle-pdf`,
-      download: true,
+      onClick: () => void pdfDownload.start(),
+      icon: Download,
     },
     {
       type: "button",
       label: t("common.refresh"),
+      icon: RefreshCw,
       onClick: () => void refreshOverview(),
     },
     {
       type: "button",
       label: t("templateLibrary.save.action"),
+      icon: Bookmark,
+      tooltip: t("templateLibrary.save.menuHint"),
       onClick: () => setSaveTemplateOpen(true),
     },
+    { type: "divider", key: "session-action-div" },
     {
       type: "custom",
       key: "session-action",
       node: sessionRunning ? (
-        <span className="flex w-full items-center gap-2">
-          <ConfirmButton
-            tone="danger"
-            label={t("session.actions.stop")}
-            confirmLabel={t("common.tapAgainStop")}
-            busy={sessionActionBusy}
-            busyLabel={t("common.stopping")}
-            onConfirm={stopSession}
-            className="w-full justify-start px-3 py-2.5 text-sm"
-          />
-          <HelpHint id="session-stop" text={t("help.session.stop")} />
-        </span>
+        <ConfirmButton
+          tone="danger"
+          label={
+            <>
+              <Square aria-hidden className="tp-overflow-menu__icon" width={16} height={16} />
+              {t("session.actions.stop")}…
+            </>
+          }
+          confirmLabel={t("common.tapAgainStop")}
+          busy={sessionActionBusy}
+          busyLabel={t("common.stopping")}
+          onConfirm={stopSession}
+          className="tp-overflow-menu__confirm"
+        />
       ) : (
         <ConfirmButton
           tone="danger"
-          label={t("session.actions.delete")}
+          label={
+            <>
+              <Trash2 aria-hidden className="tp-overflow-menu__icon" width={16} height={16} />
+              {t("session.actions.delete")}…
+            </>
+          }
           confirmLabel={t("common.tapAgainDelete")}
           busy={sessionActionBusy}
           busyLabel={t("common.deleting")}
           onConfirm={deleteSession}
-          className="w-full justify-start px-3 py-2.5 text-sm"
+          className="tp-overflow-menu__confirm"
         />
       ),
     },
@@ -485,13 +526,15 @@ export default function LiveSessionDetailPage() {
 
         <section className="tp-card p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <h2 className="flex items-center gap-1.5 text-lg font-semibold">
-                {t("session.roster.title")}
-                <HelpHint id="roster-presence" text={t("help.roster.presence")} />
-              </h2>
-              <RosterSyncSummary participants={overview.participants} nowMs={activityNowMs} />
-            </div>
+            <h2
+              className="tp-live-roster-title"
+              aria-label={t("session.roster.titleStudentsCount", { count: totalCount })}
+            >
+              {t("session.roster.titleStudents")}
+              <span className="tp-live-roster-title__count" aria-hidden>
+                · {totalCount}
+              </span>
+            </h2>
             <div className="flex flex-wrap items-center gap-2">
               {sessionRunning ? (
                 <RosterActivityThresholds
@@ -503,56 +546,50 @@ export default function LiveSessionDetailPage() {
                 <div
                   role="group"
                   aria-label={t("session.roster.filterAria")}
-                  className="tp-filter-bar"
+                  className="tp-live-roster-filters"
                 >
-                  <button
-                    type="button"
-                    className="tp-filter-chip"
-                    aria-pressed={rosterFilter === "all"}
-                    onClick={() => setRosterFilter("all")}
-                  >
-                    {t("session.roster.all")}
-                  </button>
-                  <button
-                    type="button"
-                    className="tp-filter-chip"
-                    aria-pressed={rosterFilter === "needs-grading"}
-                    onClick={() => setRosterFilter("needs-grading")}
-                  >
-                    {t("session.roster.needsGrading")}
-                    {needsGradingCount > 0 ? (
-                      <span className="tp-filter-count">{needsGradingCount}</span>
-                    ) : null}
-                  </button>
-                  <button
-                    type="button"
-                    className="tp-filter-chip"
-                    aria-pressed={rosterFilter === "graded"}
-                    onClick={() => setRosterFilter("graded")}
-                  >
-                    {t("session.roster.graded")}
-                  </button>
+                  {(
+                    [
+                      ["all", rosterBuckets.all, t("session.roster.all")],
+                      [
+                        "attention",
+                        rosterBuckets.attention,
+                        t("session.roster.filterAttention"),
+                      ],
+                      ["working", rosterBuckets.working, t("session.roster.filterWorking")],
+                      ["done", rosterBuckets.done, t("session.roster.filterDone")],
+                    ] as const
+                  ).map(([key, count, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      className={`tp-live-roster-filter ${focusRing}`}
+                      data-attention={
+                        key === "attention" && count > 0 && rosterFilter !== "attention"
+                          ? "true"
+                          : undefined
+                      }
+                      aria-pressed={rosterFilter === key}
+                      onClick={() => setRosterFilter(key)}
+                    >
+                      {label}
+                      <span className="tp-live-roster-filter__count">{count}</span>
+                    </button>
+                  ))}
                 </div>
               ) : null}
             </div>
           </div>
           {overview.participants.length === 0 ? (
-            <p className="mt-4 tp-empty">
-              {t("session.roster.emptyDevices")}
-            </p>
+            <p className="mt-4 tp-empty">{t("session.roster.emptyDevices")}</p>
           ) : displayedParticipants.length === 0 ? (
-            <p className="mt-4 tp-empty">
-              {rosterFilter === "needs-grading"
-                ? t("session.roster.emptyNeedsGrading")
-                : rosterFilter === "graded"
-                  ? t("session.roster.emptyGraded")
-                  : t("session.roster.emptyFilter")}
-            </p>
+            <p className="mt-4 tp-empty tp-live-roster-empty">{t("session.roster.emptyFilter")}</p>
           ) : (
-            <div className="mt-4">
+            <div className="mt-3">
               <SessionExamRoster
                 previewQuestions={rosterPreviewQuestions}
                 liveDraftsByDevice={liveDraftsByDevice}
+                questionTotal={s.questionTotal || rosterPreviewQuestions.length}
                 participants={displayedParticipants}
                 onOpenExam={handleOpenExam}
                 onResumeStudent={handleResumeStudent}
@@ -561,6 +598,7 @@ export default function LiveSessionDetailPage() {
                 sessionOpen={sessionRunning}
                 activityNowMs={activityNowMs}
               />
+              <p className="tp-live-roster-hint">{t("session.roster.sortHint")}</p>
             </div>
           )}
         </section>
@@ -572,6 +610,7 @@ export default function LiveSessionDetailPage() {
         liveSessionId={liveSessionId}
         defaultTitle={overview?.session.formTitle ?? ""}
       />
+      <ExamPdfProgressToast progress={pdfDownload.progress} />
     </div>
   );
 }

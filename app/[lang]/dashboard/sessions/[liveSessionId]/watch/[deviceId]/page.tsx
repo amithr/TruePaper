@@ -8,7 +8,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { FormAssetImage } from "@/components/FormAssetImage";
 import { ExamMarkdown } from "@/components/ExamMarkdown";
-import { HelpHint } from "@/components/HelpHint";
 import { LoadingBar } from "@/components/LoadingBar";
 import { OverflowMenu, type OverflowMenuItem } from "@/components/OverflowMenu";
 import {
@@ -25,10 +24,12 @@ import { TeacherTopBar } from "@/components/TeacherTopBar";
 import { WatchFormBrief } from "@/components/watch/WatchFormBrief";
 import { WatchProgressStrip, type JumpSquareState } from "@/components/watch/WatchProgressStrip";
 import { WatchScoreStepper } from "@/components/watch/WatchScoreStepper";
+import { ExamPdfProgressToast, useExamPdfDownload } from "@/components/ExamPdfDownload";
 import {
   WatchStudentHeader,
   type WatchLiveChipState,
 } from "@/components/watch/WatchStudentHeader";
+import { Download, Trash2 } from "lucide-react";
 import { useOfflineFeedback } from "@/lib/offline/use-offline-feedback";
 import { useFeedbackSyncStatus } from "@/lib/offline/use-feedback-sync-status";
 import { SyncStatusIndicator } from "@/components/SyncStatusIndicator";
@@ -55,7 +56,11 @@ import { messageForBackgroundRefreshError } from "@/lib/background-network-error
 import { deferEffect } from "@/lib/defer-effect";
 import { requestJson } from "@/lib/request-json";
 import { useLatestRef } from "@/lib/use-latest-ref";
-import type { DrawingStroke } from "@/lib/response-types/drawing";
+import {
+  promptImageUsedAsCanvasBackground,
+  type DrawingStroke,
+} from "@/lib/response-types/drawing";
+import type { DrawDiagramConfig } from "@/lib/response-types/types";
 
 type SnapshotJson = {
   session: {
@@ -199,6 +204,7 @@ export default function WatchStudentExamPage() {
     () => new Set(),
   );
   const [removingExam, setRemovingExam] = useState(false);
+  const pdfDownload = useExamPdfDownload(liveSessionId);
   const liveFeedbackSaveTimerRef = useRef<Record<string, number>>({});
   const scheduleLiveFeedbackSaveRef = useRef<(questionId: string) => void>(() => {});
   const liveFeedbackSavingQuestionIdsRef = useLatestRef(liveFeedbackSavingQuestionIds);
@@ -899,42 +905,33 @@ export default function WatchStudentExamPage() {
     overflowItems.push({
       type: "custom",
       key: "review-share",
-      node: (
-        <span className="flex items-center gap-2">
-          <StudentReviewShare
-            liveSessionId={liveSessionId}
-            deviceId={deviceIdNorm}
-          />
-          <HelpHint id="watch-review-link" text={t("help.watch.reviewLink")} />
-        </span>
-      ),
+      node: <StudentReviewShare liveSessionId={liveSessionId} deviceId={deviceIdNorm} />,
     });
     overflowItems.push({
-      type: "link",
+      type: "button",
       label: t("session.watch.downloadPdf"),
-      href: `/api/forms/live-sessions/${liveSessionId}/participants/${encodeURIComponent(deviceIdNorm)}/exam-pdf`,
-      download: true,
+      onClick: () => void pdfDownload.start(deviceIdNorm),
+      icon: Download,
     });
     if (s.sessionOpen && !st.finished) {
       overflowItems.push({
         type: "custom",
         key: "rejoin-share",
         node: (
-          <span className="flex items-center gap-2">
-            <TeacherStudentRejoinShare
-              liveSessionId={liveSessionId}
-              deviceId={deviceIdNorm}
-              initialCode={snapshot.studentResumeCode}
-              studentLabel={st.displayName || undefined}
-            />
-            <HelpHint id="watch-resume-code" text={t("help.session.resumeCode")} />
-          </span>
+          <TeacherStudentRejoinShare
+            liveSessionId={liveSessionId}
+            deviceId={deviceIdNorm}
+            initialCode={snapshot.studentResumeCode}
+            studentLabel={st.displayName || undefined}
+          />
         ),
       });
     }
+    overflowItems.push({ type: "divider", key: "remove-div" });
     overflowItems.push({
       type: "button",
       label: t("session.watch.removeExam"),
+      icon: Trash2,
       tone: "danger",
       disabled: removingExam,
       onClick: () => void removeStudentExam(),
@@ -1153,7 +1150,14 @@ export default function WatchStudentExamPage() {
                   <div className="tp-watch-q__prompt">
                     <ExamMarkdown>{question.prompt || t("common.untitledQuestion")}</ExamMarkdown>
                   </div>
-                  {question.promptImagePath ? (
+                  {question.promptImagePath &&
+                  !(
+                    question.type === "drawDiagram" &&
+                    promptImageUsedAsCanvasBackground(
+                      question.responseConfig as DrawDiagramConfig,
+                      question.promptImagePath,
+                    )
+                  ) ? (
                     <FormAssetImage
                       path={question.promptImagePath}
                       alt={t("home.exam.promptImageAlt")}
@@ -1265,6 +1269,7 @@ export default function WatchStudentExamPage() {
           </div>
         )}
       </main>
+      <ExamPdfProgressToast progress={pdfDownload.progress} />
     </div>
   );
 }

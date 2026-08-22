@@ -1,5 +1,8 @@
-import fs from "node:fs";
-import path from "node:path";
+/**
+ * Font constants shared by the server and client PDF generators. This module
+ * must stay free of Node-only imports; the fs-backed loader lives in
+ * `lib/exam-pdf-node.ts`.
+ */
 
 /** Logical font names registered on each PDF document. */
 export const PDF_FONT = {
@@ -11,24 +14,28 @@ export const PDF_FONT = {
   monoSemiBold: "PlexMonoSemiBold",
 } as const;
 
-const PLEX_ROOT = path.join(process.cwd(), "node_modules", "@ibm", "plex");
+export type ExamPdfFontFace = keyof typeof PDF_FONT;
 
-function plexWoffBuffer(familyDir: string, file: string): Buffer {
-  const filePath = path.join(PLEX_ROOT, familyDir, "fonts", "complete", "woff", file);
-  return fs.readFileSync(filePath);
-}
+/** woff files inside `node_modules/@ibm/plex`, keyed by logical face. */
+export const PDF_FONT_FILES: Record<ExamPdfFontFace, { family: string; file: string }> = {
+  regular: { family: "IBM-Plex-Sans", file: "IBMPlexSans-Regular.woff" },
+  medium: { family: "IBM-Plex-Sans", file: "IBMPlexSans-Medium.woff" },
+  semibold: { family: "IBM-Plex-Sans", file: "IBMPlexSans-SemiBold.woff" },
+  italic: { family: "IBM-Plex-Sans", file: "IBMPlexSans-Italic.woff" },
+  mono: { family: "IBM-Plex-Mono", file: "IBMPlexMono-Medium.woff" },
+  monoSemiBold: { family: "IBM-Plex-Mono", file: "IBMPlexMono-SemiBold.woff" },
+};
+
+export const PDF_FONT_FACES = Object.keys(PDF_FONT_FILES) as ExamPdfFontFace[];
+
+/** Raw woff bytes per face (Buffer on the server, Uint8Array in the browser). */
+export type ExamPdfFontBuffers = Record<ExamPdfFontFace, Uint8Array>;
 
 /** Register IBM Plex faces (woff via fontkit) so printed exams match the UI. */
-export function registerExamPdfFonts(doc: PDFKit.PDFDocument): void {
-  doc.registerFont(PDF_FONT.regular, plexWoffBuffer("IBM-Plex-Sans", "IBMPlexSans-Regular.woff"));
-  doc.registerFont(PDF_FONT.medium, plexWoffBuffer("IBM-Plex-Sans", "IBMPlexSans-Medium.woff"));
-  doc.registerFont(PDF_FONT.semibold, plexWoffBuffer("IBM-Plex-Sans", "IBMPlexSans-SemiBold.woff"));
-  doc.registerFont(PDF_FONT.italic, plexWoffBuffer("IBM-Plex-Sans", "IBMPlexSans-Italic.woff"));
-  doc.registerFont(PDF_FONT.mono, plexWoffBuffer("IBM-Plex-Mono", "IBMPlexMono-Medium.woff"));
-  doc.registerFont(
-    PDF_FONT.monoSemiBold,
-    plexWoffBuffer("IBM-Plex-Mono", "IBMPlexMono-SemiBold.woff"),
-  );
+export function registerExamPdfFonts(doc: PDFKit.PDFDocument, fonts: ExamPdfFontBuffers): void {
+  for (const face of PDF_FONT_FACES) {
+    doc.registerFont(PDF_FONT[face], fonts[face] as Buffer);
+  }
 }
 
 /** Minimum body size for print readability (handoff: ≥12pt). */

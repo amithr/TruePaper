@@ -22,6 +22,7 @@ vi.mock("@/lib/request-auth", () => ({
 vi.mock("@/lib/exam-pdf-load", () => ({
   loadSessionForPdf: (...args: unknown[]) => loadSessionForPdf(...args),
   loadStudentForPdf: (...args: unknown[]) => loadStudentForPdf(...args),
+  loadExamPdfImages: async () => ({ questions: {}, description: null }),
 }));
 
 vi.mock("@/lib/exam-pdf", () => ({

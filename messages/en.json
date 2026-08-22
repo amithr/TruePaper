@@ -511,6 +511,13 @@
     "downloadAllPdfTitle": "Download a single PDF with every student's exam, feedback, and score",
     "downloadAllPdfShort": "Download all (PDF)",
     "pdf": "PDF",
+    "pdfProgress": {
+      "title": "Preparing PDF",
+      "data": "Loading exam data…",
+      "fonts": "Loading fonts…",
+      "images": "Fetching images…",
+      "render": "Rendering exam {done} of {total}…"
+    },
     "downloadStudentPdfTitle": "Download this student's exam, feedback, and score as a PDF",
     "downloadStudentPdfTitleShort": "Download this student's exam as PDF",
     "activity": {
@@ -524,12 +531,18 @@
     },
     "roster": {
       "title": "Students in this session",
+      "titleStudents": "Students",
+      "titleStudentsCount": "{count} students",
       "description": "Status and activity for each student device in this live session. The list refreshes automatically.",
       "filterAria": "Filter students",
       "filterExamsAria": "Filter student exams",
       "all": "All",
+      "filterAttention": "Needs attention",
+      "filterWorking": "Working",
+      "filterDone": "Done",
       "needsGrading": "Needs grading",
       "graded": "Graded",
+      "sortHint": "Sorted by attention needed · click a row to open the student's answers",
       "hideStatus": "Hide status details",
       "showStatus": "What do these statuses mean?",
       "statusHelp": "**Idle** means no pointer activity on the exam page. **Typing** shows briefly after keyboard or pointer activity. Other badges reflect blocked, submitted, or graded states. Graded rows show total points earned.",
@@ -548,6 +561,17 @@
       "needsGradingPill": "Needs grading",
       "progressQuestionsAria": "{answered} of {total} questions answered",
       "progressScoreAria": "{earned} of {total} points earned",
+      "answeredShort": "{a}/{n} ans.",
+      "statusWaiting": "Left the tab — waiting to re-enter",
+      "statusIdleOn": "Idle {m}m on Q{n}",
+      "statusIdle": "Idle {m}m",
+      "statusWorkingOn": "Working on Q{n}",
+      "statusWorking": "Working",
+      "statusOffline": "Offline — answers will sync",
+      "statusHandedInAt": "Handed in · {time}",
+      "statusHandedIn": "Handed in",
+      "statusNeedsHelpOn": "Needs help on Q{n}",
+      "statusNeedsHelp": "Needs help",
       "subtitleGraded": "Graded · {message}",
       "subtitleSubmittedOne": "Submitted · {count} word",
       "subtitleSubmittedOther": "Submitted · {count} words",
@@ -751,7 +775,8 @@
         "question": "Saving this question as a reusable template.",
         "session": "Saving this session's form, questions, and timing defaults."
       },
-      "action": "Save as template"
+      "action": "Save as template",
+      "menuHint": "Reusable copy without student data — find it under Templates."
     },
     "org": {
       "title": "School & department",
@@ -821,7 +846,7 @@
     "startLink": {
       "copy": "Copy start link",
       "copied": "Link copied",
-      "hint": "Opens this form and starts a live session with the settings chosen in Start",
+      "hint": "Bookmarkable link that starts a live session with your Start settings (you must be signed in as the form owner).",
       "starting": "Starting session…",
       "backToLibrary": "Back to form library",
       "errors": {
@@ -878,7 +903,7 @@
       "aiGuide": "Step-by-step instructions for using AI to create an exam you can import.",
       "toGrade": "Submitted answers waiting on manual marks. Auto-graded questions are already scored.",
       "joinCode": "Students enter this 6-character code to join. Share the link or project it for the class.",
-      "startLink": "Copy a bookmarkable link that opens this form and starts a live session with the duration and delivery settings you've chosen.",
+      "startLink": "Copy a bookmarkable link that opens this form and starts a live session with the duration and delivery settings from Start. Works when signed in as the form owner.",
       "sessionSettings": "Open Start on a form row to set duration, delivery mode, and late sync before starting or copying a quick-start link.",
       "acceptLateSync": "When on, students can sync answers or submit after the session window closes. Turn off for strict in-class deadlines."
     },
@@ -1230,6 +1255,8 @@
       "correctAnswer": "Correct answer",
       "canvasWidth": "Canvas width",
       "canvasHeight": "Canvas height",
+      "canvasImageBackground": "Use question image as canvas background",
+      "canvasImageBackgroundHint": "Add an image to this question first (menu → Add image). Students then draw directly on top of it.",
       "graphXMin": "X minimum",
       "graphXMax": "X maximum",
       "graphYMin": "Y minimum",

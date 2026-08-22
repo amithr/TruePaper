@@ -1,6 +1,33 @@
 /** Normalized canvas coordinates (0–1) for resolution-independent strokes. */
 
+import { formAssetPublicUrl } from "@/lib/form-assets";
+import type { DrawDiagramConfig } from "@/lib/response-types/types";
+
 export type DrawingPoint = { x: number; y: number };
+
+/** True when the question's uploaded image should render inside the canvas instead of above it. */
+export function promptImageUsedAsCanvasBackground(
+  config: DrawDiagramConfig,
+  promptImagePath: string | null | undefined,
+): boolean {
+  return (
+    config.promptImageAsBackground === true && formAssetPublicUrl(promptImagePath ?? null) !== null
+  );
+}
+
+/** Background for a drawDiagram canvas: uploaded question image when opted in, else legacy data URL. */
+export function drawDiagramBackgroundUrl(
+  config: DrawDiagramConfig,
+  promptImagePath: string | null | undefined,
+): string | undefined {
+  if (config.promptImageAsBackground === true) {
+    const url = formAssetPublicUrl(promptImagePath ?? null);
+    if (url) {
+      return url;
+    }
+  }
+  return config.backgroundDataUrl;
+}
 
 export type DrawingStroke = {
   id: string;

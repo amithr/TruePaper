@@ -18,122 +18,125 @@ function participant(
     gradedAt: null,
     pointsEarned: null,
     pointsPossible: null,
-    answeredCount: 0,
+    answeredCount: 1,
     textPreview: "",
     textWordCount: 0,
-    lastActivityAt: null,
+    lastActivityAt: "2026-06-05T12:00:00.000Z",
     lastTypingAt: null,
-    lastSeenAt: null,
+    lastSeenAt: "2026-06-05T12:00:00.000Z",
     syncState: "synced",
     pendingSyncCount: 0,
     handRaiseQuestionId: null,
     handRaisedAt: null,
+    focusQuestionId: null,
     updatedAt: "2026-06-05T12:00:00.000Z",
     ...overrides,
   };
 }
 
+const previewQuestions = [
+  { id: "q1", type: "extendedWritten" as const },
+  { id: "q2", type: "shortAnswer" as const },
+];
+
 describe("SessionExamRoster", () => {
-  it("shows offline wifi icon", () => {
+  it("shows offline status without a wifi badge", () => {
     renderWithI18n(
       <SessionExamRoster
-        previewQuestions={[]}
+        previewQuestions={previewQuestions}
+        questionTotal={2}
         participants={[participant({ syncState: "offline" })]}
         liveDraftsByDevice={{}}
         onOpenExam={vi.fn()}
+        activityNowMs={Date.parse("2026-06-05T12:00:00.000Z")}
       />,
     );
-    const badge = screen.getByTestId("roster-sync-badge");
-    expect(badge).toHaveAttribute("data-sync-state", "offline");
-    expect(badge).toHaveAttribute("aria-label", "Offline");
+    expect(screen.queryByTestId("roster-sync-badge")).not.toBeInTheDocument();
+    expect(screen.getByTestId("roster-status-line")).toHaveTextContent(
+      "Offline — answers will sync",
+    );
   });
 
-  it("shows amber wifi while a student's answers are syncing", () => {
+  it("shows waiting status and Let in for suspended students", () => {
     renderWithI18n(
       <SessionExamRoster
-        previewQuestions={[]}
-        participants={[participant({ syncState: "pending", pendingSyncCount: 4 })]}
+        previewQuestions={previewQuestions}
+        questionTotal={2}
+        participants={[
+          participant({
+            suspendedAt: "2026-06-05T11:55:00.000Z",
+            status: "blocked",
+          }),
+        ]}
         liveDraftsByDevice={{}}
         onOpenExam={vi.fn()}
+        onResumeStudent={vi.fn()}
+        activityNowMs={Date.parse("2026-06-05T12:00:00.000Z")}
       />,
     );
-    const badge = screen.getByTestId("roster-sync-badge");
-    expect(badge).toHaveAttribute("data-sync-state", "pending");
-    expect(badge).toHaveAttribute("aria-label", "Saving…");
+    expect(screen.getByTestId("roster-status-line")).toHaveTextContent(
+      "Left the tab — waiting to re-enter",
+    );
+    expect(screen.getByTestId("roster-let-in")).toHaveTextContent("Let in");
   });
 
-  it("shows green wifi for online synced students", () => {
+  it("shows working-on question from focusQuestionId", () => {
     renderWithI18n(
       <SessionExamRoster
-        previewQuestions={[]}
-        participants={[participant({ syncState: "synced" })]}
+        previewQuestions={previewQuestions}
+        questionTotal={2}
+        participants={[
+          participant({
+            status: "started",
+            focusQuestionId: "q2",
+            answeredCount: 1,
+          }),
+        ]}
         liveDraftsByDevice={{}}
         onOpenExam={vi.fn()}
+        activityNowMs={Date.parse("2026-06-05T12:00:00.000Z")}
       />,
     );
-    const badge = screen.getByTestId("roster-sync-badge");
-    expect(badge).toHaveAttribute("data-sync-state", "online");
-    expect(badge).toHaveAttribute("aria-label", "Online");
+    expect(screen.getByTestId("roster-status-line")).toHaveTextContent("Working on Q2");
+    expect(screen.getByText("1/2 ans.")).toBeInTheDocument();
   });
 
-  it("hides wifi icon after submission", () => {
+  it("shows handed-in status without wifi after submission", () => {
     renderWithI18n(
       <SessionExamRoster
-        previewQuestions={[]}
+        previewQuestions={previewQuestions}
+        questionTotal={2}
         participants={[
           participant({
             finishedAt: "2026-06-05T12:05:00.000Z",
             syncState: "offline",
             pendingSyncCount: 2,
+            answeredCount: 2,
           }),
         ]}
         liveDraftsByDevice={{}}
         onOpenExam={vi.fn()}
+        activityNowMs={Date.parse("2026-06-05T12:06:00.000Z")}
       />,
     );
     expect(screen.queryByTestId("roster-sync-badge")).not.toBeInTheDocument();
+    expect(screen.getByTestId("roster-status-line")).toHaveTextContent(/Handed in/);
   });
 
-  it("shows live draft text under the student name", () => {
+  it("does not show live draft text in the row subtitle", () => {
     renderWithI18n(
       <SessionExamRoster
-        previewQuestions={[{ id: "q1", type: "extendedWritten" }]}
-        participants={[participant({ status: "started" })]}
+        previewQuestions={previewQuestions}
+        questionTotal={2}
+        participants={[participant({ status: "started", focusQuestionId: "q1" })]}
         liveDraftsByDevice={{
           [TEST_DEVICE_ID.toLowerCase()]: { q1: "Draft answer in progress" },
         }}
         onOpenExam={vi.fn()}
+        activityNowMs={Date.parse("2026-06-05T12:00:00.000Z")}
       />,
     );
-    expect(screen.getByText("Draft answer in progress")).toBeInTheDocument();
-  });
-
-  it("shows status chips for working, idle, and submitted students", () => {
-    renderWithI18n(
-      <SessionExamRoster
-        previewQuestions={[]}
-        participants={[
-          participant({ status: "started", displayName: "Working Student" }),
-          participant({
-            anonymousSessionId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-            status: "idle",
-            displayName: "Idle Student",
-          }),
-          participant({
-            anonymousSessionId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-            finishedAt: "2026-06-05T12:05:00.000Z",
-            status: "finished",
-            displayName: "Done Student",
-          }),
-        ]}
-        liveDraftsByDevice={{}}
-        onOpenExam={vi.fn()}
-      />,
-    );
-
-    expect(screen.getByText("Working")).toBeInTheDocument();
-    expect(screen.getByText("Idle")).toBeInTheDocument();
-    expect(screen.getByText("Submitted")).toBeInTheDocument();
-    expect(screen.getAllByTestId("roster-status-badge")).toHaveLength(3);
+    expect(screen.queryByText("Draft answer in progress")).not.toBeInTheDocument();
+    expect(screen.getByTestId("roster-status-line")).toHaveTextContent("Working on Q1");
   });
 });
