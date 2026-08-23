@@ -129,9 +129,10 @@ flowchart LR
 - Running sessions, past sessions, form library sections — all use the **flat entity list** pattern (`docs/LISTS.md`, `components/lists/EntityList.tsx`, CSS `tp-entity-list-*` in `app/globals.css`).
 - **Running sessions rows:** large click-to-copy join-code chip, QR icon (`SessionJoinShare` `qrIcon` variant), waiting state when nobody has joined (no zero-count chips), funnel status pills when active, labeled countdown + progress bar, primary **Open →** to the roster, and Stop session under ⋯. Manual Refresh control removed (list still polls).
 - **Form library rows** show identity (avatar, 2-line title, question count, last run, auto-grade coverage) with a **Start** popover (duration / delivery / late sync) and a lean ⋯ menu (copy start link, save template, delete). Session setup is no longer repeated inline on every row. Summary payload from `GET /api/forms?summary=1` includes `lastRunAt`, `autogradeCount`, and `lastSessionDefaults`.
+- **Start popover tabs (Start now / Get link):** the Start popover (`FormLibraryRow.tsx`) has two tabs sharing the same option state. **Start now** starts immediately; **Get link** shows a live URL preview (query params as chips that flash on change), a plain-English summary, and a **Copy link** CTA. "Copy start link…" in the ⋯ menu opens the popover on Get link (with a one-time attention pulse) instead of copying with invisible settings.
 - **Shared overflow menus:** `components/OverflowMenu.tsx` — compact ⋯ menus (12px radius, 13.5px items, lucide icons, inset divider before destructive, side tooltips after ~350ms). No “Close” row; one menu open app-wide. Used by form library, running sessions, session/watch headers, and builder.
 - Session list API: `GET /api/teacher/sessions`
-- **Quick-start link:** per-form bookmarkable URL (`/dashboard/forms/[formId]/start?…`) copied from each form row's overflow menu (⋯); opening it (while logged in as the form owner) auto-creates a live session with the encoded duration/delivery settings and redirects to the session roster. Builder: `lib/form-start-link.ts`, page `app/[lang]/dashboard/forms/[formId]/start/page.tsx`.
+- **Quick-start link:** per-form bookmarkable URL (`/dashboard/forms/[formId]/start?…`) copied from the Start popover's **Get link** tab (via ⋯ **Copy start link…** or the Start button); opening it (while logged in as the form owner) auto-creates a live session with the encoded duration/delivery settings and redirects to the session roster. Builder: `lib/form-start-link.ts`, page `app/[lang]/dashboard/forms/[formId]/start/page.tsx`.
 
 ### Form builder
 
@@ -875,4 +876,4 @@ Requires `.env.local`: `E2E_TEACHER_EMAIL`, `E2E_TEACHER_PASSWORD`, Supabase URL
 - Duplicate README setup steps here (link to `README.md` for install/deploy basics).
 - Document every component — only entry points and non-obvious wiring.
 
-*Last reviewed: 2026-08-07 (client-side exam PDF generation with progress; all answer types render graphically in PDFs).*
+*Last reviewed: 2026-08-23 (Start popover Get link tab — review settings before copying start link).*

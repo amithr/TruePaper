@@ -309,10 +309,13 @@ export default function LiveSessionDetailPage() {
     if (!overview || filterInitialized) {
       return;
     }
-    if (rosterBuckets.attention > 0) {
-      setRosterFilter("attention");
-    }
-    setFilterInitialized(true);
+    // Defer so the initial attention filter doesn't trip set-state-in-effect.
+    deferEffect(() => {
+      if (rosterBuckets.attention > 0) {
+        setRosterFilter("attention");
+      }
+      setFilterInitialized(true);
+    });
   }, [overview, filterInitialized, rosterBuckets.attention]);
 
   if (!overview) {

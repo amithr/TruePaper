@@ -1,9 +1,7 @@
 "use client";
 
 import {
-  FloatingArrow,
   FloatingPortal,
-  arrow,
   autoUpdate,
   flip,
   offset,
@@ -15,12 +13,16 @@ import {
   useRole,
 } from "@floating-ui/react";
 import {
+  Children,
+  cloneElement,
+  isValidElement,
   useCallback,
   useEffect,
   useId,
   useRef,
   useState,
   type ComponentType,
+  type ReactElement,
   type ReactNode,
   type SVGProps,
 } from "react";
@@ -94,20 +96,18 @@ function releaseMenu(close: () => void) {
   }
 }
 
+/* Floating UI's callback-ref setters are stable and safe; the react-hooks/refs
+ * heuristic still flags cloneElement/getReferenceProps when a `ref` prop is involved. */
+/* eslint-disable react-hooks/refs -- Floating UI callback refs */
 function MenuItemTooltip({
   text,
   children,
 }: {
   text: string;
-  children: (props: {
-    ref: (node: HTMLElement | null) => void;
-    props: Record<string, unknown>;
-    describedBy: string | undefined;
-  }) => ReactNode;
+  children: ReactElement<Record<string, unknown>>;
 }) {
   const tooltipId = useId();
   const [open, setOpen] = useState(false);
-  const arrowRef = useRef<SVGSVGElement | null>(null);
 
   const { refs, floatingStyles, context } = useFloating({
     open,
@@ -117,7 +117,6 @@ function MenuItemTooltip({
       offset(10),
       flip({ padding: 8, fallbackPlacements: ["left", "top", "bottom"] }),
       shift({ padding: 8 }),
-      arrow({ element: arrowRef, padding: 6 }),
     ],
     whileElementsMounted: autoUpdate,
   });
@@ -128,17 +127,36 @@ function MenuItemTooltip({
   const role = useRole(context, { role: "tooltip" });
   const { getReferenceProps, getFloatingProps } = useInteractions([hover, dismiss, role]);
 
+  const child = Children.only(children);
+  const childProps = (isValidElement(child) ? child.props : {}) as Record<string, unknown>;
+  const childRef = childProps.ref as
+    | ((node: HTMLElement | null) => void)
+    | { current: HTMLElement | null }
+    | null
+    | undefined;
+
+  const reference = isValidElement(child) ? (
+    cloneElement(child, {
+      ...childProps,
+      ...getReferenceProps(childProps),
+      "aria-describedby": open ? tooltipId : undefined,
+      ref: (node: HTMLElement | null) => {
+        refs.setReference(node);
+        if (typeof childRef === "function") {
+          childRef(node);
+        } else if (childRef && typeof childRef === "object") {
+          childRef.current = node;
+        }
+      },
+    })
+  ) : null;
+
   return (
     <>
-      {children({
-        ref: refs.setReference,
-        props: getReferenceProps(),
-        describedBy: open ? tooltipId : undefined,
-      })}
+      {reference}
       {open ? (
         <FloatingPortal>
           <div
-            // eslint-disable-next-line react-hooks/refs
             ref={refs.setFloating}
             id={tooltipId}
             role="tooltip"
@@ -147,19 +165,13 @@ function MenuItemTooltip({
             {...getFloatingProps()}
           >
             {text}
-            <FloatingArrow
-              ref={arrowRef}
-              context={context}
-              className="tp-overflow-menu__tooltip-arrow"
-              width={10}
-              height={5}
-            />
           </div>
         </FloatingPortal>
       ) : null}
     </>
   );
 }
+/* eslint-enable react-hooks/refs */
 
 function ItemIcon({ Icon }: { Icon: OverflowMenuIcon }) {
   return <Icon aria-hidden className="tp-overflow-menu__icon" width={16} height={16} />;
@@ -380,7 +392,6 @@ export function OverflowMenu({
               if (item.type === "link") {
                 const link = (
                   <a
-                    key={`${item.label}-${index}`}
                     role="menuitem"
                     href={item.href}
                     download={item.download}
@@ -394,79 +405,40 @@ export function OverflowMenu({
                   </a>
                 );
                 if (!tooltipText) {
-                  return link;
+                  return <span key={`${item.label}-${index}`}>{link}</span>;
                 }
                 return (
                   <MenuItemTooltip key={`${item.label}-${index}`} text={tooltipText}>
-                    {({ ref, props, describedBy }) => (
-                      <a
-                        role="menuitem"
-                        href={item.href}
-                        download={item.download}
-                        target={item.target}
-                        rel={item.rel}
-                        className={`tp-overflow-menu__item ${toneDanger} ${focusRing}`}
-                        aria-describedby={describedBy}
-                        onClick={() => setOpen(false)}
-                        ref={(node) => {
-                          assignRef(node);
-                          ref(node);
-                        }}
-                        {...props}
-                      >
-                        {renderActionContent(item)}
-                      </a>
-                    )}
+                    {link}
                   </MenuItemTooltip>
                 );
               }
 
               const buttonClass = `tp-overflow-menu__item ${toneDanger} ${focusRing}`;
+              const button = (
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={item.disabled}
+                  className={buttonClass}
+                  ref={assignRef}
+                  onClick={() => {
+                    item.onClick();
+                    if (!item.keepOpen) {
+                      setOpen(false);
+                    }
+                  }}
+                >
+                  {renderActionContent(item)}
+                </button>
+              );
               if (!tooltipText) {
-                return (
-                  <button
-                    key={`${item.label}-${index}`}
-                    type="button"
-                    role="menuitem"
-                    disabled={item.disabled}
-                    className={buttonClass}
-                    ref={assignRef}
-                    onClick={() => {
-                      item.onClick();
-                      if (!item.keepOpen) {
-                        setOpen(false);
-                      }
-                    }}
-                  >
-                    {renderActionContent(item)}
-                  </button>
-                );
+                return <span key={`${item.label}-${index}`}>{button}</span>;
               }
 
               return (
                 <MenuItemTooltip key={`${item.label}-${index}`} text={tooltipText}>
-                  {({ ref, props, describedBy }) => (
-                    <button
-                      type="button"
-                      role="menuitem"
-                      disabled={item.disabled}
-                      className={buttonClass}
-                      aria-describedby={describedBy}
-                      ref={(node) => {
-                        assignRef(node);
-                        ref(node);
-                      }}
-                      onClick={() => {
-                        item.onClick();
-                        if (!item.keepOpen) {
-                          setOpen(false);
-                        }
-                      }}
-                      {...props}
-                    >
-                      {renderActionContent(item)}
-                    </button>
-                  )}
+                  {button}
                 </MenuItemTooltip>
               );
             })}

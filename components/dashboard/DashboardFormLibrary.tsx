@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { deferEffect } from "@/lib/defer-effect";
 
 import { AiGuideModal } from "@/components/dashboard/AiGuideModal";
-import { FormLibraryRow } from "@/components/dashboard/FormLibraryRow";
+import { FormLibraryRow, type FormLibraryPopover } from "@/components/dashboard/FormLibraryRow";
 import { ImportExamModal } from "@/components/dashboard/ImportExamModal";
 import {
   EntityList,
@@ -22,15 +22,12 @@ import { LoadingBar } from "@/components/LoadingBar";
 import type { OverflowMenuItem } from "@/components/OverflowMenu";
 import { SaveTemplateModal } from "@/components/library/SaveTemplateModal";
 import type { Form } from "@/lib/forms";
-import { copyToClipboard } from "@/lib/copy-to-clipboard";
-import { buildFormStartUrl } from "@/lib/form-start-link";
-import { useLocale, useTranslations } from "@/lib/i18n/I18nProvider";
+import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { stashPendingBuilderForm } from "@/lib/pending-builder-form";
 import { ui } from "@/lib/ui";
 import { requestJson } from "@/lib/request-json";
 import { startLiveSession } from "@/lib/start-live-session";
 import { Copy, Link2, Trash2 } from "lucide-react";
-import { toast } from "sonner";
 
 const FORM_LIBRARY_PAGE_SIZE = 5;
 
@@ -38,7 +35,7 @@ type Props = {
   onError: (message: string) => void;
 };
 
-type OpenPopover = { formId: string; kind: "start" | "menu" } | null;
+type OpenPopover = { formId: string; kind: FormLibraryPopover } | null;
 
 function seedSessionState(forms: Form[]) {
   const durations: Record<string, number> = {};
@@ -61,7 +58,6 @@ function seedSessionState(forms: Form[]) {
 export function DashboardFormLibrary({ onError }: Props) {
   const router = useRouter();
   const t = useTranslations();
-  const locale = useLocale();
   const [origin] = useState(() => (typeof window !== "undefined" ? window.location.origin : ""));
   const [forms, setForms] = useState<Form[]>([]);
   const [loading, setLoading] = useState(true);
@@ -225,16 +221,6 @@ export function DashboardFormLibrary({ onError }: Props) {
     [],
   );
 
-  const sessionOptionsForForm = useCallback(
-    (formId: string) => ({
-      durationMinutes: sessionDurations[formId] ?? 45,
-      noTimeLimit: noTimeLimitByForm[formId] === true,
-      deliveryMode: deliveryModeByForm[formId] ?? ("live" as const),
-      acceptLateSync: acceptLateSyncByForm[formId] !== false,
-    }),
-    [sessionDurations, noTimeLimitByForm, deliveryModeByForm, acceptLateSyncByForm],
-  );
-
   const formRowMenuItems = useCallback(
     (form: Form): OverflowMenuItem[] => [
       {
@@ -242,15 +228,12 @@ export function DashboardFormLibrary({ onError }: Props) {
         label: t("formLibrary.startLink.copy"),
         tooltip: t("formLibrary.startLink.hint"),
         icon: Link2,
+        // Keep the menu from calling onOpenChange(null), which would wipe the
+        // start-link popover we just opened. Switching openPopover to "start-link"
+        // clears menuOpen (controlled) and closes the ⋯ menu on its own.
+        keepOpen: true,
         onClick: () => {
-          const url = buildFormStartUrl(origin, locale, form.id, sessionOptionsForForm(form.id));
-          if (url) {
-            void copyToClipboard(url).then((ok) => {
-              if (ok) {
-                toast.success(t("formLibrary.startLink.copied"));
-              }
-            });
-          }
+          setOpenPopover({ formId: form.id, kind: "start-link" });
         },
         disabled: !origin,
       },
@@ -290,7 +273,7 @@ export function DashboardFormLibrary({ onError }: Props) {
         ),
       },
     ],
-    [deleteForm, deletingFormId, locale, origin, sessionOptionsForForm, startingFormId, t],
+    [deleteForm, deletingFormId, origin, startingFormId, t],
   );
 
   return (
@@ -431,6 +414,7 @@ export function DashboardFormLibrary({ onError }: Props) {
                     questionCount={questionCount(form)}
                     autogradeCount={form.autogradeCount ?? 0}
                     lastRunAt={form.lastRunAt ?? null}
+                    origin={origin}
                     durationMinutes={sessionDurations[form.id] ?? 45}
                     noTimeLimit={noTimeLimitByForm[form.id] === true}
                     deliveryMode={deliveryModeByForm[form.id] ?? "live"}

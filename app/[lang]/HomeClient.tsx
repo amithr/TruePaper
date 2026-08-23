@@ -2432,7 +2432,13 @@ export default function HomeClient({
     homePageIntent === "none" &&
     !joinedSession;
 
-  const showGuestHeader = guestView === "landing" && !session;
+  /**
+   * Wait for session hydration before treating the visitor as a guest: users with
+   * an auth cookie (e.g. teachers opening the builder) would otherwise see a
+   * "Sign in" header flash while `/api/auth/session` resolves. Cookie-less guests
+   * hydrate synchronously, so their Sign in button still shows immediately.
+   */
+  const showGuestHeader = guestView === "landing" && !session && sessionHydrated;
 
   if (!urlSynced || !sessionHydrated || teacherPendingDashboardRedirect) {
     return (
@@ -2633,9 +2639,17 @@ export default function HomeClient({
   return (
     <HomeChrome
       guestHeader={isGuestMarketing}
-      hideLanguageToggle={inStudentExam || isJoinRoute}
+      hideLanguageToggle={inStudentExam || isBuilderStudentPreview || isJoinRoute}
     >
-      <div className={takingStudentExam ? "tp-exam-page" : ui.page}>
+      <div
+        className={
+          takingStudentExam
+            ? isBuilderStudentPreview
+              ? "tp-exam-page tp-exam-page--builder-preview"
+              : "tp-exam-page"
+            : ui.page
+        }
+      >
         <main className={mainClassName}>
         {urlAuthNotice ? (
           <div
@@ -2682,7 +2696,11 @@ export default function HomeClient({
           </div>
         ) : null}
         {session && isTeacher && !isJoinRoute ? (
-          <div className="tp-builder-header mb-6 flex flex-wrap items-center justify-between gap-4">
+          <div
+            className={`tp-builder-header mb-6 flex flex-wrap items-center justify-between gap-4${
+              isBuilderStudentPreview ? " tp-builder-header--preview" : ""
+            }`}
+          >
             <div className="min-w-0 flex-1">
               <Link
                 href="/dashboard"
@@ -2773,7 +2791,7 @@ export default function HomeClient({
               <button
                 type="button"
                 onClick={() => setMode("teacher")}
-                className={`${ui.btnSecondary} ${focusRing}`}
+                className={`tp-builder-exit-preview ${focusRing}`}
               >
                 {t("home.teacher.modeTeacher")}
               </button>
@@ -3152,12 +3170,69 @@ export default function HomeClient({
               <ExamCaptureWatermark label={examWatermarkLabel} />
             ) : null}
             {isBuilderStudentPreview ? (
-              <div className="tp-exam-body !pb-2">
-                <div className="rounded-[12px] border border-[var(--tp-border)] bg-white px-4 py-3 text-sm">
-                  <p className="font-medium text-[var(--tp-text)]">{t("home.exam.previewTitle")}</p>
-                  <p className="mt-1 text-[var(--tp-text-secondary)]">
+              <div className="tp-exam-body tp-exam-body--preview-top">
+                <div className="tp-builder-preview-head" role="status">
+                  <p className="tp-builder-preview-head__eyebrow">
+                    {t("home.exam.previewTitle")}
+                  </p>
+                  <h2 className="tp-builder-preview-head__title">
+                    {studentExamForm.title || t("common.untitledForm")}
+                  </h2>
+                  <p className="tp-builder-preview-head__desc">
                     {t("home.exam.previewDesc")}
                   </p>
+                  {examTotalQuestions > 0 ? (
+                    <div className="tp-builder-preview-head__progress">
+                      <p
+                        className="tp-builder-preview-head__count"
+                        aria-live="polite"
+                      >
+                        <b>{examAnsweredCount}</b>{" "}
+                        {t("home.exam.progressOf", { total: examTotalQuestions })}
+                      </p>
+                      <div
+                        className="tp-builder-preview-head__bar"
+                        role="progressbar"
+                        aria-valuemin={0}
+                        aria-valuemax={examTotalQuestions}
+                        aria-valuenow={examAnsweredCount}
+                        aria-label={t("home.exam.progressQuestionsAria", {
+                          answered: examAnsweredCount,
+                          total: examTotalQuestions,
+                        })}
+                      >
+                        <span
+                          style={{
+                            width: `${Math.round(
+                              (examAnsweredCount / Math.max(1, examTotalQuestions)) * 100,
+                            )}%`,
+                          }}
+                        />
+                      </div>
+                      <div
+                        className="tp-exam-header__dots tp-builder-preview-head__dots"
+                        role="navigation"
+                        aria-label={t("home.exam.jumpTo")}
+                      >
+                        {studentExamQuestions.map((q, index) => (
+                          <button
+                            key={q.id}
+                            type="button"
+                            className={`tp-exam-dot ${focusRing}`}
+                            data-state={isQuestionAnswered(q) ? "answered" : "blank"}
+                            onClick={() => {
+                              document
+                                .getElementById(`exam-card-${q.id}`)
+                                ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                            }}
+                            aria-label={t("home.exam.jumpToQuestion", { n: index + 1 })}
+                          >
+                            {index + 1}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ) : null}
@@ -3173,20 +3248,10 @@ export default function HomeClient({
               </div>
             ) : null}
 
-            {joinedSession || isBuilderStudentPreview ? (
+            {joinedSession ? (
               <StudentExamHeader
                 title={studentExamForm.title || t("common.untitledForm")}
-                syncStatus={
-                  isBuilderStudentPreview
-                    ? {
-                        state: "synced",
-                        count: 0,
-                        oldestQueuedAt: null,
-                        breakdown: { responses: 0, submission: 0, comments: 0 },
-                        hasFailed: false,
-                      }
-                    : studentSyncStatus
-                }
+                syncStatus={studentSyncStatus}
                 dots={studentExamQuestions.map((q, index) => ({
                   id: q.id,
                   index,
@@ -3197,13 +3262,9 @@ export default function HomeClient({
                     .getElementById(`exam-card-${questionId}`)
                     ?.scrollIntoView({ behavior: "smooth", block: "start" });
                 }}
-                closesAt={
-                  isBuilderStudentPreview
-                    ? null
-                    : closesAtForStudent
-                }
-                opensAt={isBuilderStudentPreview ? null : joinedSession?.opensAt}
-                sessionOpen={isBuilderStudentPreview ? true : sessionOpen}
+                closesAt={closesAtForStudent}
+                opensAt={joinedSession.opensAt}
+                sessionOpen={sessionOpen}
                 examFinished={examFinished}
                 formatCountdown={formatCountdown}
               />

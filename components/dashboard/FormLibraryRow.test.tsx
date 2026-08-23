@@ -10,6 +10,11 @@ vi.mock("@/lib/i18n/client", () => ({
   ),
 }));
 
+const copyToClipboard = vi.fn(() => Promise.resolve(true));
+vi.mock("@/lib/copy-to-clipboard", () => ({
+  copyToClipboard: (text: string) => copyToClipboard(text),
+}));
+
 const baseForm = {
   id: "form-1",
   title: "IB Economics - Unit 11 - January mock: market failure & government intervention",
@@ -20,6 +25,27 @@ const baseForm = {
   questions: [],
 };
 
+const sharedProps = {
+  form: baseForm,
+  questionCount: 4,
+  autogradeCount: 3,
+  lastRunAt: null as string | null,
+  origin: "https://truepaper.test",
+  durationMinutes: 45,
+  noTimeLimit: false,
+  deliveryMode: "live" as const,
+  acceptLateSync: true,
+  liveTeacherFeedbackEnabled: false,
+  starting: false,
+  menuItems: [] as [],
+  onDurationChange: vi.fn(),
+  onNoTimeLimitChange: vi.fn(),
+  onDeliveryModeChange: vi.fn(),
+  onAcceptLateSyncChange: vi.fn(),
+  onLiveTeacherFeedbackChange: vi.fn(),
+  onEdit: vi.fn(),
+};
+
 describe("FormLibraryRow", () => {
   it("shows identity meta and opens the Start popover instead of starting immediately", async () => {
     const onStart = vi.fn();
@@ -27,26 +53,13 @@ describe("FormLibraryRow", () => {
 
     renderWithI18n(
       <FormLibraryRow
-        form={baseForm}
-        questionCount={4}
-        autogradeCount={3}
+        {...sharedProps}
         lastRunAt={new Date(Date.now() - 2 * 86_400_000).toISOString()}
-        durationMinutes={45}
-        noTimeLimit={false}
-        deliveryMode="live"
-        acceptLateSync
-        liveTeacherFeedbackEnabled={false}
-        starting={false}
-        menuItems={[{ type: "button", label: "Copy start link", onClick: vi.fn() }]}
+        autogradeCount={3}
+        menuItems={[{ type: "button", label: "Copy start link…", onClick: vi.fn() }]}
         openPopover={null}
         onOpenPopoverChange={onOpenPopoverChange}
-        onDurationChange={vi.fn()}
-        onNoTimeLimitChange={vi.fn()}
-        onDeliveryModeChange={vi.fn()}
-        onAcceptLateSyncChange={vi.fn()}
-        onLiveTeacherFeedbackChange={vi.fn()}
         onStart={onStart}
-        onEdit={vi.fn()}
       />,
     );
 
@@ -64,33 +77,48 @@ describe("FormLibraryRow", () => {
 
     renderWithI18n(
       <FormLibraryRow
-        form={baseForm}
-        questionCount={4}
+        {...sharedProps}
         autogradeCount={4}
-        lastRunAt={null}
-        durationMinutes={45}
-        noTimeLimit={false}
-        deliveryMode="live"
-        acceptLateSync
-        liveTeacherFeedbackEnabled={false}
-        starting={false}
-        menuItems={[]}
         openPopover="start"
         onOpenPopoverChange={vi.fn()}
-        onDurationChange={vi.fn()}
-        onNoTimeLimitChange={vi.fn()}
-        onDeliveryModeChange={vi.fn()}
-        onAcceptLateSyncChange={vi.fn()}
-        onLiveTeacherFeedbackChange={vi.fn()}
         onStart={onStart}
-        onEdit={vi.fn()}
       />,
     );
 
     await waitFor(() => {
-      expect(screen.getByRole("dialog", { name: /Start session/i })).toBeInTheDocument();
+      expect(screen.getByRole("dialog", { name: /Session options/i })).toBeInTheDocument();
     });
     fireEvent.click(screen.getByRole("button", { name: /Start live session, 45 min/i }));
     expect(onStart).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a live URL preview on the Get link tab and copies it from the CTA", async () => {
+    const onOpenPopoverChange = vi.fn();
+
+    renderWithI18n(
+      <FormLibraryRow
+        {...sharedProps}
+        autogradeCount={4}
+        deliveryMode="self_paced"
+        acceptLateSync={false}
+        liveTeacherFeedbackEnabled
+        openPopover="start-link"
+        onOpenPopoverChange={onOpenPopoverChange}
+        onStart={vi.fn()}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: /Teacher start link/i })).toBeInTheDocument();
+    });
+    expect(screen.getByText("minutes=45")).toBeInTheDocument();
+    expect(screen.getByText("delivery=self_paced")).toBeInTheDocument();
+    expect(screen.getByText("lateSync=0")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Copy link/i }));
+    expect(copyToClipboard).toHaveBeenCalledWith(
+      "https://truepaper.test/en/dashboard/forms/form-1/start?minutes=45&delivery=self_paced&lateSync=0",
+    );
+    expect(onOpenPopoverChange).toHaveBeenCalledWith(null);
   });
 });
