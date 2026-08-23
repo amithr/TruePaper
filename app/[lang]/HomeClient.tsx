@@ -47,7 +47,7 @@ import {
 } from "@/lib/builder/summary-tokens";
 import { typeBadgeFamily } from "@/lib/response-types/builder-groups";
 import { SaveTemplateModal } from "@/components/library/SaveTemplateModal";
-import { Bookmark, Copy, Eye, ImagePlus, Pencil, Trash2 } from "lucide-react";
+import { Bookmark, Copy, ImagePlus, Trash2 } from "lucide-react";
 import {
   createFreshAnonymousSessionId,
   getOrCreateAnonymousSessionId,
@@ -2372,65 +2372,6 @@ export default function HomeClient({
   const inStudentExam =
     Boolean(joinedSession) && !examFinished && !isBuilderStudentPreview;
 
-  /** The builder edit ↔ student-view switch is meaningful only while editing a form. */
-  const builderSwitchAvailable =
-    isTeacher && !isJoinRoute && Boolean(activeForm) && !joinedSession && Boolean(session);
-  /** Question to scroll to (and highlight) after entering student view via "Preview here". */
-  const previewFocusQuestionRef = useRef<string | null>(null);
-  const wasBuilderPreviewRef = useRef(isBuilderStudentPreview);
-
-  // Keyboard: V toggles edit/student view; Escape leaves student view.
-  useEffect(() => {
-    if (!builderSwitchAvailable) {
-      return;
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        if (mode === "student") {
-          setMode("teacher");
-        }
-        return;
-      }
-      if (event.metaKey || event.ctrlKey || event.altKey) {
-        return;
-      }
-      const target = event.target as HTMLElement | null;
-      if (target?.closest("input, textarea, select, [contenteditable='true']")) {
-        return;
-      }
-      if (event.key.toLowerCase() === "v") {
-        event.preventDefault();
-        setMode(mode === "student" ? "teacher" : "student");
-      }
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [builderSwitchAvailable, mode]);
-
-  // On view switch: jump to the previewed question (offset below the sticky bar) or back to top.
-  useEffect(() => {
-    const wasPreview = wasBuilderPreviewRef.current;
-    wasBuilderPreviewRef.current = isBuilderStudentPreview;
-    if (wasPreview === isBuilderStudentPreview) {
-      return;
-    }
-    const focusQuestionId = previewFocusQuestionRef.current;
-    previewFocusQuestionRef.current = null;
-    if (isBuilderStudentPreview && focusQuestionId) {
-      requestAnimationFrame(() => {
-        const card = document.getElementById(`exam-card-${focusQuestionId}`);
-        if (!card) {
-          return;
-        }
-        window.scrollTo({ top: card.offsetTop - 110, behavior: "smooth" });
-        card.setAttribute("data-preview-hilite", "");
-        window.setTimeout(() => card.removeAttribute("data-preview-hilite"), 1600);
-      });
-    } else {
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    }
-  }, [isBuilderStudentPreview]);
-
   const examCaptureProtectionEnabled = inStudentExam;
 
   const examWatermarkLabel = useMemo(() => {
@@ -2767,7 +2708,7 @@ export default function HomeClient({
                   : t("home.teacher.builderTitle")}
               </h1>
             </div>
-            {builderSwitchAvailable && activeForm ? (
+            {!isBuilderStudentPreview && activeForm ? (
               <div className="flex flex-wrap items-center gap-3">
                 <span
                   className="tp-builder-autosave"
@@ -2791,35 +2732,26 @@ export default function HomeClient({
                         ? t("home.builder.saving")
                         : t("home.builder.savedJustNow")}
                 </span>
-                <div
-                  className="tp-view-switch"
-                  data-mode={isBuilderStudentPreview ? "student" : "teacher"}
-                  aria-label={t("home.builder.viewSwitchAria")}
+                <button
+                  type="button"
+                  onClick={() => setMode("student")}
+                  className={`tp-builder-preview-btn ${focusRing}`}
                 >
-                  <span aria-hidden className="tp-view-switch__thumb" />
-                  <button
-                    type="button"
-                    aria-pressed={!isBuilderStudentPreview}
-                    onClick={() => setMode("teacher")}
-                    className={`tp-view-switch__btn ${focusRing}`}
+                  <svg
+                    aria-hidden
+                    className="h-4 w-4"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
                   >
-                    <Pencil aria-hidden className="h-3.5 w-3.5" />
-                    {t("home.builder.viewEditing")}
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={isBuilderStudentPreview}
-                    onClick={() => setMode("student")}
-                    className={`tp-view-switch__btn ${focusRing}`}
-                    aria-keyshortcuts="v"
-                  >
-                    <Eye aria-hidden className="h-3.5 w-3.5" />
-                    {t("home.builder.viewStudent")}
-                    <span aria-hidden className="tp-view-switch__kbd">
-                      V
-                    </span>
-                  </button>
-                </div>
+                    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" />
+                    <circle cx="12" cy="12" r="3" />
+                  </svg>
+                  {t("home.builder.previewAsStudent")}
+                </button>
                 <OverflowMenu
                   label={t("home.builder.moreActions")}
                   items={[
@@ -2837,6 +2769,14 @@ export default function HomeClient({
                   ]}
                 />
               </div>
+            ) : isBuilderStudentPreview ? (
+              <button
+                type="button"
+                onClick={() => setMode("teacher")}
+                className={`${ui.btnSecondary} ${focusRing}`}
+              >
+                {t("home.teacher.modeTeacher")}
+              </button>
             ) : null}
           </div>
         ) : null}
@@ -2910,7 +2850,7 @@ export default function HomeClient({
             </p>
           </div>
         ) : showTeacherTools && activeForm ? (
-          <section className="tp-builder-shell space-y-5 tp-anim-fade-up">
+          <section className="tp-builder-shell space-y-5">
             <div className="tp-builder-details">
               {builderDetailsOpen ? (
                 <div className="space-y-3" onClick={(e) => e.stopPropagation()}>
@@ -3087,17 +3027,6 @@ export default function HomeClient({
                             );
                           })}
                         </div>
-                        <button
-                          type="button"
-                          className={`tp-builder-peek ${focusRing}`}
-                          onClick={() => {
-                            previewFocusQuestionRef.current = question.id;
-                            setMode("student");
-                          }}
-                        >
-                          <Eye aria-hidden className="h-3.5 w-3.5" />
-                          {t("home.builder.previewHere")}
-                        </button>
                         <OverflowMenu
                           label={t("home.builder.moreActions")}
                           open={builderOpenMenuId === question.id}
@@ -3212,7 +3141,7 @@ export default function HomeClient({
           </section>
         ) : studentExamForm && !showTeacherTools ? (
           <section
-            className={`tp-exam-shell relative${isBuilderStudentPreview ? " tp-exam-shell--preview tp-anim-fade-up" : ""}`}
+            className="tp-exam-shell relative"
             data-exam-protected={joinedSession ? "" : undefined}
             onPointerMove={schedulePointerInteractionHeartbeat}
             onPointerOver={schedulePointerInteractionHeartbeat}
@@ -3223,27 +3152,13 @@ export default function HomeClient({
               <ExamCaptureWatermark label={examWatermarkLabel} />
             ) : null}
             {isBuilderStudentPreview ? (
-              <div className="tp-preview-bar" role="status">
-                <span aria-hidden className="tp-preview-bar__pulse" />
-                <span className="tp-preview-bar__copy">
-                  <b>{t("home.exam.previewBarTitle")}</b> — {t("home.exam.previewBarDesc")}
-                </span>
-                <span className="tp-preview-bar__spacer" aria-hidden />
-                <button
-                  type="button"
-                  onClick={() => setPreviewAnswers({})}
-                  className={`tp-preview-bar__reset ${focusRing}`}
-                >
-                  {t("home.exam.previewReset")}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMode("teacher")}
-                  className={`tp-preview-bar__exit ${focusRing}`}
-                >
-                  <Pencil aria-hidden className="h-3.5 w-3.5" />
-                  {t("home.exam.previewExit")}
-                </button>
+              <div className="tp-exam-body !pb-2">
+                <div className="rounded-[12px] border border-[var(--tp-border)] bg-white px-4 py-3 text-sm">
+                  <p className="font-medium text-[var(--tp-text)]">{t("home.exam.previewTitle")}</p>
+                  <p className="mt-1 text-[var(--tp-text-secondary)]">
+                    {t("home.exam.previewDesc")}
+                  </p>
+                </div>
               </div>
             ) : null}
             {joinedSession && examSuspended ? (
