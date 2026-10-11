@@ -184,12 +184,12 @@ const GUIDE_TYPE_DOCS: GuideTypeDoc[] = [
     summary: "A question with labelled sub-parts. Provide `config.parts` (each with id, label, prompt).",
     example: {
       type: "structuredMultiPart",
-      prompt: "Photosynthesis stages",
+      prompt: "Photosynthesis happens in **two stages** inside the chloroplast.",
       points: 8,
       config: {
         parts: [
-          { id: "a", label: "a)", prompt: "Describe the light-dependent reaction." },
-          { id: "b", label: "b)", prompt: "Describe the Calvin cycle." },
+          { id: "a", label: "a)", prompt: "**Describe** the light-dependent reaction." },
+          { id: "b", label: "b)", prompt: "**Describe** the Calvin cycle." },
         ],
       },
     },
@@ -197,7 +197,7 @@ const GUIDE_TYPE_DOCS: GuideTypeDoc[] = [
   {
     type: "matching",
     summary:
-      "Match left items to right items. Provide `config.left`, `config.right` (each id+text) and `config.correct` mapping leftId → rightId.",
+      "Match left items to right items. Provide `config.left`, `config.right` (each id+text) and `config.correct` mapping leftId → rightId. Students see both columns in the order you list them, so scramble `right` (never line it up with `left`).",
     example: {
       type: "matching",
       prompt: "Match each term to its definition.",
@@ -208,27 +208,28 @@ const GUIDE_TYPE_DOCS: GuideTypeDoc[] = [
           { id: "l2", text: "Stomata" },
         ],
         right: [
-          { id: "r1", text: "Green pigment" },
-          { id: "r2", text: "Leaf pores" },
+          { id: "r1", text: "Leaf pores" },
+          { id: "r2", text: "Green pigment" },
         ],
-        correct: { l1: "r1", l2: "r2" },
+        correct: { l1: "r2", l2: "r1" },
       },
     },
   },
   {
     type: "ordering",
-    summary: "Put items in the right sequence. Provide `config.items` (id+text) and `config.correctOrder` (array of ids).",
+    summary:
+      "Put items in the right sequence. Provide `config.items` (id+text) and `config.correctOrder` (array of ids). Students start from the order of `items`, so list them **scrambled**, never in the correct order.",
     example: {
       type: "ordering",
       prompt: "Order the steps of the scientific method.",
       points: 3,
       config: {
         items: [
-          { id: "i1", text: "Hypothesis" },
-          { id: "i2", text: "Experiment" },
-          { id: "i3", text: "Conclusion" },
+          { id: "i1", text: "Conclusion" },
+          { id: "i2", text: "Hypothesis" },
+          { id: "i3", text: "Experiment" },
         ],
-        correctOrder: ["i1", "i2", "i3"],
+        correctOrder: ["i2", "i3", "i1"],
       },
     },
   },
@@ -321,7 +322,8 @@ const FENCE = "```";
 export function buildAiExamGuideMarkdown(): string {
   const fullExample = {
     title: "Photosynthesis — Unit Quiz",
-    description: "Short check for understanding after the photosynthesis unit.",
+    description:
+      "- 4 short questions on photosynthesis\n- Answer every question; there is no penalty for guessing",
     questions: [
       GUIDE_TYPE_DOCS[0].example,
       GUIDE_TYPE_DOCS[1].example,
@@ -453,12 +455,108 @@ ${FENCE}json
 }
 ${FENCE}
 
+## Making the exam look organized on the student screen
+
+Students answer one question card after another in a single scrolling column,
+often on a phone. Truepaper draws some of each card itself, so write content
+that fits the layout instead of repeating it.
+
+### What Truepaper already shows (do not repeat it)
+
+- Every card header shows the question number (\`Q1\`, \`Q2\`, …) and the marks
+  (\`3 marks\`). Do **not** start a prompt with “Question 1:”, “1.”, “Q1)”, and
+  do **not** write “(3 marks)” or “[2]” in the text. Set \`points\` instead.
+- The answer controls (choice buttons, true/false buttons, matching columns,
+  drag-to-order list, answer boxes) come from the \`type\`. Do **not** add
+  “Choose one answer:”, “True or false?”, “Write your answer below:”, or
+  “Options: A… B…” to the prompt.
+- \`structuredMultiPart\` shows each part's \`label\` as a tab. Do **not** repeat
+  the label inside the part prompt (write “Describe…”, not “a) Describe…”).
+- \`description\` appears at the top of the exam in a **“Before you start:”**
+  box. Use it for student instructions (see below), not for teacher notes.
+
+### Order the questions logically
+
+The exam shows questions in the order of the \`questions\` array, so make that order
+feel planned:
+
+- Group questions on the same topic or source next to each other, following
+  the order of the teacher's material.
+- Within a group, go from quick recall (\`multipleChoice\`, \`trueFalse\`,
+  \`shortAnswer\`, \`matching\`) to application (\`mathInput\`, \`ordering\`,
+  \`labelling\`) to longer answers (\`structuredMultiPart\`, \`extendedWritten\`).
+- Keep questions that use the same data, passage, or scenario together. If
+  several questions share a long context, prefer one \`structuredMultiPart\` with
+  the context in its \`prompt\`, so students don't scroll back to find it.
+- Questions should not depend on the answer to an earlier question, and should
+  not give away the answer to one.
+- Set \`points\` in proportion to effort: about 1 for recall, 2–4 for
+  application, and more for extended or multi-part answers.
+
+### Write a helpful \`description\`
+
+Keep it short. Use 2–5 bullet points that tell the student what to expect,
+such as the number of questions or sections, what to do for calculations
+(units, significant figures, show working), and any materials allowed. Do not
+include answers, grading notes, or a list of every question.
+
+${FENCE}json
+"description": "- 12 questions on photosynthesis\\n- Questions 1–6 are quick checks; 7–12 need working or written answers\\n- Give units with every numerical answer"
+${FENCE}
+
+If the exam has sections, name them here (e.g. “Questions 1–6: recall”).
+Do **not** put section headings inside individual prompts.
+
+### Keep prompts short and scannable
+
+- Most prompts should be 1–3 short paragraphs. Put long source text in
+  \`config.passageText\` (\`annotateSource\`) or in the stem of a
+  \`structuredMultiPart\`, not in every prompt.
+- Put given data in a bullet list or a small pipe table (3–4 columns at
+  most, so it fits a phone). Put the task on its own line **after** the data.
+- End with the task. The last line the student reads before answering should
+  be what they have to do.
+
+### Options, items, and labels are plain text
+
+Markdown is rendered only in \`prompt\`, \`description\`, and part prompts. Text in
+\`options\`, matching \`left\`/\`right\`, ordering \`items\`, labelling \`zones\`/\`terms\`,
+and part \`label\`s appears **exactly as written**, so:
+
+- Do not use \`**\`, backticks, or list markers in them.
+- Do not prefix options with “A)”, “B.”, “1.”; students tap the option itself.
+- Keep options short (ideally under ~10 words), similar in length, and
+  grammatically parallel, so that the correct one does not stand out.
+- Avoid “All of the above” / “None of the above”, and change where the
+  correct option appears from question to question.
+- Use consistent part labels: \`a)\`, \`b)\`, \`c)\` …
+
+### Never give the answer away through layout
+
+Students see list items in the order you write them:
+
+- \`ordering\`: list \`items\` **scrambled**. Never list them in the correct order
+  (\`correctOrder\` holds the answer).
+- \`matching\`: scramble \`right\` so that item 1 on the left is not matched by
+  item 1 on the right.
+- \`labelling\`: list \`terms\` in a different order from \`zones\`.
+
+### Math, symbols, and units
+
+There is **no LaTeX rendering**. \`$x^2$\` or \`\\frac{a}{b}\` will show up as raw
+symbols. Instead:
+
+- Use Unicode: \`x²\`, \`x³\`, \`√2\`, \`π\`, \`×\`, \`÷\`, \`±\`, \`≤\`, \`≥\`, \`≠\`, \`°\`, \`Δ\`, \`H₂O\`, \`CO₂\`.
+- Write fractions inline (\`3/4\`, \`(a + b)/2\`) and wrap a formula in backticks
+  when it should stand out: \`\`v = u + at\`\`.
+- Always give units with values (\`12 m/s\`, \`25 °C\`).
+
 ## Top-level shape
 
 ${FENCE}json
 {
   "title": "string — the exam title",
-  "description": "string — optional summary shown to the teacher",
+  "description": "string — optional student instructions shown in the 'Before you start:' box (Markdown)",
   "questions": [ /* array of question objects, see below */ ]
 }
 ${FENCE}
@@ -487,6 +585,13 @@ ${FENCE}
   Markdown \`prompt\` using the readability guidance (bold the task, use lists
   for givens, blank lines between paragraphs).
 - Prefer a mix of question types appropriate to the content and skills assessed.
+- Order questions logically (topic groups, simple → complex) and write a short
+  bulleted student \`description\`.
+- Do not repeat what the app already shows: no “Question 1:”, no marks in the
+  text, no “Choose one:”, no part labels inside part prompts.
+- Keep options/items plain text (no Markdown, no “A)” prefixes), and scramble
+  ordering items and matching/labelling columns.
+- No LaTeX. Use Unicode symbols and backticks for formulas.
 - For objective types (\`matching\`, \`ordering\`, \`labelling\`) always include the
   full \`config\` with ids that are consistent between the items and the answer key.
 - Keep ids short and unique within a question (e.g. \`l1\`, \`r1\`, \`i1\`).

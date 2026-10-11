@@ -1,14 +1,12 @@
 import fs from "node:fs/promises";
-import path from "node:path";
 import { expect, type BrowserContext, type Page, type Route } from "@playwright/test";
 
 import type { E2eFixture } from "./global-setup";
-
-const fixtureFile = path.join(__dirname, ".session", "fixture.json");
+import { e2eFixtureFile } from "./paths";
 
 export async function loadE2eFixture(): Promise<E2eFixture | null> {
   try {
-    const raw = await fs.readFile(fixtureFile, "utf8");
+    const raw = await fs.readFile(e2eFixtureFile, "utf8");
     const parsed = JSON.parse(raw) as E2eFixture & { skipped?: boolean };
     if (parsed.skipped || !parsed.joinCode) {
       return null;

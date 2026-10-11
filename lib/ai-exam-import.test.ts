@@ -166,4 +166,42 @@ describe("buildAiExamGuideMarkdown", () => {
     expect(guide).toMatch(/teacher note/i);
     expect(guide).toMatch(/mark schemes/i);
   });
+
+  it("teaches layout rules for the student exam view", () => {
+    expect(guide).toContain("Making the exam look organized on the student screen");
+    expect(guide).toContain("Before you start:");
+    expect(guide).not.toMatch(/summary shown to the teacher/i);
+    expect(guide).toMatch(/no LaTeX rendering/i);
+    expect(guide).toMatch(/list `items` \*\*scrambled\*\*/);
+  });
+
+  it("ships examples that parse and don't give answers away by order", () => {
+    const blocks = [...guide.matchAll(/```json\n([\s\S]*?)\n```/g)].map((m) => m[1]);
+    const examples = blocks
+      .map((block) => {
+        try {
+          return JSON.parse(block) as Record<string, unknown>;
+        } catch {
+          return null;
+        }
+      })
+      .filter((value): value is Record<string, unknown> => value !== null);
+
+    const ordering = examples.find((e) => e.type === "ordering");
+    const orderingConfig = ordering?.config as { items: { id: string }[]; correctOrder: string[] };
+    expect(orderingConfig.items.map((i) => i.id)).not.toEqual(orderingConfig.correctOrder);
+
+    const matching = examples.find((e) => e.type === "matching");
+    const matchingConfig = matching?.config as {
+      left: { id: string }[];
+      right: { id: string }[];
+      correct: Record<string, string>;
+    };
+    matchingConfig.left.forEach((item, index) => {
+      expect(matchingConfig.correct[item.id]).not.toBe(matchingConfig.right[index]?.id);
+    });
+
+    const full = examples.find((e) => Array.isArray(e.questions));
+    expect(() => parseAiExamDocument(full)).not.toThrow();
+  });
 });
