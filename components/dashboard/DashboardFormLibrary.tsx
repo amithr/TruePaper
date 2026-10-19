@@ -8,6 +8,7 @@ import { deferEffect } from "@/lib/defer-effect";
 import { AiGuideModal } from "@/components/dashboard/AiGuideModal";
 import { FormLibraryRow, type FormLibraryPopover } from "@/components/dashboard/FormLibraryRow";
 import { ImportExamModal } from "@/components/dashboard/ImportExamModal";
+import { NewFormMenu } from "@/components/dashboard/NewFormMenu";
 import {
   EntityList,
   EntityListFooter,
@@ -276,6 +277,32 @@ export function DashboardFormLibrary({ onError }: Props) {
     [deleteForm, deletingFormId, origin, startingFormId, t],
   );
 
+  const createBlankForm = async () => {
+    setCreatingForm(true);
+    try {
+      const data = await requestJson<{ form: Form }>("/api/forms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const created = {
+        ...data.form,
+        questionCount: 0,
+        questions: [],
+        autogradeCount: 0,
+        lastRunAt: null,
+        lastSessionDefaults: null,
+      };
+      setForms((prev) => [...prev, created]);
+      stashPendingBuilderForm(created);
+      router.push(`/?form=${encodeURIComponent(data.form.id)}`);
+    } catch (e) {
+      onError(e instanceof Error ? e.message : t("formLibrary.errors.create"));
+    } finally {
+      setCreatingForm(false);
+    }
+  };
+
   return (
     <section className="tp-entity-list-section tp-card p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -284,28 +311,6 @@ export function DashboardFormLibrary({ onError }: Props) {
           <h2 className="text-xl font-semibold tracking-tight">{t("dashboard.formLibraryTitle")}</h2>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <HelpHint id="dash-ai-guide" text={t("help.dashboard.aiGuide")}>
-            <button
-              type="button"
-              onClick={() => setAiGuideOpen(true)}
-              className={`${ui.btnGhost} inline-flex items-center gap-2 text-sm`}
-            >
-              <svg
-                aria-hidden
-                className="h-4 w-4"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="12" cy="12" r="9" />
-                <path d="M12 8v.01M11 12h1v4h1" />
-              </svg>
-              {t("formLibrary.import.downloadGuide")}
-            </button>
-          </HelpHint>
           <button
             type="button"
             data-tour="import-exam"
@@ -336,52 +341,12 @@ export function DashboardFormLibrary({ onError }: Props) {
             {importingExam ? t("formLibrary.import.importing") : t("formLibrary.import.importExam")}
           </button>
           <HelpHint id="dash-import" text={t("help.dashboard.importExam")} />
-          <button
-            type="button"
-            data-tour="new-form"
-            disabled={creatingForm}
-            onClick={async () => {
-              setCreatingForm(true);
-              try {
-                const data = await requestJson<{ form: Form }>("/api/forms", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({}),
-                });
-                const created = {
-                  ...data.form,
-                  questionCount: 0,
-                  questions: [],
-                  autogradeCount: 0,
-                  lastRunAt: null,
-                  lastSessionDefaults: null,
-                };
-                setForms((prev) => [...prev, created]);
-                stashPendingBuilderForm(created);
-                router.push(`/?form=${encodeURIComponent(data.form.id)}`);
-              } catch (e) {
-                onError(e instanceof Error ? e.message : t("formLibrary.errors.create"));
-              } finally {
-                setCreatingForm(false);
-              }
-            }}
-            className={`${ui.btnPrimary} disabled:opacity-50`}
-            aria-busy={creatingForm}
-          >
-            <svg
-              aria-hidden
-              className="h-4 w-4"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.4"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M12 5v14M5 12h14" />
-            </svg>
-            {creatingForm ? t("common.creating") : t("formLibrary.newForm")}
-          </button>
+          <NewFormMenu
+            creating={creatingForm}
+            disabled={importingExam}
+            onCreateBlank={() => void createBlankForm()}
+            onCreateWithAi={() => setAiGuideOpen(true)}
+          />
         </div>
       </div>
       {loading ? (

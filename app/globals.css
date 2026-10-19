@@ -1693,6 +1693,82 @@ code,
   flex-direction: column;
 }
 
+/* "New form" chooser: two-line rows (title + description), same panel as ⋯ menus. */
+.tp-new-form-menu {
+  z-index: 80;
+  display: flex;
+  width: 20rem;
+  max-width: calc(100vw - 1rem);
+  flex-direction: column;
+  gap: 2px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  padding: 6px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.14);
+}
+
+/* Focus lands on the panel itself when opened by pointer; rows carry the focus style. */
+.tp-new-form-menu:focus,
+.tp-new-form-menu:focus-visible {
+  outline: none;
+}
+
+.tp-new-form-menu__item {
+  display: flex;
+  width: 100%;
+  align-items: flex-start;
+  gap: 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  padding: 10px 12px;
+  text-align: left;
+  font-family: inherit;
+  color: #0f172a;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.tp-new-form-menu__item:hover,
+.tp-new-form-menu__item:focus-visible,
+.tp-new-form-menu__item:focus {
+  background: #f1f5f9;
+  outline: none;
+}
+
+.tp-new-form-menu__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  height: 2rem;
+  width: 2rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.tp-new-form-menu__icon[data-kind="ai"] {
+  background: var(--tp-accent-soft);
+  color: var(--tp-accent);
+}
+
+.tp-new-form-menu__title {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.tp-new-form-menu__description {
+  display: block;
+  margin-top: 2px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: #64748b;
+}
+
 .tp-overflow-menu__divider {
   height: 1px;
   margin: 5px 4px;

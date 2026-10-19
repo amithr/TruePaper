@@ -904,6 +904,13 @@
       "delete": "Could not delete form.",
       "create": "Could not create form.",
       "start": "Could not start session."
+    },
+    "newFormMenu": {
+      "label": "Create a new form",
+      "blankTitle": "Blank form",
+      "blankDescription": "Start from scratch and add your own questions.",
+      "aiTitle": "Create with AI",
+      "aiDescription": "Turn your notes into an exam with ChatGPT or Claude, then import it."
     }
   },
   "help": {
@@ -971,7 +978,7 @@
         },
         "createForm": {
           "title": "Create your first form",
-          "body": "Start from scratch and add questions of any type — multiple choice, written, diagrams, and more."
+          "body": "Start from a blank form, or let ChatGPT or Claude draft an exam from your notes with our AI guide."
         },
         "importForm": {
           "title": "Or let AI draft it",
