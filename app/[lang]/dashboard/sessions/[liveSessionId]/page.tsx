@@ -12,6 +12,7 @@ import { LoadingBar } from "@/components/LoadingBar";
 import { SaveTemplateModal } from "@/components/library/SaveTemplateModal";
 import { OverflowMenu, type OverflowMenuItem } from "@/components/OverflowMenu";
 import { RosterActivityThresholds } from "@/components/RosterActivityThresholds";
+import { RosterSyncSummary } from "@/components/RosterSyncSummary";
 import { SessionExamRoster } from "@/components/SessionExamRoster";
 import { SessionJoinShare } from "@/components/SessionJoinShare";
 import { SyncStatusIndicator } from "@/components/SyncStatusIndicator";
@@ -529,15 +530,21 @@ export default function LiveSessionDetailPage() {
 
         <section className="tp-card p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <h2
-              className="tp-live-roster-title"
-              aria-label={t("session.roster.titleStudentsCount", { count: totalCount })}
-            >
-              {t("session.roster.titleStudents")}
-              <span className="tp-live-roster-title__count" aria-hidden>
-                · {totalCount}
-              </span>
-            </h2>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2
+                className="tp-live-roster-title"
+                aria-label={t("session.roster.titleStudentsCount", { count: totalCount })}
+              >
+                {t("session.roster.titleStudents")}
+                <span className="tp-live-roster-title__count" aria-hidden>
+                  · {totalCount}
+                </span>
+              </h2>
+              {/* Calm: renders nothing until someone has work that hasn't reached the server. */}
+              {sessionRunning ? (
+                <RosterSyncSummary participants={overview.participants} nowMs={activityNowMs} />
+              ) : null}
+            </div>
             <div className="flex flex-wrap items-center gap-2">
               {sessionRunning ? (
                 <RosterActivityThresholds

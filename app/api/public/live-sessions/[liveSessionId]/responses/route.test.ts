@@ -104,4 +104,27 @@ describe("PUT /api/public/live-sessions/[id]/responses", () => {
     const body = (await res.json()) as { ok: boolean };
     expect(body.ok).toBe(true);
   });
+
+  it("returns 423 when the student is suspended so offline sync keeps the save", async () => {
+    createSupabaseAnonServiceClient.mockReturnValue(
+      createMockSupabase({
+        rpc: () => ({
+          data: null,
+          error: { message: "exam suspended until your teacher allows you to continue" },
+        }),
+      }),
+    );
+
+    const res = await PUT(
+      putRequest({
+        deviceId: TEST_DEVICE_ID,
+        displayName: TEST_DISPLAY_NAME,
+        answers: { q1: "draft" },
+        submissionId: TEST_SUBMISSION_ID,
+      }),
+      { params: Promise.resolve({ liveSessionId: TEST_LIVE_SESSION_ID }) },
+    );
+    expect(res.status).toBe(423);
+    expect(await res.json()).toMatchObject({ code: "suspended" });
+  });
 });

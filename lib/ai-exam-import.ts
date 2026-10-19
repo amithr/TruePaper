@@ -184,7 +184,7 @@ const GUIDE_TYPE_DOCS: GuideTypeDoc[] = [
     summary: "A question with labelled sub-parts. Provide `config.parts` (each with id, label, prompt).",
     example: {
       type: "structuredMultiPart",
-      prompt: "Photosynthesis happens in **two stages** inside the chloroplast.",
+      prompt: "Photosynthesis happens in two stages inside the chloroplast.",
       points: 8,
       config: {
         parts: [
@@ -261,7 +261,7 @@ const GUIDE_TYPE_DOCS: GuideTypeDoc[] = [
     example: {
       type: "mathInput",
       prompt:
-        "A ball is thrown vertically upward with speed **12 m/s**.\n\n**Calculate** the maximum height reached.\n\n- Take `g = 9.8 m/s²`\n- Show your working",
+        "A ball is thrown vertically upward with speed 12 m/s.\n\n**Calculate** the maximum height reached.\n\n- Take `g = 9.8 m/s²`\n- Show your working",
       points: 2,
       config: {
         acceptedAnswers: ["7.35", "7.3", "7.347"],
@@ -411,7 +411,7 @@ scan cleanly — do not dump one long unformatted paragraph.
 |------|-----------------------------|
 | Paragraph break | blank line (\`\\n\\n\`) |
 | Soft line break | single \`\\n\` (also fine) |
-| Emphasis | \`**bold**\` for the task verb / key ask; \`*italic*\` sparingly |
+| Emphasis | \`**bold**\` rarely — see “When to use bold” below; \`*italic*\` sparingly |
 | Bullet list | lines starting with \`- \` or \`* \` |
 | Numbered list | \`1. \` \`2. \` … |
 | Inline code / formula fragment | backticks, e.g. \`\`g = 9.8 m/s²\`\` |
@@ -420,10 +420,31 @@ scan cleanly — do not dump one long unformatted paragraph.
 Do **not** rely on raw HTML. Keep headings light (\`###\` at most) — most stems
 need paragraphs + lists only.
 
+### When to use bold
+
+Plain text is the default. Bold is only for something a student could misread
+or skip under exam pressure. If everything is bold, nothing stands out, and
+long bold text is harder to read.
+
+- At most **one** short bold phrase per prompt (or per part prompt), and many
+  prompts need none.
+- Bold the **command word** when it defines the task (“**Calculate**”,
+  “**Explain**”, “**Compare**”), or a **condition that changes the answer**
+  (“**not**”, “**two** reasons”, “in **kJ**”, “**without** a calculator”).
+- Never bold whole sentences or paragraphs, the context or scenario, given
+  data and numbers, names or key terms just because they are important, or
+  “Show your working”.
+- Never use bold in \`description\`, \`options\`, or other plain-text fields.
+
+Good: \`"**Explain** why the rate of reaction falls after 2 minutes."\`
+Too much: \`"**Explain why the rate of reaction falls after 2 minutes.**"\`
+Too much: \`"A **2 kg** ball moves at **4 m/s**. **Calculate** its **kinetic energy**."\`
+
 ### Structure each prompt
 
 1. **Context** (optional): short setup or given data.
-2. **Task** (required): what the student must do — bold the action when helpful.
+2. **Task** (required): what the student must do, in plain text (bold only as
+   described in “When to use bold”).
 3. **Constraints** (optional): units, word count, “show your working”, etc.
 
 Also:
@@ -450,7 +471,7 @@ Good prompt shape (example — note Markdown in the JSON string):
 ${FENCE}json
 {
   "type": "mathInput",
-  "prompt": "A ball is thrown vertically upward with speed **12 m/s**.\\n\\n**Calculate** the maximum height reached.\\n\\n- Take \`g = 9.8 m/s²\`\\n- Show your working",
+  "prompt": "A ball is thrown vertically upward with speed 12 m/s.\\n\\n**Calculate** the maximum height reached.\\n\\n- Take \`g = 9.8 m/s²\`\\n- Show your working",
   "points": 2,
   "config": { "acceptedAnswers": ["7.35", "7.3"] }
 }
@@ -583,7 +604,7 @@ ${FENCE}
 ## Notes for the assistant
 
 - Choose each \`type\` using the table above (task → type), then write a clear
-  Markdown \`prompt\` using the readability guidance (bold the task, use lists
+  Markdown \`prompt\` using the readability guidance (bold sparingly, use lists
   for givens, blank lines between paragraphs).
 - Prefer a mix of question types appropriate to the content and skills assessed.
 - Order questions logically (topic groups, simple → complex) and write a short
@@ -593,6 +614,8 @@ ${FENCE}
 - Keep options/items plain text (no Markdown, no “A)” prefixes), and scramble
   ordering items and matching/labelling columns.
 - No LaTeX. Use Unicode symbols and backticks for formulas.
+- Plain text by default: at most one short bold phrase per prompt (a command
+  word or a condition a student could miss), and no bold in descriptions or options.
 - For objective types (\`matching\`, \`ordering\`, \`labelling\`) always include the
   full \`config\` with ids that are consistent between the items and the answer key.
 - Keep ids short and unique within a question (e.g. \`l1\`, \`r1\`, \`i1\`).

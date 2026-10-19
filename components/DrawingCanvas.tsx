@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 import {
   clamp01,
@@ -24,6 +24,8 @@ type Props = {
   strokeWidth?: number;
   onChange?: (strokes: DrawingStroke[]) => void;
   className?: string;
+  /** Extra controls shown at the start of the toolbar row (e.g. a draw / photo switch). */
+  toolbarStart?: ReactNode;
   "data-testid"?: string;
 };
 
@@ -38,6 +40,7 @@ export function DrawingCanvas({
   strokeWidth = 2.5,
   onChange,
   className = "",
+  toolbarStart,
   "data-testid": testId,
 }: Props) {
   const t = useTranslations();
@@ -157,14 +160,19 @@ export function DrawingCanvas({
 
   return (
     <div className={`tp-draw-canvas-wrap ${className}`}>
-      {!readOnly && !disabled ? (
-        <div className="tp-draw-canvas-toolbar mb-2 flex flex-wrap gap-2">
-          <button type="button" onClick={handleUndo} className={`tp-btn-ghost min-h-11 px-3 text-sm ${focusRing}`}>
-            {t("responseTypes.drawDiagram.undo")}
-          </button>
-          <button type="button" onClick={handleClear} className={`tp-btn-ghost min-h-11 px-3 text-sm ${focusRing}`}>
-            {t("responseTypes.drawDiagram.clear")}
-          </button>
+      {toolbarStart || (!readOnly && !disabled) ? (
+        <div className="tp-draw-canvas-toolbar mb-2 flex flex-wrap items-center gap-2">
+          {toolbarStart}
+          {!readOnly && !disabled ? (
+            <div className={`flex gap-1 ${toolbarStart ? "ml-auto" : ""}`}>
+              <button type="button" onClick={handleUndo} className={`tp-btn-ghost min-h-11 px-3 text-sm ${focusRing}`}>
+                {t("responseTypes.drawDiagram.undo")}
+              </button>
+              <button type="button" onClick={handleClear} className={`tp-btn-ghost min-h-11 px-3 text-sm ${focusRing}`}>
+                {t("responseTypes.drawDiagram.clear")}
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : null}
       <canvas

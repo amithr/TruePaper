@@ -72,7 +72,7 @@ export function StudentExamHeader({
       <div className="tp-exam-header__inner">
         <div className="tp-exam-header__identity">
           <p className="tp-exam-header__title">{title || t("common.untitledForm")}</p>
-          <p className="tp-exam-header__sync" data-kind={sync.kind}>
+          <p className="tp-exam-header__sync" data-kind={sync.kind} data-testid="student-sync-status">
             <span aria-hidden className="tp-exam-header__sync-dot" />
             {sync.label}
           </p>

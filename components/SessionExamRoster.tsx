@@ -3,6 +3,7 @@
 import { ChevronRight } from "lucide-react";
 import { memo, useMemo } from "react";
 
+import { rosterConnectionSyncState } from "@/components/RosterWifiIcon";
 import type { StudentAnswers } from "@/lib/forms";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import type { LiveSessionOverviewParticipant } from "@/lib/live-session-overview";
@@ -141,6 +142,7 @@ const RosterRow = memo(function RosterRow({
       tabIndex={0}
       className={`tp-live-roster-row ${focusRing}`}
       data-kind={model.kind}
+      data-sync-state={rosterConnectionSyncState(p, activityNowMs)}
       data-testid="roster-row"
       onClick={() => open(model.kind === "help" ? p.handRaiseQuestionId : undefined)}
       onKeyDown={(event) => {

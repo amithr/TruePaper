@@ -1,8 +1,15 @@
 import fs from "node:fs/promises";
-import { expect, type BrowserContext, type Page, type Route } from "@playwright/test";
+import {
+  expect,
+  type APIRequestContext,
+  type Browser,
+  type BrowserContext,
+  type Page,
+  type Route,
+} from "@playwright/test";
 
 import type { E2eFixture } from "./global-setup";
-import { e2eFixtureFile } from "./paths";
+import { e2eAuthFile, e2eFixtureFile } from "./paths";
 
 export async function loadE2eFixture(): Promise<E2eFixture | null> {
   try {
@@ -65,7 +72,11 @@ export function waitForStudentAnswersPutContaining(
 
 /**
  * Reload the student exam after offline edits. A full reload needs network for the
- * document; answer state should hydrate from IndexedDB while sync stays blocked.
+ * document and its JS chunks (the dev server has no offline shell), so stay online
+ * with answer PUTs blocked until the exam is back, then cut the network again. The
+ * page should reopen the exam by itself (remembered on this device) — no rejoin —
+ * and since the server never received the offline edits, the answer can only come
+ * back from IndexedDB.
  */
 export async function reloadStudentExamWithOfflineEdits(
   page: Page,
@@ -75,11 +86,11 @@ export async function reloadStudentExamWithOfflineEdits(
   await context.setOffline(false);
   try {
     await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("student-exam-answer")).toBeVisible({ timeout: 30_000 });
   } finally {
     await context.setOffline(true);
     await page.unroute(studentResponsesUrl, blockStudentAnswerPut);
   }
-  await expect(page.getByTestId("student-exam-answer")).toBeVisible({ timeout: 30_000 });
 }
 
 /** Wait for a successful student-side join API response. */
@@ -192,11 +203,6 @@ export async function waitForAutosaveSaved(page: Page, timeout = 45_000): Promis
     .toMatch(/saved/i);
 }
 
-/** Wait for the next successful student autosave after edits are already in flight. */
-export async function waitForNextStudentAutosave(page: Page, timeout = 45_000): Promise<void> {
-  await waitForAutosaveSaved(page, timeout);
-}
-
 export async function readAnonymousDeviceId(page: Page): Promise<string> {
   const deviceId = await page.evaluate(() =>
     window.localStorage.getItem("truepaper_anonymous_session_id"),
@@ -214,8 +220,12 @@ export const longStudentAnswer =
 export const teacherFeedbackMessage =
   "E2E feedback: Strong start — add more detail in your second paragraph.";
 
+/**
+ * Post a synthetic student heartbeat. Pass the test's `request` fixture so it still
+ * goes through while the student's browser context is offline.
+ */
 export async function sendStudentHeartbeat(
-  page: Page,
+  request: APIRequestContext,
   input: {
     liveSessionId: string;
     deviceId: string;
@@ -224,7 +234,7 @@ export async function sendStudentHeartbeat(
     syncState?: "synced" | "pending" | "offline";
   },
 ): Promise<void> {
-  const res = await page.request.post(
+  const res = await request.post(
     `/api/public/live-sessions/${input.liveSessionId}/heartbeat`,
     {
       data: {
@@ -241,3 +251,21 @@ export async function sendStudentHeartbeat(
 }
 
 export const offlineTailText = " Offline tail saved locally.";
+
+/** Teacher clears a student's tab-leave suspension (same API as the roster "Let in" button). */
+export async function teacherLetStudentIn(
+  browser: Browser,
+  liveSessionId: string,
+  deviceId: string,
+): Promise<void> {
+  const teacherContext = await browser.newContext({ storageState: e2eAuthFile });
+  try {
+    const res = await teacherContext.request.post(
+      `/api/forms/live-sessions/${liveSessionId}/resume-student`,
+      { data: { deviceId } },
+    );
+    expect(res.ok(), `resume-student failed (${res.status()})`).toBeTruthy();
+  } finally {
+    await teacherContext.close();
+  }
+}

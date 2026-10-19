@@ -8,7 +8,7 @@ import {
   readAnonymousDeviceId,
   teacherFeedbackMessage,
   typeStudentAnswerAndWaitForAutosave,
-  waitForNextStudentAutosave,
+  waitForStudentAnswersPutContaining,
 } from "./helpers";
 
 const teacherAuth = path.join(__dirname, ".auth", "teacher.json");
@@ -35,10 +35,14 @@ test.describe("Live exam E2E", () => {
     await expect(answer).toHaveValue(longStudentAnswer);
 
     const withTail = `${longStudentAnswer} Extra tail after autosave.`;
+    // Wait for a save that contains the *whole* tail. The "saved" status is already
+    // showing from the first autosave, so waiting on it alone can resolve mid-typing
+    // and leave the server with a truncated answer for the teacher watch test.
+    const tailSaved = waitForStudentAnswersPutContaining(page, "Extra tail after autosave.");
     await answer.press("End");
     await answer.pressSequentially(" Extra tail after autosave.", { delay: 5 });
     await expect(answer).toHaveValue(withTail, { timeout: 15_000 });
-    await waitForNextStudentAutosave(page);
+    await tailSaved;
   });
 
   test("teacher watch page shows student answers updating", async ({ browser }) => {

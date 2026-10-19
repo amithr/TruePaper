@@ -10,13 +10,17 @@ vi.mock("@/components/DrawingCanvas", () => ({
     width: number;
     height: number;
     backgroundImageUrl?: string;
+    toolbarStart?: React.ReactNode;
   }) => (
-    <div
-      data-testid={props["data-testid"]}
-      data-width={props.width}
-      data-height={props.height}
-      data-background={props.backgroundImageUrl ?? ""}
-    />
+    <>
+      {props.toolbarStart}
+      <div
+        data-testid={props["data-testid"]}
+        data-width={props.width}
+        data-height={props.height}
+        data-background={props.backgroundImageUrl ?? ""}
+      />
+    </>
   ),
 }));
 

@@ -1182,7 +1182,8 @@
       "photoReplacesDrawing": "Your uploaded photo is your answer. Remove it to answer with a drawing instead.",
       "removePhotoAndDraw": "Remove photo and draw",
       "photoSubmitted": "Uploaded a photo instead of drawing",
-      "photoAlt": "Uploaded photo of the diagram"
+      "photoAlt": "Uploaded photo of the diagram",
+      "modeAria": "How do you want to answer?"
     },
     "graph": {
       "label": "Graph",

@@ -204,4 +204,37 @@ describe("buildAiExamGuideMarkdown", () => {
     const full = examples.find((e) => Array.isArray(e.questions));
     expect(() => parseAiExamDocument(full)).not.toThrow();
   });
+
+  it("keeps bold rare and models it in the examples", () => {
+    expect(guide).toContain("When to use bold");
+    expect(guide).toMatch(/at most \*\*one\*\* short bold phrase per prompt/i);
+
+    const blocks = [...guide.matchAll(/```json\n([\s\S]*?)\n```/g)].map((m) => m[1]);
+    const prompts: string[] = [];
+    const collect = (value: unknown) => {
+      if (Array.isArray(value)) {
+        value.forEach(collect);
+      } else if (value && typeof value === "object") {
+        for (const [key, inner] of Object.entries(value)) {
+          if ((key === "prompt" || key === "description") && typeof inner === "string") {
+            prompts.push(inner);
+          } else {
+            collect(inner);
+          }
+        }
+      }
+    };
+    for (const block of blocks) {
+      try {
+        collect(JSON.parse(block));
+      } catch {
+        // Partial snippets (e.g. a lone "description" line) aren't full JSON.
+      }
+    }
+    expect(prompts.length).toBeGreaterThan(5);
+    for (const prompt of prompts) {
+      const boldCount = (prompt.match(/\*\*[^*]+\*\*/g) ?? []).length;
+      expect(boldCount, prompt).toBeLessThanOrEqual(1);
+    }
+  });
 });

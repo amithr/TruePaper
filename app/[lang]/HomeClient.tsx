@@ -100,6 +100,7 @@ import { heartbeatSyncMeta } from "@/lib/offline/heartbeat-meta";
 import { LIVE_PRESENCE_KEEPALIVE_MS } from "@/lib/participant-status";
 import { LiveCountdown } from "@/components/LiveCountdown";
 import { cacheExamSession, loadCachedExamSession } from "@/lib/offline/session-cache";
+import { type ActiveExam, clearActiveExam, loadActiveExam, saveActiveExam } from "@/lib/active-exam";
 import type { ConnectionSnapshot } from "@/lib/offline/types";
 import { newSubmissionId } from "@/lib/offline/sync-queue";
 import { isRetryableNetworkError } from "@/lib/network-error";
@@ -276,6 +277,7 @@ export default function HomeClient({
   const router = useRouter();
 
   const goToSubmittedPage = useCallback(() => {
+    clearActiveExam();
     router.replace("/join/submitted");
   }, [router]);
   const t = useTranslations();
@@ -289,6 +291,8 @@ export default function HomeClient({
   const [authForms, setAuthForms] = useState<Form[]>([]);
   const [activeFormId, setActiveFormId] = useState("");
   const [pendingAutoResumeCode, setPendingAutoResumeCode] = useState("");
+  /** Exam remembered on this device from before a reload; rejoined automatically once. */
+  const [pendingActiveExamRestore, setPendingActiveExamRestore] = useState<ActiveExam | null>(null);
   const [joinCodeInput, setJoinCodeInput] = useState("");
   const [rejoinCodeInput, setRejoinCodeInput] = useState("");
   const [joinDisplayNameInput, setJoinDisplayNameInput] = useState("");
@@ -713,10 +717,23 @@ export default function HomeClient({
     deferEffect(() => {
       const params = new URLSearchParams(window.location.search);
 
-      if (joinUrlRequestsFreshDevice(params)) {
-        setAnonymousSessionId(createFreshAnonymousSessionId());
-      } else {
-        setAnonymousSessionId(getOrCreateAnonymousSessionId());
+      const freshDevice = joinUrlRequestsFreshDevice(params);
+      const deviceId = freshDevice
+        ? createFreshAnonymousSessionId()
+        : getOrCreateAnonymousSessionId();
+      setAnonymousSessionId(deviceId);
+
+      // A reload of the exam page has no URL intent: put the student back into the
+      // exam they were taking on this device instead of showing the join form.
+      const hasExplicitIntent =
+        freshDevice || params.has("code") || params.has("join") || params.has("resume");
+      if (guestView === "join" && !hasExplicitIntent) {
+        const active = loadActiveExam(deviceId);
+        if (active) {
+          setJoinCodeInput(active.joinCode);
+          setJoinDisplayNameInput(active.displayName);
+          setPendingActiveExamRestore(active);
+        }
       }
 
       const raw = params.get("code") ?? params.get("join");
@@ -747,7 +764,7 @@ export default function HomeClient({
       u.searchParams.delete("student");
       window.history.replaceState({}, "", u.pathname + u.search + u.hash);
     });
-  }, [t]);
+  }, [t, guestView]);
 
   // Session: static pages pass `null`; `useClientSessionHydration` fetches
   // `/api/auth/session` only when a Supabase auth cookie is present.
@@ -1111,6 +1128,7 @@ export default function HomeClient({
         studentResponseLoadKeyRef.current = loadKey;
 
         if (parsed?.finished) {
+          clearActiveExam();
           router.replace("/join/submitted");
           return;
         }
@@ -1432,6 +1450,7 @@ export default function HomeClient({
         });
         if (res.status === 403) {
           const body = (await res.json()) as { error?: string };
+          clearActiveExam();
           clearJoinFormFields();
           setJoinedSession(null);
           setActiveExamDisplayName("");
@@ -2104,6 +2123,15 @@ export default function HomeClient({
         form: data.form,
         deliveryMode: data.deliveryMode ?? "live",
       });
+      saveActiveExam({
+        liveSessionId: data.liveSessionId,
+        joinCode: data.joinCode,
+        displayName: isValidLiveSessionDisplayName(displayName) ? displayName : data.displayName,
+        deviceId: data.deviceId,
+        opensAt: data.opensAt,
+        closesAt: data.closesAt,
+        deliveryMode: data.deliveryMode ?? "live",
+      });
       latestStudentAnswersRef.current = {};
       lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers({});
       pendingDirtySinceRef.current = null;
@@ -2122,14 +2150,24 @@ export default function HomeClient({
     }
   };
 
-  const joinWithCode = async (rawCode: string) => {
+  const joinWithCode = async (
+    rawCode: string,
+    options?: {
+      displayName?: string;
+      /** Rejoining the exam remembered on this device after a reload. */
+      restoring?: ActiveExam;
+    },
+  ) => {
+    const restoring = options?.restoring ?? null;
     const code = normalizeJoinCode(rawCode);
     if (!isValidJoinCodeFormat(code)) {
       setStatusMessage(t("home.validation.joinCode"));
       return;
     }
 
-    const displayName = normalizeLiveSessionDisplayName(joinDisplayNameInput);
+    const displayName = normalizeLiveSessionDisplayName(
+      options?.displayName ?? joinDisplayNameInput,
+    );
     if (!isValidLiveSessionDisplayName(displayName)) {
       setStatusMessage(t("home.validation.displayName"));
       return;
@@ -2137,9 +2175,11 @@ export default function HomeClient({
 
     setIsJoiningSession(true);
     setStatusMessage("");
+    let deviceIdForJoin = anonymousSessionId;
+    // Teacher previews join on a throwaway device each time; don't auto-resume those.
+    const teacherPreview = isTeacher && mode === "student" && !restoring;
     try {
-      let deviceIdForJoin = anonymousSessionId;
-      if (isTeacher && mode === "student") {
+      if (teacherPreview) {
         deviceIdForJoin = createFreshAnonymousSessionId();
         setAnonymousSessionId(deviceIdForJoin);
       }
@@ -2167,6 +2207,17 @@ export default function HomeClient({
           form: data.form,
           deliveryMode: data.deliveryMode ?? "live",
         });
+        if (!teacherPreview) {
+          saveActiveExam({
+            liveSessionId: data.liveSessionId,
+            joinCode: code,
+            displayName,
+            deviceId: deviceIdForJoin,
+            opensAt: data.opensAt,
+            closesAt: data.closesAt,
+            deliveryMode: data.deliveryMode ?? "live",
+          });
+        }
       }
       setJoinCodeInput(code);
       setActiveExamDisplayName(displayName);
@@ -2189,6 +2240,38 @@ export default function HomeClient({
       setStatusMessage(t("home.status.inLiveSession"));
       void clearJoinDraft();
     } catch (error) {
+      if (restoring) {
+        if (isRetryableNetworkError(error)) {
+          // Offline reload: reopen the exam from the cached shell; answers hydrate
+          // from IndexedDB and sync once the connection is back.
+          const cached = await loadCachedExamSession(restoring.liveSessionId, restoring.deviceId);
+          if (cached) {
+            setJoinedSession({
+              liveSessionId: restoring.liveSessionId,
+              form: cached.form,
+              opensAt: restoring.opensAt,
+              closesAt: restoring.closesAt,
+              deliveryMode: cached.deliveryMode,
+            });
+            setLiveTeacherFeedbackEnabledLive(cached.form.liveTeacherFeedbackEnabled);
+            setActiveExamDisplayName(displayName);
+            latestStudentAnswersRef.current = {};
+            lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers({});
+            pendingDirtySinceRef.current = null;
+            studentResponseLoadKeyRef.current = null;
+            setExamAnswers({});
+            setStudentAnswersHydrated(false);
+            setExamSuspended(false);
+            setExamFinished(false);
+            setAutosaveStatus("");
+            setStatusMessage(t("offline.status.offline"));
+            return;
+          }
+        } else {
+          // Submitted, closed, or gone — don't keep retrying this exam on every load.
+          clearActiveExam();
+        }
+      }
       // Safari often surfaces failed fetches as "Load failed" — map to a clear join hint.
       setStatusMessage(
         isRetryableNetworkError(error)
@@ -2215,7 +2298,24 @@ export default function HomeClient({
     });
   }, [pendingAutoResumeCode, joinedSession, isJoiningSession, rejoinWithResumeCodeRef]);
 
+  const joinWithCodeRef = useLatestRef(joinWithCode);
+
+  useEffect(() => {
+    if (!pendingActiveExamRestore || joinedSession || isJoiningSession || !anonymousSessionId) {
+      return;
+    }
+    const active = pendingActiveExamRestore;
+    deferEffect(() => {
+      setPendingActiveExamRestore(null);
+      void joinWithCodeRef.current(active.joinCode, {
+        displayName: active.displayName,
+        restoring: active,
+      });
+    });
+  }, [pendingActiveExamRestore, joinedSession, isJoiningSession, anonymousSessionId, joinWithCodeRef]);
+
   const leaveJoinedSession = () => {
+    clearActiveExam();
     setIsJoiningSession(false);
     setJoinedSession(null);
     latestStudentAnswersRef.current = {};
@@ -3240,6 +3340,7 @@ export default function HomeClient({
               <div
                 className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-[var(--tp-surface)]/95 p-6 text-center shadow-lg backdrop-blur-sm tp-anim-fade-in"
                 role="alert"
+                data-testid="student-exam-paused"
               >
                 <p className="text-lg font-semibold text-[var(--tp-text)]">{t("home.exam.overlay.paused")}</p>
                 <p className="max-w-md text-sm text-[var(--tp-text-secondary)]">

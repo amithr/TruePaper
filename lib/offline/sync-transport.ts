@@ -1,4 +1,4 @@
-import { requestJson } from "@/lib/request-json";
+import { requestJson, RequestJsonError } from "@/lib/request-json";
 import type { SyncResult } from "@/lib/offline/types";
 
 export async function putStudentAnswersSync(input: {
@@ -25,6 +25,13 @@ export async function putStudentAnswersSync(input: {
     return { ok: true, deduped: result.deduped };
   } catch (e) {
     const message = e instanceof Error ? e.message : "Sync failed";
+    if (e instanceof RequestJsonError) {
+      // The server answered. A rejected save is dropped from the queue, so only treat
+      // it as final when retrying can't help: keep suspensions (423, cleared when the
+      // teacher lets the student in), rate limits, and server errors.
+      const retryable = e.status === 423 || e.status === 429 || e.status >= 500;
+      return { ok: false, retryable, message };
+    }
     const retryable =
       typeof navigator !== "undefined" &&
       (!navigator.onLine ||

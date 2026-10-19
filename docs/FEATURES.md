@@ -147,7 +147,7 @@ flowchart LR
 - **Canvas background image (`drawDiagram`):** the question image can be used as the drawing-canvas background — opt-in checkbox in the canvas response settings (`promptImageAsBackground` in `response_config`, helpers `drawDiagramBackgroundUrl` / `promptImageUsedAsCanvasBackground` in `lib/response-types/drawing.ts`). When enabled, the image renders inside the canvas (student responder, student feedback-annotation canvas, teacher watch answer + annotate canvases, review page, PDF export) instead of above the prompt, so strokes/points land on top of the image.
 - **Photo instead of drawing (`drawDiagram`):** students can switch to **Upload a photo** and submit a photo of a paper drawing. The teacher can turn this off with the `allowImageUpload` builder checkbox (on by default). The photo is compressed client-side (`compressImageFile`) and stored in the answer JSON as `imageDataUrl`/`imageWidth`/`imageHeight` next to `strokes`. When a photo is present it **is** the answer, and strokes are kept so removing the photo brings the drawing back. Teacher watch, annotation, the review page and the PDF show the photo (annotations are drawn over the photo). If the question image was the canvas background, it moves back above the answer (`promptImageInsideDrawAnswer` in `lib/response-types/drawing.ts`). No migration was needed: answers stay JSON text.
 - **Student-safe `responseConfig` in public payloads:** `lookup_join_code` / `lookup_student_resume_code` / `get_student_review_by_token` include per-question `responseConfig` with answer-bearing keys stripped (`acceptedAnswers`, `caseSensitive`, `correct`, `correctOrder`, `correctAnswer`) — migration `20260807120000_student_response_config.sql`. Before this, students always fell back to type defaults (canvas size, matching pairs, passage text were lost in the join flow).
-- **AI exam import:** teacher opens **AI guide** (popup with steps) or **Import exam** (popup), downloads a Markdown authoring guide (`GET /api/forms/ai-template`), feeds it to ChatGPT/Claude with their content, then uploads the generated JSON (`POST /api/forms/import`). The upload box accepts a click-to-browse or a **drag-and-drop**. It highlights while a file is dragged over it, rejects files that aren't `.json` with an inline error, and stops a drop outside the box from making the browser open the file. The guide includes a task→type chooser (e.g. calculations → `mathInput` / `photoHandwritten`), rules for **Markdown-formatted** prompts (bold task, lists for givens, paragraph breaks), and instructions not to describe diagrams or put teacher notes / mark schemes in student-facing fields. A **student-view layout** section explains what the exam card already shows (Q number, marks, part-label tabs, answer controls) so the AI doesn't repeat it. It also asks for a logical question order (topic groups, simple → complex), a short bulleted `description` (shown in the "Before you start:" box), plain-text options/items without letter prefixes, scrambled ordering items and matching/labelling columns (students see them in the authored order), and Unicode math instead of LaTeX (not rendered). Parser/guide: `lib/ai-exam-import.ts`. Modals: `AiGuideModal.tsx`, `ImportExamModal.tsx` in the form library.
+- **AI exam import:** teacher opens **AI guide** (popup with steps) or **Import exam** (popup), downloads a Markdown authoring guide (`GET /api/forms/ai-template`), feeds it to ChatGPT/Claude with their content, then uploads the generated JSON (`POST /api/forms/import`). The upload box accepts a click-to-browse or a **drag-and-drop**. It highlights while a file is dragged over it, rejects files that aren't `.json` with an inline error, and stops a drop outside the box from making the browser open the file. The guide includes a task→type chooser (e.g. calculations → `mathInput` / `photoHandwritten`), rules for **Markdown-formatted** prompts (lists for givens, paragraph breaks, and a "When to use bold" rule: plain text by default, at most one short bold phrase per prompt for a command word or a condition a student could miss, never in descriptions or options), and instructions not to describe diagrams or put teacher notes / mark schemes in student-facing fields. A **student-view layout** section explains what the exam card already shows (Q number, marks, part-label tabs, answer controls) so the AI doesn't repeat it. It also asks for a logical question order (topic groups, simple → complex), a short bulleted `description` (shown in the "Before you start:" box), plain-text options/items without letter prefixes, scrambled ordering items and matching/labelling columns (students see them in the authored order), and Unicode math instead of LaTeX (not rendered). Parser/guide: `lib/ai-exam-import.ts`. Modals: `AiGuideModal.tsx`, `ImportExamModal.tsx` in the form library.
 - **Exam Markdown:** student-facing prompts, form description, structured part stems, teacher watch headers, and review prompts render via `components/ExamMarkdown.tsx` (`react-markdown` + GFM). Builder edit fields stay plain text.
 
 ### Start & manage live sessions
@@ -245,7 +245,14 @@ Two complementary, teacher-scoped aids (students never see either):
 - **Live teacher feedback:** polled — `GET .../feedback`.
 - **Raise hand:** `POST .../raise-hand` — `components/RaiseHandButton.tsx` (in question card header).
 - **Connection UI:** `components/StudentAutosaveBanner.tsx`. (`components/ConnectionIndicator.tsx` is legacy/retained for tests; the live student/teacher signal is now the unified sync indicator below.)
-- **Sync status (unified):** students see a plain header line (“All answers saved” / “Saving…” / reconnect copy) driven by `lib/use-student-sync-status.ts`. Teachers still use `components/SyncStatusIndicator.tsx` on session + watch headers. State derives from local queue contents via `lib/sync-status.ts` (`deriveSyncStatus`). Teacher status: `lib/offline/use-feedback-sync-status.ts`. Reactive cross-route updates via `lib/sync-status-events.ts`. Teacher roster-level "who has unsynced work": `components/RosterSyncSummary.tsx`.
+- **Sync status (unified):** students see a plain header line (“All answers saved” / “Saving…” / reconnect copy) driven by `lib/use-student-sync-status.ts`. Teachers still use `components/SyncStatusIndicator.tsx` on session + watch headers. State derives from local queue contents via `lib/sync-status.ts` (`deriveSyncStatus`). Teacher status: `lib/offline/use-feedback-sync-status.ts`. Reactive cross-route updates via `lib/sync-status-events.ts`. Teacher roster-level "who has unsynced work": `components/RosterSyncSummary.tsx`, a chip next to the "Students" title on the live session page (running sessions only; hidden while everyone is synced; click to list names).
+
+### Resume after reload (same device)
+
+- On a successful join (or resume-code rejoin) the exam is remembered in `localStorage` (`truepaper_active_exam`: session, join code, display name, device id, window, delivery mode) — `lib/active-exam.ts`.
+- Loading `/join` with no URL intent (`?code=`, `?resume=`, `new=1`) and a matching device id rejoins automatically through the normal join flow, so the server still enforces closed sessions, already-submitted, and the live tab-leave pause (a reload counts as leaving the tab; the teacher lets the student back in).
+- If that rejoin fails for network reasons, the exam reopens from the IndexedDB session cache and answers hydrate from IDB.
+- Forgotten on leave, submit / submitted redirect, already-submitted (403 register), a non-network rejoin failure, expiry (`closesAt`), or a different device id. Teacher "preview as student" joins are never remembered.
 
 ### Resume after device loss
 
@@ -377,7 +384,7 @@ flowchart TD
 | `lib/offline/answer-store.ts` | Local answers + per-question revisions |
 | `lib/offline/sync-queue.ts` | Pending answer sync rows in IDB |
 | `lib/offline/sync-engine.ts` | Answer drain with backoff + jitter |
-| `lib/offline/sync-transport.ts` | Network PUT for answers |
+| `lib/offline/sync-transport.ts` | Network PUT for answers. Retryable: network errors, **423** (student suspended — `PUT .../responses` returns 423 `code: "suspended"`), 429, 5xx. Other 4xx are final and drop the queued row |
 | `lib/offline/session-cache.ts` | Cached exam shell for offline start |
 | `lib/offline/join-cache.ts` | Pre-join join code + display name draft in IDB |
 | `lib/offline/reachability.ts` | `GET /api/public/ping` reachability checks |
@@ -404,7 +411,7 @@ flowchart TD
 - Edit answers → saved to IndexedDB immediately.
 - Tab close (`pagehide`) → enqueue + best-effort drain (+ Background Sync when supported).
 - Reopen tab / come online → jittered reconnect drain; periodic poll while pending.
-- Reload while offline → answers restored from IDB (E2E: `e2e/offline-sync.spec.ts`).
+- Reload → the exam reopens by itself (see [Resume after reload](#resume-after-reload-same-device)); answers restored from IDB (E2E: `e2e/offline-sync.spec.ts`).
 - **Exam submit** — on retryable failure, queued in `finish_queue` and retried automatically.
 - **Pre-join** — join code + display name restored from IDB draft after refresh.
 - **Teacher feedback** — a teacher can leave a text comment on a student response with no connection; it persists in `feedback_queue` (IDB) across app close / restart and uploads in the background on reconnect. `created_at` is client-side and authoritative for ordering/display (students never see "future" feedback); `synced_at`/`delivered_at` are bookkeeping only. Failed uploads retry with backoff and, if exhausted, are flagged `failed` and surfaced to the teacher — feedback is never silently dropped. Audio/voice memos are **deferred** (the schema reserves `type='voice'` + `audio_*` columns). Version anchoring: response-level — the response's `updated_at` is captured at write time, and the student sees a calm "you changed this answer after this comment" flag if it later differs (anchored to the version it was written against). IDB schema is now `DB_VERSION = 3`.
@@ -756,6 +763,7 @@ Dashboard session summaries.
 | Teacher session SSR | `lib/teacher-dashboard-server.ts` |
 | Request helper | `lib/request-json.ts` |
 | URL intent (join/resume deep links) | `lib/home-url-intent.ts` |
+| Resume exam after reload | `lib/active-exam.ts` |
 | Form quick-start links | `lib/form-start-link.ts`, `lib/start-live-session.ts` |
 | Flat entity lists (UI) | `docs/LISTS.md`, `components/lists/EntityList.tsx` |
 | Typography (IBM Plex) | `app/[lang]/layout.tsx`, `app/globals.css`, `lib/exam-pdf-fonts.ts` |
@@ -812,8 +820,8 @@ Setup (`e2e/global-setup.ts`) creates a marked form (`E2E Live Exam` / descripti
 | Spec | Covers |
 |------|--------|
 | `e2e/live-exam.spec.ts` | Autosave, live feedback |
-| `e2e/offline-sync.spec.ts` | Offline answers + reconnect sync |
-| `e2e/roster-sync.spec.ts` | Teacher roster sync badges |
+| `e2e/offline-sync.spec.ts` | Offline answers survive a reload (exam reopens by itself; answers from IndexedDB), the student is paused (live tab-leave) until the teacher lets them in, then the queued edits sync |
+| `e2e/roster-sync.spec.ts` | Heartbeat sync state reaches the roster: offline status line, `data-sync-state` on `roster-row` and the roster sync-summary chip listing a student with pending work |
 
 ### Load tests
 

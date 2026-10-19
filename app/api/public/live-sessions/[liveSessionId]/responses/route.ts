@@ -139,6 +139,11 @@ export async function PUT(request: Request, { params }: Params) {
           { status: 503 },
         );
       }
+      if (error.message.includes("exam suspended")) {
+        // Temporary: the save succeeds once the teacher lets the student back in.
+        // 423 tells the offline sync queue to keep and retry it instead of dropping it.
+        return NextResponse.json({ error: error.message, code: "suspended" }, { status: 423 });
+      }
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 

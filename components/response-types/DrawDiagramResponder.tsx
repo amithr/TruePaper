@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 
 import { DrawingCanvas } from "@/components/DrawingCanvas";
 import { PhotoHandwrittenResponder } from "@/components/response-types/PhotoHandwrittenResponder";
@@ -43,7 +43,7 @@ export function DrawDiagramResponder({
   const width = Math.max(320, Math.min(800, config.width ?? 600));
   const height = Math.max(200, Math.min(600, config.height ?? 360));
 
-  const canvas = (
+  const canvas = (toolbarStart?: ReactNode) => (
     <DrawingCanvas
       width={width}
       height={height}
@@ -51,13 +51,14 @@ export function DrawDiagramResponder({
       backgroundImageUrl={backgroundImageUrl ?? config.backgroundDataUrl}
       disabled={disabled}
       onChange={onChange}
+      toolbarStart={toolbarStart}
       data-testid="student-draw-canvas"
     />
   );
 
   // A photo uploaded before the teacher turned uploads off is still shown, so it can be removed.
   if (!onPhotoChange || (!uploadAllowed && !photo)) {
-    return canvas;
+    return canvas();
   }
 
   const resolvedBackground = backgroundImageUrl ?? config.backgroundDataUrl;
@@ -69,24 +70,37 @@ export function DrawDiagramResponder({
       disabled={disabled}
       aria-pressed={mode === value}
       onClick={() => setMode(value)}
-      className={`min-h-11 rounded-full border px-4 text-sm font-semibold ${focusRing} ${
+      className={`min-h-9 rounded-full px-4 text-sm font-medium transition-colors ${focusRing} ${
         mode === value
-          ? "border-[var(--tp-accent)] bg-[var(--tp-accent-soft)]"
-          : "border-[var(--tp-border)]"
+          ? "bg-[var(--tp-surface)] text-[var(--tp-text)] shadow-sm"
+          : "text-[var(--tp-text-secondary)] hover:text-[var(--tp-text)]"
       }`}
     >
       {label}
     </button>
   );
 
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap gap-2">
-        {modeButton("draw", t("responseTypes.drawDiagram.drawMode"))}
-        {modeButton("photo", t("responseTypes.drawDiagram.photoMode"))}
-      </div>
+  const modeSwitch = (
+    <div
+      role="group"
+      aria-label={t("responseTypes.drawDiagram.modeAria")}
+      className="inline-flex gap-1 rounded-full border border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] p-1"
+    >
+      {modeButton("draw", t("responseTypes.drawDiagram.drawMode"))}
+      {modeButton("photo", t("responseTypes.drawDiagram.photoMode"))}
+    </div>
+  );
 
-      {!canvasShown && resolvedBackground ? (
+  if (canvasShown) {
+    // Share one toolbar row with Undo / Clear so the switch doesn't add a stacked gap.
+    return <div className="mt-4">{canvas(modeSwitch)}</div>;
+  }
+
+  return (
+    <div className="mt-4 space-y-3">
+      {modeSwitch}
+
+      {resolvedBackground ? (
         // The question image normally sits inside the canvas; keep it visible while uploading.
         <div className="overflow-hidden rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-white">
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -127,9 +141,7 @@ export function DrawDiagramResponder({
             {t("responseTypes.drawDiagram.removePhotoAndDraw")}
           </button>
         </div>
-      ) : (
-        canvas
-      )}
+      ) : null}
     </div>
   );
 }

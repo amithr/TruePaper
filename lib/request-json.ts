@@ -1,5 +1,16 @@
 type ApiError = { error?: string };
 
+/** Error thrown for a non-2xx JSON response; carries the HTTP status for callers that branch on it. */
+export class RequestJsonError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "RequestJsonError";
+    this.status = status;
+  }
+}
+
 /** fetch + JSON parse with a clear error when the server returns HTML (e.g. 404 page). */
 export async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
   const response = await fetch(input, init);
@@ -19,7 +30,7 @@ export async function requestJson<T>(input: RequestInfo | URL, init?: RequestIni
 
   const data = (await response.json()) as T & ApiError;
   if (!response.ok) {
-    throw new Error(data.error ?? "Request failed.");
+    throw new RequestJsonError(data.error ?? "Request failed.", response.status);
   }
   return data;
 }
