@@ -2,6 +2,7 @@
 
 import type { Form, Question } from "@/lib/forms";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
+import { drawDiagramImageUploadAllowed } from "@/lib/response-types/drawing";
 import { parseResponseConfig } from "@/lib/response-types/registry";
 import type {
   DrawDiagramConfig,
@@ -107,6 +108,19 @@ export function BuilderResponseConfig({ question, updateActiveForm }: Props) {
               {t("responseTypes.builder.canvasImageBackgroundHint")}
             </p>
           ) : null}
+        </div>
+        <div className="sm:col-span-2">
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={drawDiagramImageUploadAllowed(config)}
+              onChange={(event) => patchConfig({ allowImageUpload: event.target.checked })}
+            />
+            {t("responseTypes.builder.canvasAllowPhoto")}
+          </label>
+          <p className="mt-1 text-xs text-[var(--tp-text-muted)]">
+            {t("responseTypes.builder.canvasAllowPhotoHint")}
+          </p>
         </div>
       </div>
     );

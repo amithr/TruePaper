@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   drawDiagramBackgroundUrl,
+  promptImageInsideDrawAnswer,
   promptImageUsedAsCanvasBackground,
 } from "@/lib/response-types/drawing";
 
@@ -51,5 +52,34 @@ describe("promptImageUsedAsCanvasBackground", () => {
     expect(
       promptImageUsedAsCanvasBackground({ promptImageAsBackground: true }, null),
     ).toBe(false);
+  });
+});
+
+describe("promptImageInsideDrawAnswer", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  const question = {
+    type: "drawDiagram",
+    responseConfig: { promptImageAsBackground: true },
+    promptImagePath: IMAGE_PATH,
+  };
+
+  it("is true for a drawing on the question-image canvas", () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", SUPABASE_URL);
+    const drawing = JSON.stringify({ type: "drawDiagram", strokes: [] });
+    expect(promptImageInsideDrawAnswer(question, drawing)).toBe(true);
+    expect(promptImageInsideDrawAnswer(question, undefined)).toBe(true);
+  });
+
+  it("is false when the student uploaded a photo instead, so the image shows inline", () => {
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", SUPABASE_URL);
+    const photo = JSON.stringify({
+      type: "drawDiagram",
+      strokes: [],
+      imageDataUrl: "data:image/jpeg;base64,AAA",
+    });
+    expect(promptImageInsideDrawAnswer(question, photo)).toBe(false);
   });
 });

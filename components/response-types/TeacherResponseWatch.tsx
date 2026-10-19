@@ -24,6 +24,7 @@ import {
 } from "@/lib/response-types/feedback";
 import {
   drawDiagramBackgroundUrl,
+  drawDiagramPhoto,
   type DrawingStroke,
 } from "@/lib/response-types/drawing";
 import {
@@ -326,26 +327,44 @@ export function TeacherResponseWatch({
     const width = Math.max(320, Math.min(800, config.width ?? 600));
     const height = Math.max(200, Math.min(600, config.height ?? 360));
     const backgroundUrl = drawDiagramBackgroundUrl(config, question.promptImagePath);
+    const photo = drawDiagramPhoto(value);
     return (
       <div className="space-y-3">
-        <DrawingCanvas
-          width={width}
-          height={height}
-          strokes={value.strokes}
-          backgroundImageUrl={backgroundUrl}
-          readOnly
-          data-testid="teacher-watch-answer"
-        />
+        {photo ? (
+          <div
+            className="relative overflow-hidden rounded-[10px] border border-[var(--tp-border)]"
+            data-testid="teacher-watch-answer"
+          >
+            <p className="border-b border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] px-3 py-1.5 text-xs font-medium text-[var(--tp-text-secondary)]">
+              {t("responseTypes.drawDiagram.photoSubmitted")}
+            </p>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={photo.dataUrl}
+              alt={t("responseTypes.drawDiagram.photoAlt")}
+              className="max-h-[480px] w-full object-contain bg-white"
+            />
+          </div>
+        ) : (
+          <DrawingCanvas
+            width={width}
+            height={height}
+            strokes={value.strokes}
+            backgroundImageUrl={backgroundUrl}
+            readOnly
+            data-testid="teacher-watch-answer"
+          />
+        )}
         {liveFeedbackEnabled ? (
           <div>
             <p className="mb-2 text-xs font-medium text-[var(--tp-text-secondary)]">
               {t("responseTypes.watch.annotate")}
             </p>
             <DrawingCanvas
-              width={width}
-              height={height}
+              width={photo?.width ?? width}
+              height={photo?.height ?? height}
               strokes={annotationDraft}
-              backgroundImageUrl={backgroundUrl}
+              backgroundImageUrl={photo?.dataUrl ?? backgroundUrl}
               strokeColor="#c2410c"
               strokeWidth={3}
               onChange={(strokes) => {

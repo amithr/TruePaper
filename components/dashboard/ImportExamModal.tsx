@@ -1,9 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { type DragEvent, useEffect, useRef, useState } from "react";
 
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { focusRing, ui } from "@/lib/ui";
+
+function isExamFile(file: File): boolean {
+  return file.name.toLowerCase().endsWith(".json") || file.type === "application/json";
+}
+
+function hasDraggedFiles(event: DragEvent): boolean {
+  return Array.from(event.dataTransfer.types).includes("Files");
+}
 
 type Props = {
   open: boolean;
@@ -16,6 +24,10 @@ export function ImportExamModal({ open, importing, onClose, onImport }: Props) {
   const t = useTranslations();
   const inputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
+  // dragenter/dragleave also fire for child elements; count depth so the highlight doesn't flicker.
+  const dragDepth = useRef(0);
 
   useEffect(() => {
     if (!open) {
@@ -34,12 +46,36 @@ export function ImportExamModal({ open, importing, onClose, onImport }: Props) {
     return null;
   }
 
+  const resetDrag = () => {
+    dragDepth.current = 0;
+    setDragActive(false);
+  };
+
   const close = () => {
     if (importing) {
       return;
     }
     setSelectedFile(null);
+    setFileError(null);
+    resetDrag();
     onClose();
+  };
+
+  const pickFile = (file: File | null) => {
+    if (file && !isExamFile(file)) {
+      setSelectedFile(null);
+      setFileError(t("formLibrary.import.wrongFileType"));
+      return;
+    }
+    setFileError(null);
+    setSelectedFile(file);
+  };
+
+  // Swallow drops that miss the zone so the browser doesn't navigate to the file.
+  const blockStrayDrop = (event: DragEvent) => {
+    if (hasDraggedFiles(event)) {
+      event.preventDefault();
+    }
   };
 
   return (
@@ -47,6 +83,11 @@ export function ImportExamModal({ open, importing, onClose, onImport }: Props) {
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       role="presentation"
       onClick={close}
+      onDragOver={blockStrayDrop}
+      onDrop={(event) => {
+        blockStrayDrop(event);
+        resetDrag();
+      }}
     >
       <div
         role="dialog"
@@ -117,18 +158,56 @@ export function ImportExamModal({ open, importing, onClose, onImport }: Props) {
             onChange={(event) => {
               const file = event.target.files?.[0] ?? null;
               event.target.value = "";
-              setSelectedFile(file);
+              pickFile(file);
             }}
           />
           <button
             type="button"
             disabled={importing}
             onClick={() => inputRef.current?.click()}
-            className={`mt-2 flex w-full flex-col items-center justify-center gap-2 rounded-[var(--tp-radius-sm)] border border-dashed border-[var(--tp-border-strong)] bg-[var(--tp-surface)] px-4 py-8 text-center ${focusRing} disabled:opacity-50`}
+            onDragEnter={(event) => {
+              if (importing || !hasDraggedFiles(event)) {
+                return;
+              }
+              event.preventDefault();
+              dragDepth.current += 1;
+              setDragActive(true);
+            }}
+            onDragOver={(event) => {
+              if (importing || !hasDraggedFiles(event)) {
+                return;
+              }
+              event.preventDefault();
+              event.dataTransfer.dropEffect = "copy";
+            }}
+            onDragLeave={() => {
+              dragDepth.current = Math.max(0, dragDepth.current - 1);
+              if (dragDepth.current === 0) {
+                setDragActive(false);
+              }
+            }}
+            onDrop={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              resetDrag();
+              if (importing) {
+                return;
+              }
+              pickFile(event.dataTransfer.files?.[0] ?? null);
+            }}
+            aria-describedby={fileError ? "import-exam-file-error" : undefined}
+            data-drag-active={dragActive || undefined}
+            className={`mt-2 flex w-full flex-col items-center justify-center gap-2 rounded-[var(--tp-radius-sm)] border border-dashed px-4 py-8 text-center transition-colors ${
+              dragActive
+                ? "border-[var(--tp-accent)] bg-[var(--tp-accent-soft)]"
+                : fileError
+                  ? "border-[var(--tp-danger-border)] bg-[var(--tp-surface)]"
+                  : "border-[var(--tp-border-strong)] bg-[var(--tp-surface)] hover:bg-[var(--tp-bg-subtle)]"
+            } ${focusRing} disabled:opacity-50`}
           >
             <svg
               aria-hidden
-              className="h-8 w-8 text-[var(--tp-text-muted)]"
+              className={`pointer-events-none h-8 w-8 ${dragActive ? "text-[var(--tp-accent)]" : "text-[var(--tp-text-muted)]"}`}
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -138,13 +217,26 @@ export function ImportExamModal({ open, importing, onClose, onImport }: Props) {
             >
               <path d="M12 16V4M7 9l5-5 5 5M5 20h14" />
             </svg>
-            <span className="text-sm font-medium text-[var(--tp-text)]">
-              {selectedFile ? selectedFile.name : t("formLibrary.import.chooseFile")}
+            <span className="pointer-events-none text-sm font-medium text-[var(--tp-text)]">
+              {dragActive
+                ? t("formLibrary.import.dropToAdd")
+                : selectedFile
+                  ? selectedFile.name
+                  : t("formLibrary.import.chooseFile")}
             </span>
-            <span className="text-xs text-[var(--tp-text-secondary)]">
+            <span className="pointer-events-none text-xs text-[var(--tp-text-secondary)]">
               {t("formLibrary.import.acceptedFormats")}
             </span>
           </button>
+          {fileError ? (
+            <p
+              id="import-exam-file-error"
+              role="alert"
+              className="mt-2 text-sm text-[var(--tp-danger-text)]"
+            >
+              {fileError}
+            </p>
+          ) : null}
         </div>
 
         <div className="mt-6 flex flex-wrap items-center justify-end gap-2">

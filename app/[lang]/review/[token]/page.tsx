@@ -17,8 +17,7 @@ import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { useScoreCopy } from "@/lib/i18n/score-copy";
 import type { StudentReviewPayload } from "@/lib/parse-student-review";
 import { hasLiveTeacherFeedbackContent } from "@/lib/live-teacher-feedback";
-import { promptImageUsedAsCanvasBackground } from "@/lib/response-types/drawing";
-import type { DrawDiagramConfig } from "@/lib/response-types/types";
+import { promptImageInsideDrawAnswer } from "@/lib/response-types/drawing";
 import { ui } from "@/lib/ui";
 
 export default function StudentReviewPage() {
@@ -182,13 +181,7 @@ export default function StudentReviewPage() {
                   </div>
 
                   {question.promptImagePath &&
-                  !(
-                    question.type === "drawDiagram" &&
-                    promptImageUsedAsCanvasBackground(
-                      question.responseConfig as DrawDiagramConfig,
-                      question.promptImagePath,
-                    )
-                  ) ? (
+                  !promptImageInsideDrawAnswer(question, review.answers[question.id]) ? (
                     <FormAssetImage
                       path={question.promptImagePath}
                       alt={t("home.exam.promptImageAlt")}

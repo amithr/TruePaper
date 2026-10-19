@@ -68,6 +68,8 @@ export type DrawDiagramConfig = {
   backgroundDataUrl?: string;
   /** Use the question's uploaded image (`promptImagePath`) as the canvas background. */
   promptImageAsBackground?: boolean;
+  /** Let students upload a photo instead of drawing. Defaults to allowed when unset. */
+  allowImageUpload?: boolean;
 };
 
 export type GraphConfig = {
@@ -151,7 +153,14 @@ export type AnnotateSourceValue = {
 };
 export type MultipleChoiceValue = { type: "multipleChoice"; choice: string };
 
-export type DrawDiagramValue = { type: "drawDiagram"; strokes: DrawingStroke[] };
+export type DrawDiagramValue = {
+  type: "drawDiagram";
+  strokes: DrawingStroke[];
+  /** Uploaded photo submitted in place of the drawing; when set it is the answer. */
+  imageDataUrl?: string;
+  imageWidth?: number;
+  imageHeight?: number;
+};
 
 export type GraphPoint = { id: string; x: number; y: number };
 export type GraphLine = { id: string; from: string; to: string };

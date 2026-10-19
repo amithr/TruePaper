@@ -281,7 +281,8 @@ const GUIDE_TYPE_DOCS: GuideTypeDoc[] = [
   },
   {
     type: "drawDiagram",
-    summary: "Student draws on a canvas (no answer key). Optional `config.width`/`config.height`.",
+    summary:
+      "Student draws on a canvas (no answer key), or uploads a photo of a paper drawing instead. Optional `config.width`/`config.height`; set `config.allowImageUpload: false` only if the teacher wants drawing on screen only.",
     example: {
       type: "drawDiagram",
       prompt: "Draw and label a chloroplast.",

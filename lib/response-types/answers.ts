@@ -89,10 +89,20 @@ export function parseResponseValue(
 
   if (normalized === "drawDiagram") {
     const parsed = parseJsonWire<DrawDiagramValue>(text, "drawDiagram");
-    if (parsed && Array.isArray(parsed.strokes)) {
-      return { type: "drawDiagram", strokes: parsed.strokes };
+    if (!parsed) {
+      return { type: "drawDiagram", strokes: [] };
     }
-    return { type: "drawDiagram", strokes: [] };
+    const strokes = Array.isArray(parsed.strokes) ? parsed.strokes : [];
+    if (typeof parsed.imageDataUrl === "string" && parsed.imageDataUrl) {
+      return {
+        type: "drawDiagram",
+        strokes,
+        imageDataUrl: parsed.imageDataUrl,
+        imageWidth: parsed.imageWidth ?? 0,
+        imageHeight: parsed.imageHeight ?? 0,
+      };
+    }
+    return { type: "drawDiagram", strokes };
   }
 
   if (normalized === "graph") {
@@ -201,10 +211,17 @@ export function serializeResponseValue(value: ResponseValue): string {
         highlights: value.highlights,
       });
     case "drawDiagram":
-      return JSON.stringify({
-        type: "drawDiagram",
-        strokes: value.strokes,
-      });
+      return JSON.stringify(
+        value.imageDataUrl
+          ? {
+              type: "drawDiagram",
+              strokes: value.strokes,
+              imageDataUrl: value.imageDataUrl,
+              imageWidth: value.imageWidth ?? 0,
+              imageHeight: value.imageHeight ?? 0,
+            }
+          : { type: "drawDiagram", strokes: value.strokes },
+      );
     case "graph":
       return JSON.stringify({
         type: "graph",
@@ -292,7 +309,7 @@ export function previewResponseText(
         .join(" ");
       break;
     case "drawDiagram":
-      text = value.strokes.length > 0 ? "Drawing" : "";
+      text = value.imageDataUrl ? "Photo upload" : value.strokes.length > 0 ? "Drawing" : "";
       break;
     case "graph": {
       const parts: string[] = [];
@@ -340,7 +357,7 @@ export function isResponseAnswered(
     case "annotateSource":
       return value.highlights.length > 0;
     case "drawDiagram":
-      return value.strokes.length > 0;
+      return Boolean(value.imageDataUrl) || value.strokes.length > 0;
     case "graph":
       return (
         value.points.length > 0 ||

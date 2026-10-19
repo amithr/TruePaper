@@ -57,10 +57,9 @@ import { deferEffect } from "@/lib/defer-effect";
 import { requestJson } from "@/lib/request-json";
 import { useLatestRef } from "@/lib/use-latest-ref";
 import {
-  promptImageUsedAsCanvasBackground,
+  promptImageInsideDrawAnswer,
   type DrawingStroke,
 } from "@/lib/response-types/drawing";
-import type { DrawDiagramConfig } from "@/lib/response-types/types";
 
 type SnapshotJson = {
   session: {
@@ -1151,13 +1150,7 @@ export default function WatchStudentExamPage() {
                     <ExamMarkdown>{question.prompt || t("common.untitledQuestion")}</ExamMarkdown>
                   </div>
                   {question.promptImagePath &&
-                  !(
-                    question.type === "drawDiagram" &&
-                    promptImageUsedAsCanvasBackground(
-                      question.responseConfig as DrawDiagramConfig,
-                      question.promptImagePath,
-                    )
-                  ) ? (
+                  !promptImageInsideDrawAnswer(question, displayAnswers[question.id]) ? (
                     <FormAssetImage
                       path={question.promptImagePath}
                       alt={t("home.exam.promptImageAlt")}

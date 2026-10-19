@@ -12,7 +12,7 @@ import { StudentTeacherFeedbackCard } from "@/components/StudentTeacherFeedbackC
 import type { Question } from "@/lib/forms";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { isResponseAnswered, parseResponseValue } from "@/lib/response-types/answers";
-import { drawDiagramBackgroundUrl } from "@/lib/response-types/drawing";
+import { drawDiagramBackgroundUrl, drawDiagramPhoto } from "@/lib/response-types/drawing";
 import { getCanvasAnnotation } from "@/lib/response-types/feedback";
 import type {
   AnnotateSourceConfig,
@@ -119,7 +119,29 @@ export function ReviewResponseView({ question, answer, feedbackMessage, feedback
     const width = Math.max(320, Math.min(800, config.width ?? 600));
     const height = Math.max(200, Math.min(600, config.height ?? 360));
     const background = drawDiagramBackgroundUrl(config, question.promptImagePath);
-    body = (
+    const photo = drawDiagramPhoto(value);
+    body = photo ? (
+      <>
+        <div className="overflow-hidden rounded-[10px] border border-[var(--tp-border)]">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={photo.dataUrl}
+            alt={t("responseTypes.drawDiagram.photoAlt")}
+            className="max-h-[480px] w-full bg-white object-contain"
+            data-testid="review-draw-photo-answer"
+          />
+        </div>
+        {annotationBlock(
+          <DrawingCanvas
+            width={photo.width}
+            height={photo.height}
+            strokes={annotation}
+            backgroundImageUrl={photo.dataUrl}
+            readOnly
+          />,
+        )}
+      </>
+    ) : (
       <>
         <DrawingCanvas
           width={width}

@@ -430,6 +430,11 @@ function annotationNotes(
   }
 }
 
+function parseDrawPhoto(studentAnswer: string): string {
+  const value = parseResponseValue("drawDiagram", studentAnswer);
+  return value.type === "drawDiagram" ? value.imageDataUrl ?? "" : "";
+}
+
 function renderDrawDiagramAnswer(
   doc: ExamPdfDoc,
   question: Question,
@@ -437,6 +442,12 @@ function renderDrawDiagramAnswer(
   teacherStrokes: DrawingStroke[],
   backgroundImage: ExamPdfImageBytes | undefined,
 ): void {
+  const photo = parseDrawPhoto(studentAnswer);
+  if (photo) {
+    // Student uploaded a photo in place of drawing.
+    renderPhotoImage(doc, photo, teacherStrokes);
+    return;
+  }
   const value = parseResponseValue("drawDiagram", studentAnswer);
   const strokes = value.type === "drawDiagram" ? value.strokes : [];
   const config = question.responseConfig as DrawDiagramConfig;
@@ -663,7 +674,11 @@ function renderPhotoAnswer(
   teacherStrokes: DrawingStroke[],
 ): void {
   const value = parseResponseValue("photoHandwritten", studentAnswer);
-  const dataUrl = value.type === "photoHandwritten" ? value.imageDataUrl : "";
+  renderPhotoImage(doc, value.type === "photoHandwritten" ? value.imageDataUrl : "", teacherStrokes);
+}
+
+/** Embeds an uploaded answer photo (natural aspect) with teacher annotation strokes on top. */
+function renderPhotoImage(doc: ExamPdfDoc, dataUrl: string, teacherStrokes: DrawingStroke[]): void {
   if (!dataUrl) {
     renderTextAnswer(doc, "");
     return;
@@ -1004,7 +1019,9 @@ function renderStudentQuestions(
     const promptImage = questionImages[question.id];
     const imageAsCanvasBackground =
       normalizeResponseType(question.type) === "drawDiagram" &&
-      (question.responseConfig as DrawDiagramConfig).promptImageAsBackground === true;
+      (question.responseConfig as DrawDiagramConfig).promptImageAsBackground === true &&
+      // A photo uploaded instead of drawing replaces the canvas, so the image goes inline.
+      !parseDrawPhoto(studentAnswer);
     if (promptImage && !imageAsCanvasBackground) {
       renderInlineImage(doc, promptImage);
     }

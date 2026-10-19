@@ -292,6 +292,21 @@ describe("exam-pdf", () => {
     expect(Buffer.from(empty).toString("latin1")).not.toContain("/Subtype /Image");
   });
 
+  it("embeds a photo uploaded in place of a drawDiagram drawing", async () => {
+    const drawForm = formWithQuestion({ id: "q-draw-photo", type: "drawDiagram" });
+    const dataUrl =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const answer = JSON.stringify({
+      type: "drawDiagram",
+      strokes: [],
+      imageDataUrl: dataUrl,
+      imageWidth: 1,
+      imageHeight: 1,
+    });
+    const withPhoto = await buildWithAnswer(drawForm, { "q-draw-photo": answer });
+    expect(Buffer.from(withPhoto).toString("latin1")).toContain("/Subtype /Image");
+  });
+
   it("renders trueFalse answers with markers", async () => {
     const tfForm = formWithQuestion({
       id: "q-tf",

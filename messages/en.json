@@ -890,8 +890,10 @@
       "templateHeading": "Need help creating the file?",
       "templateHint": "Download the AI guide and paste it into ChatGPT or Claude with your material. The guide tells the assistant how to prepare an exam Truepaper can import.",
       "uploadHeading": "Upload your exam file",
-      "chooseFile": "Choose exam file",
+      "chooseFile": "Drag your exam file here, or click to choose",
       "acceptedFormats": "Use the file your AI assistant saved for you",
+      "dropToAdd": "Drop to add this file",
+      "wrongFileType": "That isn't an exam file. Use the .json file your AI assistant saved for you.",
       "errors": {
         "invalidJson": "We couldn't read that file. Ask the AI to create the exam again, save the file it provides, and try uploading once more.",
         "failed": "Could not import the exam."
@@ -1173,7 +1175,14 @@
     "drawDiagram": {
       "label": "Draw / diagram",
       "undo": "Undo",
-      "clear": "Clear"
+      "clear": "Clear",
+      "drawMode": "Draw",
+      "photoMode": "Upload a photo",
+      "photoEmpty": "Draw it on paper, then take or upload a photo of it.",
+      "photoReplacesDrawing": "Your uploaded photo is your answer. Remove it to answer with a drawing instead.",
+      "removePhotoAndDraw": "Remove photo and draw",
+      "photoSubmitted": "Uploaded a photo instead of drawing",
+      "photoAlt": "Uploaded photo of the diagram"
     },
     "graph": {
       "label": "Graph",
@@ -1289,7 +1298,9 @@
       "orderItems": "Items in correct order",
       "labelZones": "Zones and correct labels",
       "zonePrompt": "Zone prompt",
-      "correctTerm": "Correct label"
+      "correctTerm": "Correct label",
+      "canvasAllowPhoto": "Let students upload a photo instead of drawing",
+      "canvasAllowPhotoHint": "Useful on small screens or for detailed diagrams drawn on paper."
     }
   },
   "offline": {

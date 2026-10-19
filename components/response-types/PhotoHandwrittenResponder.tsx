@@ -13,6 +13,8 @@ type Props = {
   height: number;
   disabled: boolean;
   config: PhotoHandwrittenConfig;
+  /** Overrides the empty-state hint (defaults to the handwritten-work copy). */
+  emptyLabel?: string;
   onChange: (imageDataUrl: string, width: number, height: number) => void;
 };
 
@@ -22,6 +24,7 @@ export function PhotoHandwrittenResponder({
   height,
   disabled,
   config,
+  emptyLabel,
   onChange,
 }: Props) {
   const t = useTranslations();
@@ -90,7 +93,7 @@ export function PhotoHandwrittenResponder({
         </div>
       ) : (
         <p className="rounded-[var(--tp-radius-sm)] border border-dashed border-[var(--tp-border)] px-4 py-8 text-center text-sm text-[var(--tp-text-secondary)]">
-          {t("responseTypes.photoHandwritten.empty")}
+          {emptyLabel ?? t("responseTypes.photoHandwritten.empty")}
         </p>
       )}
       {imageDataUrl && width > 0 && height > 0 ? (

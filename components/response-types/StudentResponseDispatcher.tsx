@@ -22,6 +22,7 @@ import {
 } from "@/lib/response-types/answers";
 import {
   drawDiagramBackgroundUrl,
+  drawDiagramPhoto,
   promptImageUsedAsCanvasBackground,
 } from "@/lib/response-types/drawing";
 import {
@@ -102,6 +103,7 @@ export function StudentResponseDispatcher({
   const drawBackgroundUrl = drawConfig
     ? drawDiagramBackgroundUrl(drawConfig, question.promptImagePath)
     : undefined;
+  const drawPhoto = value.type === "drawDiagram" ? drawDiagramPhoto(value) : null;
   const imageInsideCanvas =
     drawConfig !== null &&
     promptImageUsedAsCanvasBackground(drawConfig, question.promptImagePath);
@@ -230,11 +232,23 @@ export function StudentResponseDispatcher({
       {type === "drawDiagram" && value.type === "drawDiagram" ? (
         <DrawDiagramResponder
           strokes={value.strokes}
+          photo={drawPhoto}
           disabled={disabled}
           config={question.responseConfig as DrawDiagramConfig}
           backgroundImageUrl={drawBackgroundUrl}
           onChange={(strokes) =>
-            onAnswerChange(serializeResponseValue({ type: "drawDiagram", strokes }))
+            onAnswerChange(serializeResponseValue({ ...value, strokes }))
+          }
+          onPhotoChange={(photo) =>
+            onAnswerChange(
+              serializeResponseValue({
+                type: "drawDiagram",
+                strokes: value.strokes,
+                imageDataUrl: photo?.dataUrl,
+                imageWidth: photo?.width,
+                imageHeight: photo?.height,
+              }),
+            )
           }
         />
       ) : null}
@@ -351,7 +365,21 @@ export function StudentResponseDispatcher({
               />
             </div>
           ) : null}
-          {canvasAnnotation.length > 0 && value.type === "drawDiagram" ? (
+          {canvasAnnotation.length > 0 && value.type === "drawDiagram" && drawPhoto ? (
+            <div>
+              <p className="mb-2 text-xs font-medium text-[var(--tp-text-secondary)]">
+                {t("responseTypes.feedback.annotation")}
+              </p>
+              <DrawingCanvas
+                width={drawPhoto.width}
+                height={drawPhoto.height}
+                strokes={canvasAnnotation}
+                backgroundImageUrl={drawPhoto.dataUrl}
+                readOnly
+              />
+            </div>
+          ) : null}
+          {canvasAnnotation.length > 0 && value.type === "drawDiagram" && !drawPhoto ? (
             <div>
               <p className="mb-2 text-xs font-medium text-[var(--tp-text-secondary)]">
                 {t("responseTypes.feedback.annotation")}

@@ -109,3 +109,28 @@ describe("response answer wire format", () => {
     ).toBe("only working");
   });
 });
+
+describe("drawDiagram photo answers", () => {
+  it("round-trips an uploaded photo alongside strokes and counts it as answered", () => {
+    const raw = serializeResponseValue({
+      type: "drawDiagram",
+      strokes: [],
+      imageDataUrl: "data:image/jpeg;base64,AAA",
+      imageWidth: 800,
+      imageHeight: 600,
+    });
+    expect(parseResponseValue("drawDiagram", raw)).toEqual({
+      type: "drawDiagram",
+      strokes: [],
+      imageDataUrl: "data:image/jpeg;base64,AAA",
+      imageWidth: 800,
+      imageHeight: 600,
+    });
+    expect(isResponseAnswered("drawDiagram", raw)).toBe(true);
+  });
+
+  it("omits photo fields when there is no photo", () => {
+    const raw = serializeResponseValue({ type: "drawDiagram", strokes: [], imageDataUrl: undefined });
+    expect(JSON.parse(raw)).toEqual({ type: "drawDiagram", strokes: [] });
+  });
+});

@@ -1,7 +1,8 @@
 /** Normalized canvas coordinates (0–1) for resolution-independent strokes. */
 
 import { formAssetPublicUrl } from "@/lib/form-assets";
-import type { DrawDiagramConfig } from "@/lib/response-types/types";
+import { parseResponseValue } from "@/lib/response-types/answers";
+import type { DrawDiagramConfig, DrawDiagramValue } from "@/lib/response-types/types";
 
 export type DrawingPoint = { x: number; y: number };
 
@@ -13,6 +14,24 @@ export function promptImageUsedAsCanvasBackground(
   return (
     config.promptImageAsBackground === true && formAssetPublicUrl(promptImagePath ?? null) !== null
   );
+}
+
+/**
+ * Whether a drawDiagram question's image is drawn inside the answer canvas for this answer.
+ * False when the student uploaded a photo instead, so callers show the image above the answer.
+ */
+export function promptImageInsideDrawAnswer(
+  question: { type: string; responseConfig: unknown; promptImagePath?: string | null },
+  rawAnswer: string | undefined,
+): boolean {
+  if (question.type !== "drawDiagram") {
+    return false;
+  }
+  if (!promptImageUsedAsCanvasBackground(question.responseConfig as DrawDiagramConfig, question.promptImagePath)) {
+    return false;
+  }
+  const value = parseResponseValue("drawDiagram", rawAnswer);
+  return !(value.type === "drawDiagram" && value.imageDataUrl);
 }
 
 /** Background for a drawDiagram canvas: uploaded question image when opted in, else legacy data URL. */
@@ -27,6 +46,27 @@ export function drawDiagramBackgroundUrl(
     }
   }
   return config.backgroundDataUrl;
+}
+
+/** Students may upload a photo instead of drawing unless the teacher turned it off. */
+export function drawDiagramImageUploadAllowed(config: DrawDiagramConfig): boolean {
+  return config.allowImageUpload !== false;
+}
+
+export type DrawDiagramPhoto = { dataUrl: string; width: number; height: number };
+
+/** The uploaded photo that replaces the drawing, or null when the answer is the drawing itself. */
+export function drawDiagramPhoto(
+  value: Pick<DrawDiagramValue, "imageDataUrl" | "imageWidth" | "imageHeight">,
+): DrawDiagramPhoto | null {
+  if (!value.imageDataUrl) {
+    return null;
+  }
+  return {
+    dataUrl: value.imageDataUrl,
+    width: value.imageWidth || 600,
+    height: value.imageHeight || 400,
+  };
 }
 
 export type DrawingStroke = {
