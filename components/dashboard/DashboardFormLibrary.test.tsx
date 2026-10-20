@@ -47,7 +47,7 @@ describe("DashboardFormLibrary", () => {
     expect(requestJson).toHaveBeenCalledWith("/api/forms?summary=1");
   });
 
-  it("opens the Get link tab from Copy start link without the menu close wiping it", async () => {
+  it("opens start settings from Copy start link without the menu close wiping it", async () => {
     requestJson.mockResolvedValue({ forms: [sampleForm] });
 
     renderWithI18n(<DashboardFormLibrary onError={vi.fn()} />);
@@ -60,9 +60,9 @@ describe("DashboardFormLibrary", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: /Copy start link/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole("dialog", { name: /Teacher start link/i })).toBeInTheDocument();
+      expect(screen.getByRole("dialog", { name: /Start session/i })).toBeInTheDocument();
     });
-    expect(screen.getByRole("button", { name: /Copy link/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Copy start link/i })).toBeInTheDocument();
   });
 
   describe("New form menu", () => {

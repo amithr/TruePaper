@@ -72,13 +72,13 @@ describe("FormLibraryRow", () => {
     expect(onStart).not.toHaveBeenCalled();
   });
 
-  it("starts from the popover CTA with the chosen summary", async () => {
+  it("opens collapsed on a 'same as last time' summary and starts in one click", async () => {
+    window.localStorage.clear();
     const onStart = vi.fn();
 
     renderWithI18n(
       <FormLibraryRow
         {...sharedProps}
-        autogradeCount={4}
         openPopover="start"
         onOpenPopoverChange={vi.fn()}
         onStart={onStart}
@@ -86,19 +86,104 @@ describe("FormLibraryRow", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole("dialog", { name: /Session options/i })).toBeInTheDocument();
+      expect(screen.getByRole("dialog", { name: /Start session/i })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole("button", { name: /Start live session, 45 min/i }));
+    expect(screen.getByTestId("start-summary")).toHaveTextContent("Live session, 45 min");
+    expect(screen.getByText("Late sync on")).toBeInTheDocument();
+    expect(screen.queryByRole("radiogroup")).toBeNull();
+    expect(screen.queryByRole("tab")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Start session$/i }));
     expect(onStart).toHaveBeenCalledTimes(1);
   });
 
-  it("shows a live URL preview on the Get link tab and copies it from the CTA", async () => {
+  it("expands settings on demand and remembers that choice", async () => {
+    window.localStorage.clear();
+    const { unmount } = renderWithI18n(
+      <FormLibraryRow {...sharedProps} openPopover="start" onOpenPopoverChange={vi.fn()} onStart={vi.fn()} />,
+    );
+    const toggle = await screen.findByRole("button", { name: /Change settings/i });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(toggle);
+    expect(screen.getByRole("button", { name: /Hide settings/i })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(screen.getByRole("radiogroup", { name: /Duration/i })).toBeInTheDocument();
+    unmount();
+
+    renderWithI18n(
+      <FormLibraryRow {...sharedProps} openPopover="start" onOpenPopoverChange={vi.fn()} onStart={vi.fn()} />,
+    );
+    expect(await screen.findByRole("radiogroup", { name: /Duration/i })).toBeInTheDocument();
+    window.localStorage.clear();
+  });
+
+  it("uses duration presets, with Custom for other values", async () => {
+    window.localStorage.setItem("truepaper_start_settings_expanded", "1");
+    const onDurationChange = vi.fn();
+    const onNoTimeLimitChange = vi.fn();
+    const { rerender } = renderWithI18n(
+      <FormLibraryRow
+        {...sharedProps}
+        openPopover="start"
+        onOpenPopoverChange={vi.fn()}
+        onStart={vi.fn()}
+        onDurationChange={onDurationChange}
+        onNoTimeLimitChange={onNoTimeLimitChange}
+      />,
+    );
+
+    expect(await screen.findByRole("radio", { name: "45 min" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.queryByRole("spinbutton")).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: "60 min" }));
+    expect(onNoTimeLimitChange).toHaveBeenLastCalledWith(false);
+    expect(onDurationChange).toHaveBeenLastCalledWith(60);
+    fireEvent.click(screen.getByRole("radio", { name: /No limit/i }));
+    expect(onNoTimeLimitChange).toHaveBeenLastCalledWith(true);
+
+    rerender(
+      <FormLibraryRow
+        {...sharedProps}
+        durationMinutes={50}
+        openPopover="start"
+        onOpenPopoverChange={vi.fn()}
+        onStart={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("radio", { name: "Custom" })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByRole("spinbutton", { name: /Session minutes/i })).toHaveValue(50);
+    window.localStorage.clear();
+  });
+
+  it("only offers late sync for Live, where it has an effect", async () => {
+    window.localStorage.setItem("truepaper_start_settings_expanded", "1");
+    const { rerender } = renderWithI18n(
+      <FormLibraryRow {...sharedProps} openPopover="start" onOpenPopoverChange={vi.fn()} onStart={vi.fn()} />,
+    );
+    expect(await screen.findByLabelText(/saved offline after time's up/i)).toBeInTheDocument();
+
+    rerender(
+      <FormLibraryRow
+        {...sharedProps}
+        deliveryMode="self_paced"
+        openPopover="start"
+        onOpenPopoverChange={vi.fn()}
+        onStart={vi.fn()}
+      />,
+    );
+    expect(screen.queryByLabelText(/saved offline after time's up/i)).toBeNull();
+    expect(screen.queryByText(/Late sync/i)).toBeNull();
+    window.localStorage.clear();
+  });
+
+  it("opens with settings expanded from the ⋯ menu and copies the start link", async () => {
+    window.localStorage.clear();
     const onOpenPopoverChange = vi.fn();
 
     renderWithI18n(
       <FormLibraryRow
         {...sharedProps}
-        autogradeCount={4}
         deliveryMode="self_paced"
         acceptLateSync={false}
         liveTeacherFeedbackEnabled
@@ -109,13 +194,10 @@ describe("FormLibraryRow", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole("dialog", { name: /Teacher start link/i })).toBeInTheDocument();
+      expect(screen.getByRole("radiogroup", { name: /Duration/i })).toBeInTheDocument();
     });
-    expect(screen.getByText("minutes=45")).toBeInTheDocument();
-    expect(screen.getByText("delivery=self_paced")).toBeInTheDocument();
-    expect(screen.getByText("lateSync=0")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /Copy link/i }));
+    expect(screen.getByText("Live feedback on")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Copy start link/i }));
     expect(copyToClipboard).toHaveBeenCalledWith(
       "https://truepaper.test/en/dashboard/forms/form-1/start?minutes=45&delivery=self_paced&lateSync=0",
     );

@@ -6,6 +6,7 @@ import {
   flip,
   offset,
   shift,
+  size,
   useFloating,
 } from "@floating-ui/react";
 import { useEffect, useId, useMemo, useRef, useState, type MouseEvent } from "react";
@@ -50,6 +51,26 @@ type Props = {
 };
 
 const DELIVERY_MODES: DeliveryMode[] = ["live", "self_paced", "hybrid"];
+
+const DURATION_PRESETS = [30, 45, 60, 90];
+
+const START_SETTINGS_EXPANDED_KEY = "truepaper_start_settings_expanded";
+
+function readStartSettingsExpanded(): boolean {
+  try {
+    return typeof window !== "undefined" && window.localStorage.getItem(START_SETTINGS_EXPANDED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeStartSettingsExpanded(expanded: boolean): void {
+  try {
+    window.localStorage.setItem(START_SETTINGS_EXPANDED_KEY, expanded ? "1" : "0");
+  } catch {
+    /* per-browser convenience only */
+  }
+}
 
 function deliveryShortKey(
   mode: DeliveryMode,
@@ -119,42 +140,23 @@ export function FormLibraryRow({
       }),
     [origin, locale, form.id, durationMinutes, noTimeLimit, deliveryMode, acceptLateSync],
   );
-  const [linkBase, linkQuery = ""] = startLinkUrl.split("?");
-  const linkParams = useMemo(
-    () =>
-      linkQuery
-        ? linkQuery.split("&").map((pair) => {
-            const eq = pair.indexOf("=");
-            return [pair.slice(0, eq), pair.slice(eq + 1)] as const;
-          })
-        : [],
-    [linkQuery],
-  );
+  // Settings stay collapsed ("start like last time") unless this teacher keeps them open.
+  const [settingsPref, setSettingsPref] = useState(readStartSettingsExpanded);
+  const settingsExpanded = settingsPref || linkTab;
+  const toggleSettings = () => {
+    const next = !settingsExpanded;
+    setSettingsPref(next);
+    writeStartSettingsExpanded(next);
+    if (!next && linkTab) {
+      onOpenPopoverChange("start");
+    }
+  };
+  const [customDurationChosen, setCustomDurationChosen] = useState(false);
+  const customDuration =
+    !noTimeLimit && (customDurationChosen || !DURATION_PRESETS.includes(durationMinutes));
+  const customInputRef = useRef<HTMLInputElement>(null);
 
-  // Flash query params that changed while the Get link tab is visible.
-  const prevParamsRef = useRef<Map<string, string> | null>(null);
-  const [flashedParams, setFlashedParams] = useState<ReadonlySet<string>>(new Set());
-  useEffect(() => {
-    if (!linkTab) {
-      prevParamsRef.current = null;
-      return;
-    }
-    const next = new Map(linkParams);
-    const prev = prevParamsRef.current;
-    prevParamsRef.current = next;
-    if (!prev) {
-      return;
-    }
-    const changed = [...next].filter(([key, value]) => prev.get(key) !== value).map(([key]) => key);
-    if (changed.length === 0) {
-      return;
-    }
-    setFlashedParams(new Set(changed));
-    const timer = window.setTimeout(() => setFlashedParams(new Set()), 700);
-    return () => window.clearTimeout(timer);
-  }, [linkTab, linkParams]);
-
-  // One-time attention pulse when the popover opens directly on Get link (⋯ menu).
+  // One-time attention pulse on Copy start link when opened from the ⋯ menu.
   const wasStartOpenRef = useRef(false);
   const [linkAttention, setLinkAttention] = useState(false);
   useEffect(() => {
@@ -168,11 +170,22 @@ export function FormLibraryRow({
     return () => window.clearTimeout(timer);
   }, [openPopover, startOpen]);
 
-  const { refs, floatingStyles } = useFloating({
+  const { refs, floatingStyles, isPositioned } = useFloating({
     open: startOpen,
     onOpenChange: (open) => onOpenPopoverChange(open ? "start" : null),
     placement: "bottom-end",
-    middleware: [offset(8), flip({ padding: 8 }), shift({ padding: 8 })],
+    middleware: [
+      offset(8),
+      flip({ padding: 8 }),
+      shift({ padding: 8 }),
+      // Expanded settings can outgrow a phone screen: cap to the visible space and scroll inside.
+      size({
+        padding: 8,
+        apply({ availableHeight, elements }) {
+          elements.floating.style.maxHeight = `${Math.max(220, availableHeight)}px`;
+        },
+      }),
+    ],
     whileElementsMounted: autoUpdate,
   });
 
@@ -224,6 +237,16 @@ export function FormLibraryRow({
   const startSummary = noTimeLimit
     ? t("formLibrary.startSummaryNoLimit", { mode: modeLabel })
     : t("formLibrary.startSummaryTimed", { mode: modeLabel, minutes: durationMinutes });
+  const startHeadline = startSummary.charAt(0).toLocaleUpperCase(locale) + startSummary.slice(1);
+  // Late sync only changes anything for Live (self-paced / hybrid always sync after close).
+  const startExtras = [
+    deliveryMode === "live"
+      ? acceptLateSync
+        ? t("formLibrary.startPopover.lateSyncOn")
+        : t("formLibrary.startPopover.lateSyncOff")
+      : null,
+    liveTeacherFeedbackEnabled ? t("formLibrary.startPopover.feedbackOn") : null,
+  ].filter((part): part is string => part !== null);
 
   const onRowClick = (event: MouseEvent<HTMLLIElement>) => {
     if ((event.target as HTMLElement).closest("[data-row-action], a")) {
@@ -323,247 +346,231 @@ export function FormLibraryRow({
               refs.setFloating(node);
             }}
             role="dialog"
-            aria-label={
-              linkTab ? t("formLibrary.startLink.title") : t("formLibrary.startPopoverTitle")
-            }
+            aria-label={t("formLibrary.startPopover.title")}
             className="tp-form-library-start-popover"
-            style={floatingStyles}
+            // Hidden for the first frame, before Floating UI has measured, so it never flashes at 0,0.
+            style={{ ...floatingStyles, visibility: isPositioned ? "visible" : "hidden" }}
             data-row-action
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="tp-form-library-start-popover__tabs" role="tablist">
-              <button
-                type="button"
-                role="tab"
-                aria-selected={!linkTab}
-                data-active={!linkTab ? "true" : undefined}
-                onClick={() => onOpenPopoverChange("start")}
-                className={`tp-form-library-start-popover__tab ${focusRing}`}
-              >
-                {t("formLibrary.startLink.tabStart")}
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={linkTab}
-                data-active={linkTab ? "true" : undefined}
-                onClick={() => onOpenPopoverChange("start-link")}
-                className={`tp-form-library-start-popover__tab ${focusRing}`}
-              >
-                {t("formLibrary.startLink.tabLink")}
-              </button>
-            </div>
-            <div className="tp-form-library-start-popover__title">
-              {linkTab ? t("formLibrary.startLink.title") : t("formLibrary.startPopoverTitle")}
-            </div>
-            <div className="tp-form-library-start-popover__subtitle">
-              {linkTab
-                ? t("formLibrary.startLink.subtitle")
-                : t("formLibrary.startPopoverSubtitle")}
-            </div>
-
-            <div className="tp-form-library-start-popover__duration">
-              <label className="tp-form-library-start-popover__duration-label" htmlFor={`${startPanelId}-mins`}>
-                {t("formLibrary.durationLabel")}
-              </label>
-              <input
-                id={`${startPanelId}-mins`}
-                type="number"
-                min={5}
-                max={480}
-                value={durationMinutes}
-                disabled={noTimeLimit}
-                onChange={(e) => onDurationChange(Number(e.target.value) || 45)}
-                aria-label={t("formLibrary.minutesAria")}
-                className="tp-form-library-start-popover__minutes"
-              />
-              <span className="tp-form-library-start-popover__unit">{t("common.min")}</span>
-              <label className="tp-form-library-start-popover__no-limit">
-                <input
-                  type="checkbox"
-                  checked={noTimeLimit}
-                  onChange={(e) => onNoTimeLimitChange(e.target.checked)}
-                />
-                <span>{t("common.noLimit")}</span>
-              </label>
-            </div>
-
-            <div className="tp-form-library-start-popover__delivery">
-              <div className="tp-form-library-start-popover__field-label" id={`${startPanelId}-delivery`}>
-                {t("formLibrary.deliveryMode")}
-              </div>
-              <div
-                className="tp-form-library-segments"
-                role="radiogroup"
-                aria-labelledby={`${startPanelId}-delivery`}
-              >
-                {DELIVERY_MODES.map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    role="radio"
-                    aria-checked={deliveryMode === mode}
-                    aria-label={t(`formLibrary.${deliveryShortKey(mode)}`)}
-                    className="tp-form-library-segment"
-                    data-active={deliveryMode === mode ? "true" : undefined}
-                    onClick={() => onDeliveryModeChange(mode)}
-                  >
-                    {t(`formLibrary.${deliveryShortKey(mode)}`)}
-                  </button>
-                ))}
-              </div>
-              <p className="tp-form-library-start-popover__help">
-                {t(`formLibrary.${deliveryHelpKey(deliveryMode)}`)}
-              </p>
-            </div>
-
-            <label className="tp-form-library-start-popover__late-sync">
-              <input
-                type="checkbox"
-                checked={acceptLateSync}
-                onChange={(e) => onAcceptLateSyncChange(e.target.checked)}
-              />
-              <span>
-                {t("formLibrary.acceptLateSyncLabel")}{" "}
-                <span className="tp-form-library-start-popover__late-sync-hint">
-                  — {t("formLibrary.acceptLateSyncHint")}
-                </span>
-              </span>
-            </label>
-
-            <label className="tp-form-library-start-popover__late-sync">
-              <input
-                type="checkbox"
-                checked={liveTeacherFeedbackEnabled}
-                onChange={(e) => onLiveTeacherFeedbackChange(e.target.checked)}
-              />
-              <span>
-                {t("formLibrary.liveFeedbackLabel")}{" "}
-                <span className="tp-form-library-start-popover__late-sync-hint">
-                  — {t("formLibrary.liveFeedbackHint")}
-                </span>
-              </span>
-            </label>
-
-            {linkTab ? (
-              <div
-                className="tp-form-library-link-box"
-                data-attn={linkAttention ? "true" : undefined}
-              >
-                <div className="tp-form-library-link-box__label">
-                  <svg
-                    aria-hidden
-                    className="h-3 w-3"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
-                  </svg>
-                  {t("formLibrary.startLink.boxLabel")}
-                </div>
-                <div className="tp-form-library-link-box__url">
-                  {linkBase}
-                  {linkParams.length > 0 ? "?" : ""}
-                  {linkParams.map(([key, value], index) => (
-                    <span key={key}>
-                      {index > 0 ? <span className="opacity-50">&amp;</span> : null}
-                      <span
-                        className="tp-form-library-link-box__param"
-                        data-flash={flashedParams.has(key) ? "true" : undefined}
-                      >
-                        {key}={value}
-                      </span>
-                    </span>
-                  ))}
-                </div>
-                <p className="tp-form-library-link-box__summary">
-                  {t("formLibrary.startLink.summaryOpens")} <b>{startSummary}</b> ·{" "}
-                  {t("formLibrary.startLink.summaryLateSync")}{" "}
-                  <b>
-                    {acceptLateSync
-                      ? t("formLibrary.startLink.on")
-                      : t("formLibrary.startLink.off")}
-                  </b>{" "}
-                  · {t("formLibrary.startLink.summaryFeedback")}{" "}
-                  <b>
-                    {liveTeacherFeedbackEnabled
-                      ? t("formLibrary.startLink.on")
-                      : t("formLibrary.startLink.off")}
-                  </b>
-                </p>
-              </div>
+            <p className="tp-form-library-start-popover__summary" data-testid="start-summary">
+              {startHeadline}
+            </p>
+            {startExtras.length > 0 ? (
+              <p className="tp-form-library-start-popover__extras">{startExtras.join(" · ")}</p>
             ) : null}
 
-            {linkTab ? (
-              <button
-                type="button"
-                disabled={!startLinkUrl}
-                onClick={() => {
-                  const summary = startSummary;
-                  void copyToClipboard(startLinkUrl).then((ok) => {
-                    if (ok) {
-                      toast.success(t("formLibrary.startLink.copiedSummary", { summary }));
-                    }
-                  });
-                  onOpenPopoverChange(null);
-                }}
-                className={`${ui.btnPrimary} tp-form-library-start-popover__cta disabled:opacity-50`}
-              >
-                <svg
-                  aria-hidden
-                  className="h-3.5 w-3.5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <rect x="9" y="9" width="13" height="13" rx="2" />
-                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                </svg>
-                {t("formLibrary.startLink.copyCta", { summary: startSummary })}
-              </button>
-            ) : (
-              <button
-                type="button"
-                disabled={starting}
-                onClick={() => {
-                  onOpenPopoverChange(null);
-                  onStart();
-                }}
-                className={`${ui.btnPrimary} tp-form-library-start-popover__cta disabled:opacity-50`}
-                aria-busy={starting}
-              >
-                <svg aria-hidden className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M8 5v14l11-7z" />
-                </svg>
-                {starting
-                  ? t("common.starting")
-                  : t("formLibrary.startCta", { summary: startSummary })}
-              </button>
-            )}
+            <button
+              type="button"
+              disabled={starting}
+              onClick={() => {
+                onOpenPopoverChange(null);
+                onStart();
+              }}
+              className={`${ui.btnPrimary} tp-form-library-start-popover__cta disabled:opacity-50`}
+              aria-busy={starting}
+            >
+              <svg aria-hidden className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+              {starting ? t("common.starting") : t("formLibrary.startPopover.startCta")}
+            </button>
 
-            {linkTab ? (
-              <div className="tp-form-library-start-popover__callout">
-                <svg
-                  aria-hidden
-                  className="h-3.5 w-3.5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <circle cx="12" cy="12" r="9" />
-                  <path d="M12 8v.01M11 12h1v4h1" />
-                </svg>
-                <span>{t("formLibrary.startLink.callout")}</span>
+            <button
+              type="button"
+              aria-expanded={settingsExpanded}
+              aria-controls={`${startPanelId}-settings`}
+              onClick={toggleSettings}
+              className={`tp-form-library-start-popover__toggle ${focusRing}`}
+            >
+              {settingsExpanded
+                ? t("formLibrary.startPopover.hideSettings")
+                : t("formLibrary.startPopover.changeSettings")}
+              <svg
+                aria-hidden
+                className="h-3.5 w-3.5"
+                data-open={settingsExpanded ? "true" : undefined}
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="m6 9 6 6 6-6" />
+              </svg>
+            </button>
+
+            {settingsExpanded ? (
+              <div id={`${startPanelId}-settings`} className="tp-form-library-start-popover__settings">
+                <div className="tp-form-library-start-popover__field">
+                  <div
+                    className="tp-form-library-start-popover__field-label"
+                    id={`${startPanelId}-duration`}
+                  >
+                    {t("formLibrary.durationLabel")}
+                  </div>
+                  <div
+                    className="tp-form-library-chips"
+                    role="radiogroup"
+                    aria-labelledby={`${startPanelId}-duration`}
+                  >
+                    {DURATION_PRESETS.map((minutes) => {
+                      const active = !noTimeLimit && !customDuration && durationMinutes === minutes;
+                      return (
+                        <button
+                          key={minutes}
+                          type="button"
+                          role="radio"
+                          aria-checked={active}
+                          data-active={active ? "true" : undefined}
+                          className={`tp-form-library-chip ${focusRing}`}
+                          onClick={() => {
+                            setCustomDurationChosen(false);
+                            onNoTimeLimitChange(false);
+                            onDurationChange(minutes);
+                          }}
+                        >
+                          {t("formLibrary.startPopover.minutesChip", { n: minutes })}
+                        </button>
+                      );
+                    })}
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={noTimeLimit}
+                      data-active={noTimeLimit ? "true" : undefined}
+                      className={`tp-form-library-chip ${focusRing}`}
+                      onClick={() => {
+                        setCustomDurationChosen(false);
+                        onNoTimeLimitChange(true);
+                      }}
+                    >
+                      {t("common.noLimit")}
+                    </button>
+                    <button
+                      type="button"
+                      role="radio"
+                      aria-checked={customDuration}
+                      data-active={customDuration ? "true" : undefined}
+                      className={`tp-form-library-chip ${focusRing}`}
+                      onClick={() => {
+                        setCustomDurationChosen(true);
+                        onNoTimeLimitChange(false);
+                        window.setTimeout(() => customInputRef.current?.focus(), 0);
+                      }}
+                    >
+                      {t("formLibrary.startPopover.durationCustom")}
+                    </button>
+                  </div>
+                  {customDuration ? (
+                    <div className="tp-form-library-start-popover__custom">
+                      <input
+                        ref={customInputRef}
+                        type="number"
+                        min={5}
+                        max={480}
+                        value={durationMinutes}
+                        onChange={(e) => onDurationChange(Number(e.target.value) || 45)}
+                        aria-label={t("formLibrary.minutesAria")}
+                        className="tp-form-library-start-popover__minutes"
+                      />
+                      <span className="tp-form-library-start-popover__unit">{t("common.min")}</span>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="tp-form-library-start-popover__field">
+                  <div
+                    className="tp-form-library-start-popover__field-label"
+                    id={`${startPanelId}-delivery`}
+                  >
+                    {t("formLibrary.deliveryMode")}
+                  </div>
+                  <div
+                    className="tp-form-library-segments"
+                    role="radiogroup"
+                    aria-labelledby={`${startPanelId}-delivery`}
+                  >
+                    {DELIVERY_MODES.map((mode) => (
+                      <button
+                        key={mode}
+                        type="button"
+                        role="radio"
+                        aria-checked={deliveryMode === mode}
+                        aria-label={t(`formLibrary.${deliveryShortKey(mode)}`)}
+                        className="tp-form-library-segment"
+                        data-active={deliveryMode === mode ? "true" : undefined}
+                        onClick={() => onDeliveryModeChange(mode)}
+                      >
+                        {t(`formLibrary.${deliveryShortKey(mode)}`)}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="tp-form-library-start-popover__help">
+                    {t(`formLibrary.${deliveryHelpKey(deliveryMode)}`)}
+                  </p>
+                </div>
+
+                {deliveryMode === "live" ? (
+                  <label className="tp-form-library-start-popover__late-sync">
+                    <input
+                      type="checkbox"
+                      checked={acceptLateSync}
+                      onChange={(e) => onAcceptLateSyncChange(e.target.checked)}
+                    />
+                    <span>{t("formLibrary.acceptLateSyncLabel")}</span>
+                  </label>
+                ) : null}
+
+                <label className="tp-form-library-start-popover__late-sync">
+                  <input
+                    type="checkbox"
+                    checked={liveTeacherFeedbackEnabled}
+                    onChange={(e) => onLiveTeacherFeedbackChange(e.target.checked)}
+                  />
+                  <span>
+                    {t("formLibrary.liveFeedbackLabel")}{" "}
+                    <span className="tp-form-library-start-popover__late-sync-hint">
+                      — {t("formLibrary.liveFeedbackHint")}
+                    </span>
+                  </span>
+                </label>
+
+                <div className="tp-form-library-start-popover__link">
+                  <button
+                    type="button"
+                    disabled={!startLinkUrl}
+                    data-attn={linkAttention ? "true" : undefined}
+                    onClick={() => {
+                      const summary = startSummary;
+                      void copyToClipboard(startLinkUrl).then((ok) => {
+                        if (ok) {
+                          toast.success(t("formLibrary.startLink.copiedSummary", { summary }));
+                        }
+                      });
+                      onOpenPopoverChange(null);
+                    }}
+                    className={`tp-form-library-start-popover__copy-link ${focusRing} disabled:opacity-50`}
+                  >
+                    <svg
+                      aria-hidden
+                      className="h-3.5 w-3.5"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
+                    </svg>
+                    {t("formLibrary.startPopover.copyLink")}
+                  </button>
+                  <p className="tp-form-library-start-popover__link-hint">
+                    {t("formLibrary.startPopover.copyLinkHint")}
+                  </p>
+                </div>
               </div>
             ) : null}
           </div>
