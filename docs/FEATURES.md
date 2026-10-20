@@ -456,7 +456,7 @@ flowchart TD
 | `graph` | `GraphResponder.tsx` | No | Yes |
 | `photoHandwritten` | `PhotoHandwrittenResponder.tsx` | No | Yes |
 | `trueFalse` | `TrueFalseResponder.tsx` | Yes | Yes |
-| `matching` | `MatchingResponder.tsx` | Yes | Yes |
+| `matching` | `MatchingResponder.tsx` (exam-paper style: lettered definition key — sticky on desktop, "→ n" on used ones — and numbered terms each picking a letter via a native select overlaid on a wrapping display; picking a used definition moves it; progress "n of m matched") | Yes | Yes |
 | `ordering` | `OrderingResponder.tsx` | Yes | Yes |
 | `labelling` | `LabellingResponder.tsx` | Yes | Yes |
 | `mathInput` | `MathInputResponder.tsx` | Yes (final answer vs `acceptedAnswers`; workings unscored) | Yes |

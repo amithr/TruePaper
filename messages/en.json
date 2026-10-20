@@ -1225,8 +1225,12 @@
       "label": "Matching",
       "leftColumn": "Terms",
       "rightColumn": "Definitions",
-      "tapRight": "Tap a definition to match.",
-      "clear": "Clear"
+      "clear": "Clear",
+      "progress": "{matched} of {total} matched",
+      "choose": "Choose a definition…",
+      "usedBy": "matched to {n}",
+      "usedByShort": "→ {n}",
+      "clearFor": "Clear the match for {term}"
     },
     "ordering": {
       "label": "Ordering",

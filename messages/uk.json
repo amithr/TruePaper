@@ -1225,8 +1225,12 @@
       "label": "Відповідність",
       "leftColumn": "Терміни",
       "rightColumn": "Визначення",
-      "tapRight": "Торкніться визначення для пари.",
-      "clear": "Очистити"
+      "clear": "Очистити",
+      "progress": "Зіставлено {matched} з {total}",
+      "choose": "Оберіть визначення…",
+      "usedBy": "обрано для {n}",
+      "usedByShort": "→ {n}",
+      "clearFor": "Очистити відповідність для {term}"
     },
     "ordering": {
       "label": "Упорядкування",
