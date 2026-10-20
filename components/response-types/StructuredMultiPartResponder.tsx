@@ -1,16 +1,17 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Check } from "lucide-react";
+import { useMemo } from "react";
 
 import { ExamMarkdown } from "@/components/ExamMarkdown";
 import { StudentExamTextarea } from "@/components/StudentExamTextarea";
 import type { StructuredMultiPartConfig } from "@/lib/response-types/types";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
-import { focusRing } from "@/lib/ui";
 
 type Props = {
   questionId: string;
   parts: Record<string, string>;
+  /** Kept for callers; every part is visible now, so nothing needs restoring. */
   activePartId?: string;
   disabled: boolean;
   protect: boolean;
@@ -19,10 +20,13 @@ type Props = {
   onChange: (parts: Record<string, string>, activePartId: string) => void;
 };
 
+/**
+ * Exam-paper layout: every sub-part is listed in order (label, prompt, answer),
+ * so students can read the whole question and see what's left at a glance.
+ */
 export function StructuredMultiPartResponder({
   questionId,
   parts,
-  activePartId,
   disabled,
   protect,
   config,
@@ -31,102 +35,96 @@ export function StructuredMultiPartResponder({
 }: Props) {
   const t = useTranslations();
   const partList = config.parts;
-  const initialPart = activePartId && partList.some((p) => p.id === activePartId)
-    ? activePartId
-    : partList[0]?.id ?? "a";
-  const [currentPartId, setCurrentPartId] = useState(initialPart);
 
   const answeredCount = useMemo(
     () => partList.filter((part) => (parts[part.id] ?? "").trim().length > 0).length,
     [partList, parts],
   );
 
-  const currentPart = partList.find((p) => p.id === currentPartId) ?? partList[0];
-
-  if (!currentPart) {
+  if (partList.length === 0) {
     return null;
   }
 
-  const handlePartText = (text: string) => {
-    onChange({ ...parts, [currentPart.id]: text }, currentPart.id);
-  };
-
   return (
-    <div className="space-y-4">
-      <div
-        className="flex items-center justify-between gap-2 text-xs text-[var(--tp-text-muted)]"
+    <div className="tp-structured" data-testid="structured-parts">
+      <p
+        className="tp-structured__progress"
         role="status"
         aria-label={t("responseTypes.structured.progressAria", {
           answered: answeredCount,
           total: partList.length,
         })}
+        data-complete={answeredCount === partList.length ? "true" : undefined}
       >
-        <span>
-          {t("responseTypes.structured.progress", {
-            answered: answeredCount,
-            total: partList.length,
-          })}
-        </span>
-        <div className="tp-exam-progress__bar max-w-[8rem] flex-1" aria-hidden>
-          <div
-            className="tp-exam-progress__fill"
-            style={{
-              width: `${partList.length === 0 ? 0 : Math.round((answeredCount / partList.length) * 100)}%`,
-            }}
-          />
-        </div>
-      </div>
+        {t("responseTypes.structured.progress", {
+          answered: answeredCount,
+          total: partList.length,
+        })}
+      </p>
 
-      <div className="flex flex-wrap gap-2" role="tablist" aria-label={t("responseTypes.structured.partsAria")}>
+      <ol className="tp-structured__list">
         {partList.map((part) => {
-          const answered = (parts[part.id] ?? "").trim().length > 0;
-          const hasFeedback = Boolean(partFeedback[part.id]?.trim());
+          const value = parts[part.id] ?? "";
+          const answered = value.trim().length > 0;
+          const feedback = partFeedback[part.id]?.trim();
+          const fieldId = `${questionId}-${part.id}`;
+          const promptId = `${fieldId}-prompt`;
           return (
-            <button
+            <li
               key={part.id}
-              type="button"
-              role="tab"
-              aria-selected={currentPartId === part.id}
-              onClick={() => setCurrentPartId(part.id)}
-              className={`min-h-11 rounded-full border px-4 py-2 text-sm font-semibold transition-colors ${focusRing} ${
-                currentPartId === part.id
-                  ? "border-[var(--tp-accent)] bg-[var(--tp-accent-soft)] text-[var(--tp-text)]"
-                  : "border-[var(--tp-border)] bg-[var(--tp-surface)] text-[var(--tp-text-secondary)]"
-              }`}
+              className="tp-structured__part"
+              data-answered={answered ? "true" : undefined}
+              data-testid={`structured-part-${part.id}`}
             >
-              {part.label}
-              {answered ? <span className="ml-1 text-[var(--tp-mint)]" aria-hidden>·</span> : null}
-              {hasFeedback ? <span className="ml-1 text-[var(--tp-sky)]" aria-hidden>✦</span> : null}
-            </button>
+              <span className="tp-structured__label" aria-hidden>
+                {part.label}
+                {answered ? (
+                  <span className="tp-structured__check">
+                    <Check className="h-2.5 w-2.5" strokeWidth={3.5} />
+                  </span>
+                ) : null}
+              </span>
+              <div className="tp-structured__body">
+                <div id={promptId} className="tp-structured__prompt">
+                  <span className="sr-only">{part.label} </span>
+                  {part.prompt ? (
+                    <ExamMarkdown variant="body">{part.prompt}</ExamMarkdown>
+                  ) : null}
+                </div>
+                {feedback ? (
+                  <div className="tp-teacher-feedback-card">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-[var(--tp-sky)]">
+                      {t("responseTypes.feedback.partLabel", { part: part.label })}
+                    </p>
+                    <p className="mt-1 text-sm text-[var(--tp-text)]">{feedback}</p>
+                  </div>
+                ) : null}
+                {disabled && !answered ? (
+                  <p className="tp-structured__empty">{t("review.noAnswer")}</p>
+                ) : (
+                  <label className="block" htmlFor={fieldId}>
+                    <span className="sr-only">
+                      {t("responseTypes.structured.answerFor", { part: part.label })}
+                    </span>
+                    <StudentExamTextarea
+                      id={fieldId}
+                      rows={2}
+                      autoGrow
+                      ariaDescribedBy={part.prompt ? promptId : undefined}
+                      value={value}
+                      disabled={disabled}
+                      protect={protect}
+                      onValueChange={(text) => onChange({ ...parts, [part.id]: text }, part.id)}
+                      placeholder={disabled ? undefined : t("responseTypes.structured.placeholder")}
+                      className="tp-input tp-exam-textarea tp-structured__answer"
+                    />
+                  </label>
+                )}
+              </div>
+            </li>
           );
         })}
-      </div>
-
-      <div role="tabpanel" aria-labelledby={`${questionId}-part-${currentPart.id}`}>
-        {currentPart.prompt ? (
-          <ExamMarkdown variant="body" className="mb-2 text-sm">
-            {currentPart.prompt}
-          </ExamMarkdown>
-        ) : null}
-        {partFeedback[currentPart.id]?.trim() ? (
-          <div className="tp-teacher-feedback-card mb-3">
-            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--tp-sky)]">
-              {t("responseTypes.feedback.partLabel", { part: currentPart.label })}
-            </p>
-            <p className="mt-1 text-sm text-[var(--tp-text)]">{partFeedback[currentPart.id]}</p>
-          </div>
-        ) : null}
-        <StudentExamTextarea
-          id={`${questionId}-${currentPart.id}`}
-          rows={5}
-          value={parts[currentPart.id] ?? ""}
-          disabled={disabled}
-          protect={protect}
-          onValueChange={handlePartText}
-          placeholder={t("responseTypes.structured.placeholder", { part: currentPart.label })}
-          className="tp-input tp-exam-textarea"
-        />
-      </div>
+      </ol>
     </div>
   );
 }

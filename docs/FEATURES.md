@@ -159,7 +159,7 @@ flowchart LR
 - Stop early (finish all): `POST .../stop`
 - Delete closed session: `DELETE .../`
 - Join share UI: `components/SessionJoinShare.tsx`
-- Public projector board (no answers): `app/[lang]/live/[joinCode]/page.tsx` + `GET /api/public/live-board`
+- Public projector board (no answers): `app/[lang]/live/[joinCode]/page.tsx` + `GET /api/public/live-board` — "Exam structure" shows each question type as a pill with its translated label and count (`responseTypeLabelPath`; legacy aliases merge), sorted by count
 - **Shared teacher chrome:** `components/TeacherTopBar.tsx` — persistent brand + global actions (help/language toggles, student-join shortcut, logout) reused on the dashboard, session, watch, and exam-list screens so the top bar never disappears as the teacher drills in. Per-page actions (feedback sync, class display, overflow ⋯) live in the page header below it.
 - **Session header + overview strip (session page):** a single status line (live/closed `tp-status` pill) under breadcrumbs/title; an overview card surfacing the **join code + QR/share** prominently alongside a stat strip (joined / working / to-grade / graded / time-left, `tp-stat-value`/`tp-stat-label`). "Open class display" is an inline secondary button; only rare/destructive actions (download all PDF, save template, stop/delete) stay in the overflow menu.
 
@@ -450,7 +450,7 @@ flowchart TD
 | `text` | alias → `extendedWritten` | No | Yes |
 | `shortAnswer` | `ShortAnswerResponder.tsx` | Yes (accepted answers) | Yes |
 | `extendedWritten` | `ExtendedWrittenResponder.tsx` | No | Yes |
-| `structuredMultiPart` | `StructuredMultiPartResponder.tsx` | No | Yes |
+| `structuredMultiPart` | `StructuredMultiPartResponder.tsx` (exam-paper list: every part visible with label badge + answered tick, prompt, auto-growing answer box, inline part feedback; review shows all parts read-only) | No | Yes |
 | `annotateSource` | `AnnotateSourceResponder.tsx` | No | Yes |
 | `drawDiagram` | `DrawDiagramResponder.tsx` (optional question-image canvas background via `promptImageAsBackground`; **Draw / Upload a photo** switch unless `allowImageUpload: false`) | No | Yes |
 | `graph` | `GraphResponder.tsx` | No | Yes |

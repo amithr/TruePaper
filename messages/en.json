@@ -371,7 +371,6 @@
       "left": "left",
       "leftOfMinutes": "left of {n} min",
       "timeLeftAria": "Time remaining",
-      "marksLabel": "{n} marks",
       "questionSaved": "Saved",
       "beforeYouStart": "Before you start:",
       "jumpTo": "Jump to question",
@@ -417,7 +416,13 @@
       "raiseHand": "Raise hand",
       "raiseHandLower": "Lower hand",
       "raiseHandBusy": "Updating…",
-      "raiseHandError": "Could not update raise hand."
+      "raiseHandError": "Could not update raise hand.",
+      "marksLabel": {
+        "one": "{n} mark",
+        "few": "{n} marks",
+        "many": "{n} marks",
+        "other": "{n} marks"
+      }
     },
     "submitted": {
       "title": "Exam submitted",
@@ -693,8 +698,6 @@
     "questionCountOne": "{n} question",
     "questionCountOther": "{n} questions",
     "noQuestions": "No questions on this form.",
-    "typeMc": "Multiple choice",
-    "typeText": "Written response",
     "engagementNone": "No students have joined this session yet.",
     "engagementActive": "{inProgress} of {assigned} students are actively working on the exam right now (others may be idle, paused for leaving the tab, or finished).",
     "errorInvalidCode": "This link does not contain a valid join code.",
@@ -1247,10 +1250,10 @@
       "annotate": "Teacher annotation"
     },
     "structured": {
-      "progress": "{answered}/{total} parts",
+      "progress": "{answered} of {total} answered",
       "progressAria": "{answered} of {total} parts answered",
-      "partsAria": "Question parts",
-      "placeholder": "Write your response for {part}"
+      "placeholder": "Your answer",
+      "answerFor": "Answer for {part}"
     },
     "feedback": {
       "partLabel": "Feedback for {part}",

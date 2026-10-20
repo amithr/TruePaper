@@ -371,7 +371,6 @@
       "left": "залишилось",
       "leftOfMinutes": "з {n} хв",
       "timeLeftAria": "Залишок часу",
-      "marksLabel": "{n} балів",
       "questionSaved": "Збережено",
       "beforeYouStart": "Перш ніж почати:",
       "jumpTo": "Перейти до питання",
@@ -417,7 +416,13 @@
       "raiseHand": "Підняти руку",
       "raiseHandLower": "Опустити руку",
       "raiseHandBusy": "Оновлення…",
-      "raiseHandError": "Не вдалося оновити стан «піднята рука»."
+      "raiseHandError": "Не вдалося оновити стан «піднята рука».",
+      "marksLabel": {
+        "one": "{n} бал",
+        "few": "{n} бали",
+        "many": "{n} балів",
+        "other": "{n} бала"
+      }
     },
     "submitted": {
       "title": "Іспит надіслано",
@@ -693,8 +698,6 @@
     "questionCountOne": "{n} питання",
     "questionCountOther": "{n} питань",
     "noQuestions": "У цій формі немає питань.",
-    "typeMc": "Варіанти відповіді",
-    "typeText": "Письмова відповідь",
     "engagementNone": "Ще жоден учень не приєднався до цієї сесії.",
     "engagementActive": "{inProgress} з {assigned} учнів зараз активно працюють над іспитом (інші можуть бути бездіяльними, на паузі через закриту вкладку або вже завершили).",
     "errorInvalidCode": "Це посилання не містить дійсного коду приєднання.",
@@ -1262,10 +1265,10 @@
       "annotate": "Анотація вчителя"
     },
     "structured": {
-      "progress": "{answered}/{total} частин",
+      "progress": "Заповнено {answered} з {total}",
       "progressAria": "Заповнено {answered} з {total} частин",
-      "partsAria": "Частини питання",
-      "placeholder": "Напишіть відповідь для {part}"
+      "placeholder": "Ваша відповідь",
+      "answerFor": "Відповідь для {part}"
     },
     "feedback": {
       "partLabel": "Коментар до {part}",

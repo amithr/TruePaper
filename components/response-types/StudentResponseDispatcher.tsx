@@ -47,7 +47,7 @@ import type {
   StructuredMultiPartConfig,
 } from "@/lib/response-types/types";
 import { normalizeResponseType } from "@/lib/response-types/types";
-import { useTranslations } from "@/lib/i18n/I18nProvider";
+import { useLocale, useTranslations } from "@/lib/i18n/I18nProvider";
 import { DrawingCanvas } from "@/components/DrawingCanvas";
 import type { ReactNode } from "react";
 
@@ -68,6 +68,12 @@ type Props = {
   onChoiceChange: (value: string) => void;
 };
 
+/** CLDR plural category for "N marks" (Ukrainian has one / few / many). */
+function marksPluralForm(locale: string, n: number): "one" | "few" | "many" | "other" {
+  const category = new Intl.PluralRules(locale).select(n);
+  return category === "one" || category === "few" || category === "many" ? category : "other";
+}
+
 export function StudentResponseDispatcher({
   question,
   index,
@@ -84,6 +90,7 @@ export function StudentResponseDispatcher({
   onChoiceChange,
 }: Props) {
   const t = useTranslations();
+  const locale = useLocale();
   const type = normalizeResponseType(question.type);
   const headingId = `exam-q-${question.id}`;
   const value = parseResponseValue(type, answer);
@@ -128,7 +135,9 @@ export function StudentResponseDispatcher({
       <div className="tp-exam-q-head">
         <span className="tp-exam-q-head__num">Q{index + 1}</span>
         <span className="tp-exam-q-head__marks">
-          {t("home.exam.marksLabel", { n: question.points })}
+          {t(`home.exam.marksLabel.${marksPluralForm(locale, question.points)}`, {
+            n: question.points,
+          })}
         </span>
         {headerExtra}
       </div>

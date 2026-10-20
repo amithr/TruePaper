@@ -8,6 +8,7 @@ import { LoadingBar } from "@/components/LoadingBar";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { isValidJoinCodeFormat, normalizeJoinCode } from "@/lib/join-code";
 import type { LivePublicBoardPayload } from "@/lib/live-public-board";
+import { responseTypeLabelPath } from "@/lib/response-types/labels";
 import { isNoTimeLimitSession } from "@/lib/session-window";
 import { deferEffect } from "@/lib/defer-effect";
 import { usePollingRefresh } from "@/lib/use-polling-refresh";
@@ -22,27 +23,21 @@ function formatCountdown(ms: number): string {
   return `${minutes}:${seconds.toString().padStart(2, "0")}`;
 }
 
-function questionTypeLabel(type: string, t: ReturnType<typeof useTranslations>): string {
-  if (type === "multipleChoice") {
-    return t("liveDisplay.typeMc");
-  }
-  if (type === "text") {
-    return t("liveDisplay.typeText");
-  }
-  return type;
-}
+type QuestionTypeCount = { path: ReturnType<typeof responseTypeLabelPath>; count: number };
 
-function formatQuestionSummary(
-  counts: Record<string, number>,
-  t: ReturnType<typeof useTranslations>,
-): string {
-  const entries = Object.entries(counts).filter(([, n]) => n > 0);
-  if (entries.length === 0) {
-    return t("liveDisplay.noQuestions");
+/** Per-type counts keyed by translated label (legacy aliases like `text` merge into their type). */
+function questionTypeCounts(counts: Record<string, number>): QuestionTypeCount[] {
+  const byPath = new Map<QuestionTypeCount["path"], number>();
+  for (const [type, n] of Object.entries(counts)) {
+    if (!Number.isFinite(n) || n <= 0) {
+      continue;
+    }
+    const path = responseTypeLabelPath(type);
+    byPath.set(path, (byPath.get(path) ?? 0) + n);
   }
-  return entries
-    .map(([type, n]) => `${n} ${questionTypeLabel(type, t)}${n === 1 ? "" : "s"}`)
-    .join(" · ");
+  return [...byPath]
+    .map(([path, count]) => ({ path, count }))
+    .sort((a, b) => b.count - a.count);
 }
 
 function totalQuestions(counts: Record<string, number>): number {
@@ -133,6 +128,7 @@ export default function LiveClassDisplayPage() {
         })
     : "";
   const questionTotal = board ? totalQuestions(board.questionCounts) : 0;
+  const typeCounts = board ? questionTypeCounts(board.questionCounts) : [];
 
   return (
     <div
@@ -210,7 +206,26 @@ export default function LiveClassDisplayPage() {
                   ? t("liveDisplay.questionCountOne", { n: questionTotal })
                   : t("liveDisplay.questionCountOther", { n: questionTotal })}
               </p>
-              <p className="mt-2 text-lg text-zinc-300">{formatQuestionSummary(board.questionCounts, t)}</p>
+              {typeCounts.length === 0 ? (
+                <p className="mt-2 text-lg text-zinc-300">{t("liveDisplay.noQuestions")}</p>
+              ) : (
+                <ul
+                  className="mt-4 flex flex-wrap gap-2 sm:justify-center"
+                  data-testid="live-question-types"
+                >
+                  {typeCounts.map(({ path, count }) => (
+                    <li
+                      key={path}
+                      className="inline-flex items-center gap-2 rounded-full border border-zinc-700 bg-zinc-800/70 py-1.5 pl-4 pr-1.5 text-base text-zinc-200"
+                    >
+                      {t(path)}
+                      <span className="min-w-7 rounded-full bg-zinc-700 px-2 py-0.5 text-center text-sm font-medium tabular-nums text-white">
+                        {count}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
 
             <div className="rounded-2xl border border-emerald-900/50 bg-emerald-950/40 px-6 py-8">

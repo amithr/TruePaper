@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   type ChangeEvent,
   type ClipboardEvent,
@@ -22,6 +23,11 @@ type Props = {
   rows?: number;
   placeholder?: string;
   className?: string;
+  /** Grow with the content (from `rows` up) instead of scrolling inside a fixed box. */
+  autoGrow?: boolean;
+  /** Id of the element describing this field (e.g. a sub-question prompt). */
+  ariaDescribedBy?: string;
+  onFocus?: () => void;
 };
 
 /**
@@ -36,8 +42,39 @@ export function StudentExamTextarea({
   rows = 4,
   placeholder,
   className,
+  autoGrow = false,
+  ariaDescribedBy,
+  onFocus,
 }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!autoGrow || !el) {
+      return;
+    }
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [autoGrow, value]);
+
+  // Narrower box (rotation, resize) wraps more lines: re-measure on width changes too.
+  useEffect(() => {
+    const el = ref.current;
+    if (!autoGrow || !el || typeof ResizeObserver === "undefined") {
+      return;
+    }
+    let lastWidth = el.clientWidth;
+    const observer = new ResizeObserver(() => {
+      if (el.clientWidth === lastWidth) {
+        return;
+      }
+      lastWidth = el.clientWidth;
+      el.style.height = "auto";
+      el.style.height = `${el.scrollHeight}px`;
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [autoGrow]);
   const lastGoodRef = useRef(value);
 
   useEffect(() => {
@@ -235,6 +272,9 @@ export function StudentExamTextarea({
       autoCapitalize="off"
       placeholder={placeholder}
       className={className}
+      data-autogrow={autoGrow ? "true" : undefined}
+      aria-describedby={ariaDescribedBy}
+      onFocus={onFocus}
       onChange={handleChange}
       onBeforeInput={handleBeforeInput}
       onPaste={handlePaste}
