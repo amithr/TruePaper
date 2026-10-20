@@ -83,6 +83,17 @@ export type GraphConfig = {
   /** Optional axis titles shown on the coordinate plane */
   xAxisLabel?: string;
   yAxisLabel?: string;
+  /**
+   * Teacher-drawn starting graph shown to every student (muted, read-only), e.g. the
+   * original demand curve. Student lines may connect to these points. Not part of answers.
+   */
+  given?: GraphGiven;
+};
+
+export type GraphGiven = {
+  points?: GraphPoint[];
+  lines?: GraphLine[];
+  labels?: GraphLabel[];
 };
 
 export type PhotoHandwrittenConfig = {

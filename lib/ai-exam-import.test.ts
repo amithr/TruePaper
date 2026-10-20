@@ -237,4 +237,30 @@ describe("buildAiExamGuideMarkdown", () => {
       expect(boldCount, prompt).toBeLessThanOrEqual(1);
     }
   });
+
+  it("steers diagrams with axes to graph and documents config.given", () => {
+    expect(guide).toContain("When to use `graph`");
+    expect(guide).toMatch(/supply and demand, AD\/AS/);
+    expect(guide).toMatch(/every whole number/);
+    expect(guide).toContain("config.given");
+    expect(guide).toMatch(/Never put the answer in `given`/);
+
+    const graphExample = [...guide.matchAll(/```json\n([\s\S]*?)\n```/g)]
+      .map((m) => {
+        try {
+          return JSON.parse(m[1]) as { type?: string; config?: Record<string, unknown> };
+        } catch {
+          return null;
+        }
+      })
+      .find((doc) => doc?.type === "graph");
+    expect(graphExample?.config?.given).toBeTruthy();
+    const parsed = parseAiExamDocument({ questions: [graphExample] });
+    const given = (parsed.questions[0].responseConfig as {
+      given: { points: unknown[]; lines: unknown[]; labels: unknown[] };
+    }).given;
+    expect(given.points).toHaveLength(4);
+    expect(given.lines).toHaveLength(2);
+    expect(given.labels).toHaveLength(2);
+  });
 });

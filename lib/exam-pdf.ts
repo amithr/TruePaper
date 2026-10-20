@@ -23,6 +23,7 @@ import {
   mathToPixel,
   plotArea,
   resolveGraphBounds,
+  resolveGraphGiven,
   resolveGraphSize,
 } from "@/lib/response-types/graph-coords";
 import {
@@ -65,6 +66,7 @@ const COLOR_FEEDBACK_BORDER = "#ddd6fe";
 const COLOR_GRAPH_GRID = "#e4e4e7";
 const COLOR_GRAPH_AXIS = "#71717a";
 const COLOR_GRAPH_INK = "#2563eb";
+const COLOR_GRAPH_GIVEN = "#94a3b8";
 
 type ExamPdfDoc = PDFKit.PDFDocument;
 
@@ -610,7 +612,29 @@ function renderGraphAnswer(
     doc.restore();
   }
 
-  const pointById = new Map(points.map((point) => [point.id, point]));
+  // Teacher's starting graph first, muted, so the student's work reads on top.
+  const given = resolveGraphGiven(config);
+  const pointById = new Map([...given.points, ...points].map((point) => [point.id, point]));
+  doc.lineWidth(2.5 * scale).lineCap("round").strokeColor(COLOR_GRAPH_GIVEN);
+  for (const line of given.lines) {
+    const from = pointById.get(line.from);
+    const to = pointById.get(line.to);
+    if (from && to) {
+      const start = map(from.x, from.y);
+      const end = map(to.x, to.y);
+      doc.moveTo(start.px, start.py).lineTo(end.px, end.py).stroke();
+    }
+  }
+  for (const point of given.points) {
+    const { px, py } = map(point.x, point.y);
+    doc.circle(px, py, 5 * scale).fillColor(COLOR_GRAPH_GIVEN).fill();
+  }
+  doc.font(PDF_FONT.semibold).fontSize(Math.max(7, 13 * scale)).fillColor("#475569");
+  for (const label of given.labels) {
+    const { px, py } = map(label.x, label.y);
+    centeredText(label.text, px, py);
+  }
+
   doc.lineWidth(2.5 * scale).lineCap("round").strokeColor(COLOR_GRAPH_INK);
   for (const line of lines) {
     const from = pointById.get(line.from);

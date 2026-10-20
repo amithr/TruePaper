@@ -1205,7 +1205,8 @@
       "labelText": "Label text",
       "labelPlaceholder": "e.g. (2, 3) or Point A",
       "addLabel": "Add label",
-      "saveLabel": "Save label"
+      "saveLabel": "Save label",
+      "givenHint": "Grey parts are given and can't be changed."
     },
     "photoHandwritten": {
       "label": "Photo handwritten work",
@@ -1311,7 +1312,9 @@
       "zonePrompt": "Zone prompt",
       "correctTerm": "Correct label",
       "canvasAllowPhoto": "Let students upload a photo instead of drawing",
-      "canvasAllowPhotoHint": "Useful on small screens or for detailed diagrams drawn on paper."
+      "canvasAllowPhotoHint": "Useful on small screens or for detailed diagrams drawn on paper.",
+      "graphGiven": "Starting graph (optional)",
+      "graphGivenHint": "Draw anything students should start from, like the original demand curve or given data points. Students see it in grey and can't change it, but they can draw lines from its points."
     }
   },
   "offline": {

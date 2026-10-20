@@ -292,12 +292,37 @@ const GUIDE_TYPE_DOCS: GuideTypeDoc[] = [
   },
   {
     type: "graph",
-    summary: "Student plots on a coordinate plane (no answer key). Optional axis bounds/labels in `config`.",
+    summary:
+      "Student plots points, joins them with straight lines and adds text labels on a coordinate plane (no answer key). Set axis bounds and labels in `config`. Optional `config.given` pre-draws a starting graph (points, lines, labels) that students see in grey and build on.",
     example: {
       type: "graph",
-      prompt: "Plot rate of reaction against temperature.",
+      prompt:
+        "Consumer incomes rise and the good is normal.\n\n**Draw** the new demand curve, label it D2, and label the new equilibrium E2.",
       points: 4,
-      config: { xMin: 0, xMax: 10, yMin: 0, yMax: 10, xAxisLabel: "Temp (°C)", yAxisLabel: "Rate" },
+      config: {
+        xMin: 0,
+        xMax: 10,
+        yMin: 0,
+        yMax: 10,
+        xAxisLabel: "Quantity (thousands)",
+        yAxisLabel: "Price ($)",
+        given: {
+          points: [
+            { id: "g1", x: 1, y: 9 },
+            { id: "g2", x: 8, y: 2 },
+            { id: "g3", x: 1, y: 2 },
+            { id: "g4", x: 8, y: 9 },
+          ],
+          lines: [
+            { id: "gd", from: "g1", to: "g2" },
+            { id: "gs", from: "g3", to: "g4" },
+          ],
+          labels: [
+            { id: "gl1", x: 8.6, y: 1.6, text: "D1" },
+            { id: "gl2", x: 8.6, y: 9.4, text: "S" },
+          ],
+        },
+      },
     },
   },
   {
@@ -383,8 +408,46 @@ worded. Prefer the most specific type that fits:
 | Put steps, events, or stages in order | \`ordering\` |
 | Label parts of a diagram or named zones | \`labelling\` |
 | Annotate or highlight a source passage | \`annotateSource\` |
-| Draw a diagram, sketch, or labelled figure | \`drawDiagram\` |
-| Plot points / a relationship on axes | \`graph\` |
+| Draw a free-hand diagram with **no axes** (cell, apparatus, circuit, map, flow) | \`drawDiagram\` |
+| Plot data, draw a line or curve on axes, or draw any diagram **with axes** (supply and demand, AD/AS, PPC, cost curves, distance–time, rate graphs) | \`graph\` |
+
+### When to use \`graph\`
+
+Use \`graph\` whenever the answer lives on **axes**, even if the source says
+“draw a diagram”:
+
+- plotting values from a table, or points the student has calculated;
+- drawing a straight line or curve, or a line of best fit;
+- economics and science diagrams with axes: supply and demand, AD/AS, PPC,
+  cost and revenue curves, distance–time, velocity–time, rate of reaction;
+- marking an equilibrium, intercept or gap, or showing a curve **shifting**.
+
+Use \`drawDiagram\` only when there are no axes (a labelled cell, apparatus,
+circuit, map, food web) or the student must sketch free-hand shapes.
+
+Setting up a \`graph\`:
+
+- Always set \`xAxisLabel\` and \`yAxisLabel\`, with units (“Price ($)”,
+  “Time (s)”).
+- Gridlines and tick marks are drawn at **every whole number**, so keep each
+  axis to about 0–20 units. Put the scale in the label instead of using big
+  numbers: “Quantity (thousands)” from 0 to 10, not 0 to 10,000.
+- Choose bounds that fit every value the student needs, with a little margin.
+- Curves are drawn as straight segments between points, so a few well-placed
+  points are enough.
+- Ask for labels in the prompt (“label the new curve D2”). Students add text
+  labels with the Label tool.
+
+Starting graph (\`config.given\`): when the question starts from an existing
+diagram (“The diagram shows the market for…”, “Shift the curve…”, “Add the
+new equilibrium…”), pre-draw it in \`config.given\` instead of describing it:
+
+- \`points\`: \`{ id, x, y }\` with short unique ids (\`g1\`, \`g2\`…);
+- \`lines\`: \`{ id, from, to }\` joining two given point ids;
+- \`labels\`: \`{ id, x, y, text }\` placed just beyond the end of each line
+  (e.g. “D1”, “S”, “AD”).
+
+Never put the answer in \`given\`. It holds only what the student starts from.
 
 Rules of thumb:
 
@@ -461,6 +524,9 @@ Also:
   \`drawDiagram\`, \`labelling\`, or \`graph\` as appropriate. Teachers attach the
   real image in Truepaper — do **not** invent ASCII art, long visual
   descriptions, or fake figure captions that try to stand in for the image.
+  Exception: a simple diagram **with axes** that the student must build on
+  (e.g. a demand curve to shift) can be pre-drawn as a \`graph\` with
+  \`config.given\`.
 - For \`annotateSource\`, put the full passage in \`config.passageText\`, not the
   prompt; keep the prompt as the instruction only.
 - For \`structuredMultiPart\`, keep the overall stem in \`prompt\` and put each
@@ -614,6 +680,8 @@ ${FENCE}
 - Keep options/items plain text (no Markdown, no “A)” prefixes), and scramble
   ordering items and matching/labelling columns.
 - No LaTeX. Use Unicode symbols and backticks for formulas.
+- Anything answered on axes is a \`graph\` (with axis labels, small whole-number
+  ranges, and \`config.given\` for a starting diagram), not a \`drawDiagram\`.
 - Plain text by default: at most one short bold phrase per prompt (a command
   word or a condition a student could miss), and no bold in descriptions or options.
 - For objective types (\`matching\`, \`ordering\`, \`labelling\`) always include the

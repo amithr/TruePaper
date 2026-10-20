@@ -92,4 +92,49 @@ describe("BuilderResponseConfig", () => {
     );
     expect(container).toBeEmptyDOMElement();
   });
+
+  it("edits the graph's starting elements with the student tools", () => {
+    const question = makeQuestion("graph", {
+      id: "q-graph",
+      responseConfig: {
+        xMin: 0,
+        xMax: 10,
+        yMin: 0,
+        yMax: 10,
+        given: {
+          points: [
+            { id: "g1", x: 1, y: 9 },
+            { id: "g2", x: 8, y: 2 },
+          ],
+          lines: [{ id: "gd", from: "g1", to: "g2" }],
+          labels: [{ id: "gl", x: 8.6, y: 1.6, text: "D1" }],
+        },
+      },
+    });
+    const form: Form = {
+      id: "f1",
+      title: "Quiz",
+      description: "",
+      descriptionImagePath: null,
+      createdBy: "t1",
+      liveTeacherFeedbackEnabled: false,
+      questions: [question],
+    };
+    const updateActiveForm = vi.fn((updater: (f: Form) => Form) => updater(form));
+    renderWithI18n(
+      <BuilderResponseConfig question={question} updateActiveForm={updateActiveForm} />,
+    );
+
+    expect(screen.getByText(/Starting graph/i)).toBeInTheDocument();
+    // In the editor the given elements are the editable layer (blue), not a grey overlay.
+    const editor = screen.getByTestId("student-graph-canvas");
+    expect(editor.querySelectorAll("[data-testid=graph-given] line")).toHaveLength(0);
+    expect(editor.querySelectorAll("line[stroke='#2563eb']")).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    const next = updateActiveForm.mock.results.at(-1)?.value as Form;
+    expect(next.questions[0].responseConfig).toMatchObject({
+      given: { points: [], lines: [], labels: [] },
+    });
+  });
 });

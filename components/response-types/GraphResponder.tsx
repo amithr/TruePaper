@@ -7,6 +7,7 @@ import {
   mathToPixel,
   pixelToMath,
   resolveGraphBounds,
+  resolveGraphGiven,
   snapGraphCoord,
 } from "@/lib/response-types/graph-coords";
 import type { GraphConfig, GraphLabel, GraphLine, GraphPoint } from "@/lib/response-types/types";
@@ -44,6 +45,8 @@ export function GraphResponder({
   const t = useTranslations();
   const bounds = resolveGraphBounds(config);
   const { width, height } = resolveGraphSize(config);
+  const given = resolveGraphGiven(config);
+  const hasGiven = given.points.length + given.lines.length + given.labels.length > 0;
   const svgRef = useRef<SVGSVGElement>(null);
   const [mode, setMode] = useState<GraphMode>("point");
   const [lineStartId, setLineStartId] = useState<string | null>(null);
@@ -62,7 +65,8 @@ export function GraphResponder({
       const scaleY = height / rect.height;
       const px = (clientX - rect.left) * scaleX;
       const py = (clientY - rect.top) * scaleY;
-      for (const point of points) {
+      // Student points first; given points too, so new lines can start/end on them.
+      for (const point of [...points, ...given.points]) {
         const { px: pointPx, py: pointPy } = mathToPixel(point.x, point.y, bounds, width, height);
         if (Math.hypot(px - pointPx, py - pointPy) <= HIT_RADIUS) {
           return point;
@@ -70,7 +74,7 @@ export function GraphResponder({
       }
       return null;
     },
-    [bounds, height, points, width],
+    [bounds, given.points, height, points, width],
   );
 
   const findLabelAt = useCallback(
@@ -305,6 +309,7 @@ export function GraphResponder({
                 ? t("responseTypes.graph.lineHintSecond")
                 : t("responseTypes.graph.lineHintFirst")
               : t("responseTypes.graph.labelHint")}
+          {hasGiven ? ` ${t("responseTypes.graph.givenHint")}` : ""}
         </p>
       ) : null}
       {showLabelEditor && !disabled ? (

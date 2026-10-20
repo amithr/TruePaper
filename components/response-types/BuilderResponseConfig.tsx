@@ -2,7 +2,9 @@
 
 import type { Form, Question } from "@/lib/forms";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
+import { GraphResponder } from "@/components/response-types/GraphResponder";
 import { drawDiagramImageUploadAllowed } from "@/lib/response-types/drawing";
+import { resolveGraphGiven } from "@/lib/response-types/graph-coords";
 import { parseResponseConfig } from "@/lib/response-types/registry";
 import type {
   DrawDiagramConfig,
@@ -220,6 +222,25 @@ export function BuilderResponseConfig({ question, updateActiveForm }: Props) {
           />
           {t("responseTypes.builder.graphShowGrid")}
         </label>
+        <div className="space-y-2 border-t border-[var(--tp-border)] pt-3">
+          <div>
+            <p className="text-sm font-medium text-[var(--tp-text)]">
+              {t("responseTypes.builder.graphGiven")}
+            </p>
+            <p className="text-xs text-[var(--tp-text-secondary)]">
+              {t("responseTypes.builder.graphGivenHint")}
+            </p>
+          </div>
+          {/* Same tools students use; edits the read-only starting graph instead of an answer. */}
+          <GraphResponder
+            points={resolveGraphGiven(config).points}
+            lines={resolveGraphGiven(config).lines}
+            labels={resolveGraphGiven(config).labels}
+            disabled={false}
+            config={{ ...config, given: undefined }}
+            onChange={(points, lines, labels) => patchConfig({ given: { points, lines, labels } })}
+          />
+        </div>
       </div>
     );
   }

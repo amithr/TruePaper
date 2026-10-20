@@ -1,4 +1,4 @@
-import type { GraphConfig } from "@/lib/response-types/types";
+import type { GraphConfig, GraphLabel, GraphLine, GraphPoint } from "@/lib/response-types/types";
 
 export const GRAPH_PADDING = 40;
 
@@ -72,3 +72,38 @@ export function snapGraphCoord(value: number, step = 1): number {
 export function formatGraphCoord(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
+
+export type ResolvedGraphGiven = { points: GraphPoint[]; lines: GraphLine[]; labels: GraphLabel[] };
+
+const finite = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
+
+/**
+ * The teacher's starting graph, sanitised: `given` can come from AI-imported JSON,
+ * so drop points without numeric coords, lines whose ends don't exist, and empty labels.
+ */
+export function resolveGraphGiven(config: GraphConfig): ResolvedGraphGiven {
+  const raw = config.given;
+  if (!raw || typeof raw !== "object") {
+    return { points: [], lines: [], labels: [] };
+  }
+  const points = (Array.isArray(raw.points) ? raw.points : []).filter(
+    (p): p is GraphPoint =>
+      Boolean(p) && typeof p.id === "string" && p.id.length > 0 && finite(p.x) && finite(p.y),
+  );
+  const ids = new Set(points.map((p) => p.id));
+  const lines = (Array.isArray(raw.lines) ? raw.lines : []).filter(
+    (l): l is GraphLine =>
+      Boolean(l) && typeof l.id === "string" && ids.has(l.from) && ids.has(l.to) && l.from !== l.to,
+  );
+  const labels = (Array.isArray(raw.labels) ? raw.labels : []).filter(
+    (l): l is GraphLabel =>
+      Boolean(l) &&
+      typeof l.id === "string" &&
+      typeof l.text === "string" &&
+      l.text.trim().length > 0 &&
+      finite(l.x) &&
+      finite(l.y),
+  );
+  return { points, lines, labels };
+}
+

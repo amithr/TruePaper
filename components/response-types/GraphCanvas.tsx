@@ -7,8 +7,13 @@ import {
   mathToPixel,
   plotArea,
   resolveGraphBounds,
+  resolveGraphGiven,
   resolveGraphSize,
 } from "@/lib/response-types/graph-coords";
+
+/** Teacher-given (read-only) elements: muted so student work stands out on top. */
+const GIVEN_INK = "#94a3b8";
+const GIVEN_TEXT = "#475569";
 
 type PlaneProps = {
   config: GraphConfig;
@@ -33,7 +38,9 @@ export function GraphPlane({
   const { width, height } = resolveGraphSize(config);
   const { plotWidth, plotHeight } = plotArea(width, height);
   const showGrid = config.showGrid !== false;
-  const pointById = new Map(points.map((point) => [point.id, point]));
+  const given = resolveGraphGiven(config);
+  // Student lines may end on a given point, so resolve ends against both sets.
+  const pointById = new Map([...given.points, ...points].map((point) => [point.id, point]));
   const highlightSet = new Set(highlightPointIds);
 
   const xTicks: number[] = [];
@@ -172,6 +179,61 @@ export function GraphPlane({
           {config.yAxisLabel.trim()}
         </text>
       ) : null}
+
+      <g data-testid="graph-given">
+        {given.lines.map((line) => {
+          const from = pointById.get(line.from);
+          const to = pointById.get(line.to);
+          if (!from || !to) {
+            return null;
+          }
+          const start = mathToPixel(from.x, from.y, bounds, width, height);
+          const end = mathToPixel(to.x, to.y, bounds, width, height);
+          return (
+            <line
+              key={line.id}
+              x1={start.px}
+              y1={start.py}
+              x2={end.px}
+              y2={end.py}
+              stroke={GIVEN_INK}
+              strokeWidth={2.5}
+              strokeLinecap="round"
+            />
+          );
+        })}
+        {given.points.map((point) => {
+          const { px, py } = mathToPixel(point.x, point.y, bounds, width, height);
+          return (
+            <g key={point.id}>
+              <circle cx={px} cy={py} r={5} fill={GIVEN_INK} stroke="#fff" strokeWidth={2} />
+              <text x={px} y={py - 11} textAnchor="middle" fontSize={10.5} fill={GIVEN_TEXT}>
+                ({formatGraphCoord(point.x)}, {formatGraphCoord(point.y)})
+              </text>
+            </g>
+          );
+        })}
+        {given.labels.map((label) => {
+          const { px, py } = mathToPixel(label.x, label.y, bounds, width, height);
+          return (
+            <text
+              key={label.id}
+              x={px}
+              y={py}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              fontSize={13}
+              fontWeight={600}
+              fill={GIVEN_TEXT}
+              stroke="#fff"
+              strokeWidth={3}
+              paintOrder="stroke"
+            >
+              {label.text}
+            </text>
+          );
+        })}
+      </g>
 
       {lines.map((line) => {
         const from = pointById.get(line.from);
