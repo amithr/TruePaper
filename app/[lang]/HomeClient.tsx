@@ -2538,7 +2538,9 @@ export default function HomeClient({
    * "Sign in" header flash while `/api/auth/session` resolves. Cookie-less guests
    * hydrate synchronously, so their Sign in button still shows immediately.
    */
-  const showGuestHeader = guestView === "landing" && !session && sessionHydrated;
+  // Must not depend on `sessionHydrated`: it starts true on a guest's client (no auth
+  // cookie) but false on the server, which made SSR and hydration disagree.
+  const showGuestHeader = guestView === "landing" && !session;
 
   if (!urlSynced || !sessionHydrated || teacherPendingDashboardRedirect) {
     return (
@@ -2738,8 +2740,10 @@ export default function HomeClient({
 
   return (
     <HomeChrome
-      guestHeader={isGuestMarketing}
-      hideLanguageToggle={inStudentExam || isBuilderStudentPreview || isJoinRoute}
+      // The landing renders its own top bar (brand, Investors, Sign in, language).
+      hideLanguageToggle={
+        isGuestMarketing || inStudentExam || isBuilderStudentPreview || isJoinRoute
+      }
     >
       <div
         className={

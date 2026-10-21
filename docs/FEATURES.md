@@ -502,6 +502,12 @@ Registry & rubrics: `lib/response-types/registry.ts`, `feedback.ts`, `autograde.
 - Content: `lib/legal/content/en.ts`, `uk.ts`
 - Cookie banner: `components/CookieConsentBanner.tsx`, `lib/cookie-consent.ts`
 
+### Guest landing (marketing home)
+
+- `app/[lang]/LandingHero.tsx` (rendered by `HomeClient` for signed-out visitors on `/[lang]`): offline-first resilience story — own top bar (brand, Investors anchor, Sign in, language toggle; the fixed guest header is hidden on the landing), hero with CTAs (`/register`, `#join`), reliability cards, three steps, investor band (`#investors`; "Request the deck" hidden until `INVESTOR_DECK_HREF` is set), final CTA, and a student join card that validates the code (`isValidJoinCodeFormat`) before `router.push("/join?code=…")`.
+- Scripted demo: `components/landing/LandingDemo.tsx` renders teacher window + phone from one looping clock; all state is derived by the pure `demoFrame(t, outage)` in `lib/landing-demo.ts` (26 s loop, chapter starts, Wi‑Fi / power / no-outage variants, valid demo join code). rAF clock throttled to ~20 fps with capped steps; `prefers-reduced-motion` holds a still frame (chips and play still work). Teacher window hides < 1000px. Styles: `tp-lp*` block at the end of `app/globals.css`.
+- Copy: `home.landing.*` (en + uk); demo reuses `home.exam.sync*` and `session.roster.statusOffline`.
+
 ### Site chrome
 
 - `components/ConditionalSiteChrome.tsx` — hides header/footer in exam focus mode

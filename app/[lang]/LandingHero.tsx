@@ -1,12 +1,26 @@
 "use client";
 
-import { LocaleLink as Link } from "@/lib/i18n/client";
+import { ArrowRight, Check, CloudUpload, Plug, WifiOff } from "lucide-react";
+import { useState, type FormEvent } from "react";
+
+import { BrandMark } from "@/components/BrandMark";
+import { LanguageToggle } from "@/components/LanguageToggle";
+import { LandingDemo } from "@/components/landing/LandingDemo";
+import { LocaleLink as Link, useLocaleRouter } from "@/lib/i18n/client";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
+import { isValidJoinCodeFormat, normalizeJoinCode } from "@/lib/join-code";
+import { focusRing } from "@/lib/ui";
 
 /**
- * Guest marketing landing: product theater + conversion copy (proof, steps, CTAs).
- * The animated stage is decorative; the visible "How it works" steps carry the
- * same story for scanners and assistive tech.
+ * Investor deck destination. Empty hides the button — set a URL (or mailto:) once
+ * there is somewhere real to send investors.
+ */
+const INVESTOR_DECK_HREF = "";
+
+/**
+ * Guest marketing landing: offline-first resilience story with a scripted,
+ * state-driven demo (`LandingDemo`). The demo is decorative; the reliability and
+ * "how it works" sections carry the same story for scanners and assistive tech.
  */
 export function LandingHero({
   teacherCtaHref = "/register",
@@ -16,332 +30,249 @@ export function LandingHero({
   joinHref?: string;
 }) {
   const t = useTranslations();
-  const answer = t("home.landing.stage.answerText");
 
   return (
-    <div className="tp-lp-wrap">
-      <section className="tp-lp tp-anim-fade-up" aria-label={t("home.landing.headline")}>
-        <div className="tp-lp__topbar">
-          <span className="tp-lp__wordmark">
-            <span aria-hidden className="tp-brand-mark">
-              T
-            </span>
-            TruePaper
+    <div className="tp-lp">
+      <header className="tp-lp-top">
+        <BrandMark />
+        <nav className="tp-lp-top__nav" aria-label={t("home.landing.navInvestors")}>
+          <a href="#investors" className={`tp-btn-ghost tp-lp-top__link ${focusRing}`}>
+            {t("home.landing.navInvestors")}
+          </a>
+          <Link href="/login" className={`tp-btn-secondary tp-lp-top__signin ${focusRing}`}>
+            {t("common.signIn")}
+          </Link>
+          <LanguageToggle />
+        </nav>
+      </header>
+
+      <section className="tp-lp-hero" aria-labelledby="tp-lp-headline">
+        <div className="tp-lp-hero__copy">
+          <span className="tp-lp-eyebrow">
+            <WifiOff aria-hidden className="h-3 w-3" />
+            {t("home.landing.eyebrow")}
           </span>
+          <h1 id="tp-lp-headline" className="tp-lp-headline">
+            {t("home.landing.headline")}
+          </h1>
+          <p className="tp-lp-sub">{t("home.landing.subheadline")}</p>
+          <div className="tp-lp-ctas">
+            <Link href={teacherCtaHref} className={`tp-btn-primary tp-lp-cta-primary ${focusRing}`}>
+              {t("home.landing.teacherCta")}
+            </Link>
+            <a href="#join" className={`tp-btn-secondary tp-lp-cta-secondary ${focusRing}`}>
+              {t("home.landing.studentCta")}
+            </a>
+          </div>
+          <ul className="tp-lp-proof">
+            {(["proofFree", "proofNoAccounts", "proofSetup"] as const).map((key) => (
+              <li key={key}>
+                <Check aria-hidden className="tp-lp-proof__check h-3.5 w-3.5" strokeWidth={2.5} />
+                {t(`home.landing.${key}`)}
+              </li>
+            ))}
+          </ul>
+          <figure className="tp-lp-quote">
+            <span aria-hidden className="tp-lp-quote__avatar">
+              AP
+            </span>
+            <div>
+              <blockquote>
+                <p>&ldquo;{t("home.landing.proofQuote")}&rdquo;</p>
+              </blockquote>
+              <figcaption>{t("home.landing.proofQuoteAttribution")}</figcaption>
+            </div>
+          </figure>
         </div>
 
-        <div className="tp-lp__grid">
-          <div className="tp-lp__copy">
-            <span className="tp-lp__eyebrow">{t("home.landing.eyebrow")}</span>
-            <h1 className="tp-lp__headline">{t("home.landing.headline")}</h1>
-            <p className="tp-lp__sub">{t("home.landing.subheadline")}</p>
-
-            <div className="tp-lp__cta">
-              <Link href={teacherCtaHref} className="tp-btn-primary tp-lp__cta-primary">
-                {t("home.landing.teacherCta")}
-              </Link>
-              <p className="tp-lp__cta-fine">{t("home.landing.ctaFinePrint")}</p>
-            </div>
-
-            <ul className="tp-lp__trust">
-              <li>
-                <CheckDot />
-                {t("home.landing.trustSetup")}
-              </li>
-              <li>
-                <CheckDot />
-                {t("home.landing.trustDevices")}
-              </li>
-              <li>
-                <CheckDot />
-                {t("home.landing.trustPrivacy")}
-              </li>
-              <li>
-                <CheckDot />
-                {t("home.landing.trustNoPaste")}
-              </li>
-            </ul>
-
-            <p className="tp-lp__student-link">
-              <Link href={joinHref} className="tp-link">
-                {t("home.landing.studentLink")}
-              </Link>
-            </p>
-
-            <div className="tp-lp__proof">
-              <p className="tp-lp__proof-stat">{t("home.landing.proofStat")}</p>
-              <blockquote className="tp-lp__proof-quote">
-                <p>&ldquo;{t("home.landing.proofQuote")}&rdquo;</p>
-                <footer>— {t("home.landing.proofQuoteAttribution")}</footer>
-              </blockquote>
-            </div>
-          </div>
-
-          <div className="tp-lp__stage" aria-hidden="true">
-            <div className="tp-lp-scene">
-              <div className="tp-lp-teacher">
-                <div className="tp-lp-teacher__bar">
-                  <span className="tp-lp-dot" />
-                  <span className="tp-lp-dot" />
-                  <span className="tp-lp-dot" />
-                </div>
-                <div className="tp-lp-teacher__body">
-                  <div className="tp-lp-sessioncard">
-                    <span className="tp-lp-sessioncard__label">
-                      {t("home.landing.stage.liveLabel")}
-                    </span>
-                    <div className="tp-lp-code">
-                      {"MIT204".split("").map((ch, i) => (
-                        <span key={i}>{ch}</span>
-                      ))}
-                    </div>
-                    <div className="tp-lp-sessioncard__meta">
-                      <span className="tp-lp-qr" aria-hidden="true">
-                        {Array.from({ length: 9 }).map((_, i) => (
-                          <span key={i} />
-                        ))}
-                      </span>
-                      <span className="tp-lp-timer">
-                        44<span className="tp-lp-timer__colon">:</span>58
-                      </span>
-                    </div>
-                  </div>
-
-                  <ul className="tp-lp-roster">
-                    <li className="tp-lp-rrow tp-lp-rrow--a">
-                      <span className="tp-lp-rrow__avatar tp-lp-rrow__avatar--a">A</span>
-                      <span className="tp-lp-rrow__main">
-                        <span className="tp-lp-rrow__name">
-                          {t("home.landing.stage.rosterAva")}
-                        </span>
-                        <span className="tp-lp-rrow__preview">
-                          <span className="tp-lp-type tp-lp-type--mirror">{answer}</span>
-                        </span>
-                      </span>
-                      <span className="tp-lp-rrow__status">
-                        <span className="tp-status tp-status-typing tp-lp-pill-typing">
-                          <span className="tp-status-dot" aria-hidden />
-                          {t("session.status.typingLive")}
-                        </span>
-                        <span className="tp-status tp-status-graded tp-lp-pill-graded">
-                          <span className="tp-status-dot" aria-hidden />
-                          {t("session.status.gradedPill")}
-                        </span>
-                      </span>
-                    </li>
-
-                    <li className="tp-lp-rrow tp-lp-rrow--b">
-                      <span className="tp-lp-rrow__avatar tp-lp-rrow__avatar--b">L</span>
-                      <span className="tp-lp-rrow__main">
-                        <span className="tp-lp-rrow__name">
-                          {t("home.landing.stage.rosterLiam")}
-                        </span>
-                        <span className="tp-lp-rrow__bar" />
-                      </span>
-                      <span className="tp-lp-rrow__ring" aria-hidden="true">
-                        <svg viewBox="0 0 24 24" width="22" height="22">
-                          <circle className="tp-lp-rrow__ring-track" cx="12" cy="12" r="9" />
-                          <circle className="tp-lp-rrow__ring-fill" cx="12" cy="12" r="9" />
-                        </svg>
-                      </span>
-                    </li>
-
-                    <li className="tp-lp-rrow tp-lp-rrow--c">
-                      <span className="tp-lp-rrow__avatar tp-lp-rrow__avatar--c">N</span>
-                      <span className="tp-lp-rrow__main">
-                        <span className="tp-lp-rrow__name">
-                          {t("home.landing.stage.rosterNoah")}
-                        </span>
-                        <span className="tp-lp-rrow__bar tp-lp-rrow__bar--full" />
-                      </span>
-                      <span className="tp-status tp-status-finished">
-                        <span className="tp-status-dot" aria-hidden />
-                        {t("session.status.submittedPill")}
-                      </span>
-                    </li>
-                  </ul>
-                </div>
-              </div>
-
-              <div className="tp-lp-phone">
-                <span className="tp-lp-phone__notch" />
-                <div className="tp-lp-phone__screen">
-                  <div className="tp-lp-join">
-                    <span className="tp-lp-join__hint">{t("home.landing.stage.joinHint")}</span>
-                    <div className="tp-lp-join__cells">
-                      {"MIT204".split("").map((ch, i) => (
-                        <span key={i}>{ch}</span>
-                      ))}
-                    </div>
-                    <div className="tp-lp-join__name">
-                      <span className="tp-lp-type tp-lp-type--name">
-                        {t("home.landing.stage.joinName")}
-                      </span>
-                    </div>
-                    <span className="tp-lp-join__btn">{t("home.join.startTask")}</span>
-                  </div>
-
-                  <div className="tp-lp-exam">
-                    <div className="tp-lp-exam__progress">
-                      <span className="tp-lp-exam__progress-fill" />
-                    </div>
-                    <article className="tp-lp-card">
-                      <p className="tp-lp-card__prompt">
-                        1. {t("home.landing.stage.questionPrompt")}
-                        <span className="tp-lp-answered tp-answered-badge">
-                          <svg
-                            aria-hidden
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="3"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          >
-                            <path d="M5 12l5 5L20 7" />
-                          </svg>
-                          {t("home.exam.answered")}
-                        </span>
-                      </p>
-                      <ul className="tp-lp-choices">
-                        <li className="tp-lp-choice tp-lp-choice--pick">
-                          <span className="tp-lp-radio" />
-                          {t("home.landing.stage.optionA")}
-                        </li>
-                        <li className="tp-lp-choice">
-                          <span className="tp-lp-radio" />
-                          {t("home.landing.stage.optionB")}
-                        </li>
-                        <li className="tp-lp-choice">
-                          <span className="tp-lp-radio" />
-                          {t("home.landing.stage.optionC")}
-                        </li>
-                      </ul>
-                    <div className="tp-lp-answer">
-                      <span className="tp-lp-type tp-lp-type--answer">{answer}</span>
-                      <span className="tp-lp-paste-toast" role="presentation">
-                        {t("home.landing.stage.pasteBlocked")}
-                      </span>
-                      <span className="tp-lp-save">
-                          <span className="tp-lp-save__dot" />
-                          <span className="tp-lp-save__saving">
-                            {t("home.landing.stage.saving")}
-                          </span>
-                          <span className="tp-lp-save__saved">
-                            {t("home.landing.stage.saved")}
-                          </span>
-                        </span>
-                      </div>
-                      <div className="tp-lp-feedback">
-                        <span className="tp-lp-feedback__label">
-                          {t("home.landing.stage.feedbackLabel")}
-                        </span>
-                        <p>{t("home.landing.stage.feedbackText")}</p>
-                      </div>
-                      <div className="tp-lp-meta">
-                        <span className="tp-exam-q-badge tp-exam-q-badge--points">
-                          {t("home.exam.questionPts", { n: 5 })}
-                        </span>
-                        <span className="tp-exam-q-badge tp-exam-q-badge--type">
-                          {t("home.exam.written")}
-                        </span>
-                        <span className="tp-exam-q-badge tp-exam-q-badge--feature">
-                          {t("home.exam.liveFeedbackOn")}
-                        </span>
-                      </div>
-                    </article>
-                  </div>
-
-                  <div className="tp-lp-done">
-                    <div className="tp-lp-done__ring">
-                      <svg viewBox="0 0 64 64" width="68" height="68">
-                        <circle className="tp-lp-done__track" cx="32" cy="32" r="27" />
-                        <circle className="tp-lp-done__fill" cx="32" cy="32" r="27" />
-                      </svg>
-                      <span className="tp-lp-done__pct">90%</span>
-                    </div>
-                    <span className="tp-lp-done__label">
-                      {t("home.landing.stage.submitted")}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <span className="tp-lp-chip">MIT204</span>
-            </div>
-
-            <div className="tp-lp-captions" aria-hidden="true">
-              <span className="tp-lp-cap tp-lp-cap--1">{t("home.landing.captions.share")}</span>
-              <span className="tp-lp-cap tp-lp-cap--2">{t("home.landing.captions.join")}</span>
-              <span className="tp-lp-cap tp-lp-cap--3">{t("home.landing.captions.write")}</span>
-              <span className="tp-lp-cap tp-lp-cap--4">{t("home.landing.captions.nudge")}</span>
-              <span className="tp-lp-cap tp-lp-cap--5">{t("home.landing.captions.grade")}</span>
-            </div>
-          </div>
+        <div className="tp-lp-hero__demo" role="img" aria-label={t("home.landing.demo.label")}>
+          <LandingDemo />
         </div>
       </section>
 
-      <section className="tp-lp__steps" aria-labelledby="tp-lp-steps-title">
-        <h2 id="tp-lp-steps-title" className="tp-lp__steps-title">
-          {t("home.landing.howItWorksTitle")}
-        </h2>
-        <ol className="tp-lp__steps-grid">
-          <li>
-            <span className="tp-lp__step-num" aria-hidden>
-              1
-            </span>
-            <h3 className="tp-lp__step-title">{t("home.landing.howItWorksStep1Title")}</h3>
-            <p className="tp-lp__step-body">{t("home.landing.howItWorksStep1Body")}</p>
-          </li>
-          <li>
-            <span className="tp-lp__step-num" aria-hidden>
-              2
-            </span>
-            <h3 className="tp-lp__step-title">{t("home.landing.howItWorksStep2Title")}</h3>
-            <p className="tp-lp__step-body">{t("home.landing.howItWorksStep2Body")}</p>
-          </li>
-          <li>
-            <span className="tp-lp__step-num" aria-hidden>
-              3
-            </span>
-            <h3 className="tp-lp__step-title">{t("home.landing.howItWorksStep3Title")}</h3>
-            <p className="tp-lp__step-body">{t("home.landing.howItWorksStep3Body")}</p>
-          </li>
+      <section id="reliability" className="tp-lp-section" aria-labelledby="tp-lp-reliability">
+        <div className="tp-lp-section__head">
+          <span className="tp-lp-eyebrow">{t("home.landing.reliabilityEyebrow")}</span>
+          <h2 id="tp-lp-reliability" className="tp-lp-h2">
+            {t("home.landing.reliabilityTitle")}
+          </h2>
+        </div>
+        <div className="tp-lp-cards">
+          <ReliabilityCard
+            tone="accent"
+            icon={<WifiOff aria-hidden className="h-[19px] w-[19px]" />}
+            title={t("home.landing.reliabilityWifiTitle")}
+            body={t("home.landing.reliabilityWifiBody")}
+          />
+          <ReliabilityCard
+            tone="amber"
+            icon={<Plug aria-hidden className="h-[19px] w-[19px]" />}
+            title={t("home.landing.reliabilityPowerTitle")}
+            body={t("home.landing.reliabilityPowerBody")}
+          />
+          <ReliabilityCard
+            tone="mint"
+            icon={<CloudUpload aria-hidden className="h-[19px] w-[19px]" />}
+            title={t("home.landing.reliabilityControlTitle")}
+            body={t("home.landing.reliabilityControlBody")}
+          />
+        </div>
+      </section>
+
+      <section id="how" className="tp-lp-section tp-lp-how" aria-labelledby="tp-lp-how">
+        <div>
+          <h2 id="tp-lp-how" className="tp-lp-h2">
+            {t("home.landing.howTitle")}
+          </h2>
+          <p className="tp-lp-section__sub">{t("home.landing.howSub")}</p>
+        </div>
+        <ol className="tp-lp-steps">
+          {([1, 2, 3] as const).map((n) => (
+            <li key={n}>
+              <span className="tp-lp-steps__num">{n}</span>
+              <span>
+                <h3 className="tp-lp-h3">{t(`home.landing.howStep${n}Title`)}</h3>
+                <p className="tp-lp-card__body">{t(`home.landing.howStep${n}Body`)}</p>
+              </span>
+            </li>
+          ))}
         </ol>
       </section>
 
-      <section className="tp-lp__footer-cta" aria-labelledby="tp-lp-footer-cta-title">
-        <h2 id="tp-lp-footer-cta-title" className="tp-lp__footer-cta-title">
+      <section id="investors" className="tp-lp-investors" aria-labelledby="tp-lp-investors">
+        <div>
+          <span className="tp-lp-investors__kicker">{t("home.landing.investorsKicker")}</span>
+          <h2 id="tp-lp-investors" className="tp-lp-investors__title">
+            {t("home.landing.investorsTitle")}
+          </h2>
+          <p className="tp-lp-investors__body">{t("home.landing.investorsBody")}</p>
+          {INVESTOR_DECK_HREF ? (
+            <a href={INVESTOR_DECK_HREF} className={`tp-lp-investors__cta ${focusRing}`}>
+              {t("home.landing.investorsCta")}
+              <ArrowRight aria-hidden className="h-4 w-4" />
+            </a>
+          ) : null}
+        </div>
+        <dl className="tp-lp-facts">
+          {(
+            [
+              ["13", "factTypes"],
+              ["2", "factLanguages"],
+              ["≤ 3 s", "factResync"],
+              ["0", "factAccounts"],
+            ] as const
+          ).map(([value, key]) => (
+            <div key={key}>
+              <dt className="tp-lp-facts__value">{value}</dt>
+              <dd className="tp-lp-facts__label">{t(`home.landing.${key}`)}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+
+      <section id="start" className="tp-lp-final" aria-labelledby="tp-lp-final">
+        <h2 id="tp-lp-final" className="tp-lp-final__title">
           {t("home.landing.footerCtaTitle")}
         </h2>
-        <p className="tp-lp__footer-cta-sub">{t("home.landing.footerCtaSub")}</p>
-        <Link href={teacherCtaHref} className="tp-btn-primary tp-lp__cta-primary">
-          {t("home.landing.teacherCta")}
-        </Link>
-        <p className="tp-lp__footer-cta-fine">{t("home.landing.ctaFinePrint")}</p>
+        <p className="tp-lp-final__sub">{t("home.landing.footerCtaSub")}</p>
+        <div className="tp-lp-ctas tp-lp-ctas--center">
+          <Link href={teacherCtaHref} className={`tp-btn-primary tp-lp-cta-primary ${focusRing}`}>
+            {t("home.landing.teacherCta")}
+          </Link>
+          <a href="#join" className={`tp-btn-secondary tp-lp-cta-secondary ${focusRing}`}>
+            {t("home.landing.footerCtaStudent")}
+          </a>
+        </div>
+        <p className="tp-lp-final__fine">{t("home.landing.ctaFinePrint")}</p>
       </section>
+
+      <StudentJoinCard joinHref={joinHref} />
     </div>
   );
 }
 
-function CheckDot() {
+function ReliabilityCard({
+  tone,
+  icon,
+  title,
+  body,
+}: {
+  tone: "accent" | "amber" | "mint";
+  icon: React.ReactNode;
+  title: string;
+  body: string;
+}) {
   return (
-    <svg
-      className="tp-lp__check"
-      viewBox="0 0 20 20"
-      width="16"
-      height="16"
-      aria-hidden="true"
-    >
-      <circle cx="10" cy="10" r="9" fill="var(--tp-mint-soft)" />
-      <path
-        d="M6 10.5l2.5 2.5L14 7"
-        fill="none"
-        stroke="var(--tp-mint)"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+    <div className="tp-lp-card">
+      <span className="tp-lp-card__icon" data-tone={tone}>
+        {icon}
+      </span>
+      <h3 className="tp-lp-h3">{title}</h3>
+      <p className="tp-lp-card__body">{body}</p>
+    </div>
+  );
+}
+
+function StudentJoinCard({ joinHref }: { joinHref: string }) {
+  const t = useTranslations();
+  const router = useLocaleRouter();
+  const [code, setCode] = useState("");
+  const [error, setError] = useState("");
+
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    const normalized = normalizeJoinCode(code);
+    if (!isValidJoinCodeFormat(normalized)) {
+      setError(t("home.validation.joinCode"));
+      return;
+    }
+    setError("");
+    router.push(`${joinHref}?code=${encodeURIComponent(normalized)}`);
+  };
+
+  return (
+    <section id="join" className="tp-lp-join-card" aria-labelledby="tp-lp-join">
+      <div className="tp-lp-join-card__head">
+        <span className="tp-lp-kicker">{t("home.landing.joinKicker")}</span>
+        <h2 id="tp-lp-join" className="tp-lp-join-card__title">
+          {t("home.landing.joinTitle")}
+        </h2>
+      </div>
+      <form className="tp-lp-join-card__form" onSubmit={submit} noValidate>
+        <input
+          type="text"
+          inputMode="text"
+          autoComplete="off"
+          autoCapitalize="characters"
+          spellCheck={false}
+          maxLength={8}
+          value={code}
+          onChange={(event) => {
+            setCode(event.target.value.toUpperCase());
+            if (error) {
+              setError("");
+            }
+          }}
+          placeholder={t("home.landing.joinPlaceholder")}
+          aria-label={t("home.landing.joinPlaceholder")}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? "tp-lp-join-error" : "tp-lp-join-hint"}
+          className="tp-input tp-lp-join-card__input"
+          data-testid="landing-join-code"
+        />
+        <button type="submit" className={`tp-btn-primary ${focusRing}`}>
+          {t("home.landing.joinButton")}
+        </button>
+      </form>
+      {error ? (
+        <p id="tp-lp-join-error" role="alert" className="tp-lp-join-card__error">
+          {error}
+        </p>
+      ) : (
+        <p id="tp-lp-join-hint" className="tp-lp-join-card__hint">
+          {t("home.landing.joinHint")}
+        </p>
+      )}
+    </section>
   );
 }
