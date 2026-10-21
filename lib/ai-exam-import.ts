@@ -293,7 +293,7 @@ const GUIDE_TYPE_DOCS: GuideTypeDoc[] = [
   {
     type: "graph",
     summary:
-      "Student plots points, joins them with straight lines and adds text labels on a coordinate plane (no answer key). Set axis bounds and labels in `config`. Optional `config.given` pre-draws a starting graph (points, lines, labels) that students see in grey and build on.",
+      "Student plots points, joins them with straight lines or smooth curves, and adds text labels on a coordinate plane (no answer key). Set axis bounds and labels in `config`. Optional `config.given` pre-draws a starting graph (points, lines, curves, labels) that students see in grey and build on.",
     example: {
       type: "graph",
       prompt:
@@ -433,19 +433,24 @@ Setting up a \`graph\`:
   axis to about 0–20 units. Put the scale in the label instead of using big
   numbers: “Quantity (thousands)” from 0 to 10, not 0 to 10,000.
 - Choose bounds that fit every value the student needs, with a little margin.
-- Curves are drawn as straight segments between points, so a few well-placed
-  points are enough.
-- Ask for labels in the prompt (“label the new curve D2”). Students add text
-  labels with the Label tool.
+- Students have tools for points, straight lines, **smooth curves** (through 3
+  or more points they tap in order) and text labels. Say in the prompt whether
+  you want a straight line or a curve (“draw the MC curve”, “draw a straight
+  line of best fit”).
+- Ask for labels in the prompt (“label the new curve D2”).
 
 Starting graph (\`config.given\`): when the question starts from an existing
 diagram (“The diagram shows the market for…”, “Shift the curve…”, “Add the
 new equilibrium…”), pre-draw it in \`config.given\` instead of describing it:
 
 - \`points\`: \`{ id, x, y }\` with short unique ids (\`g1\`, \`g2\`…);
-- \`lines\`: \`{ id, from, to }\` joining two given point ids;
+- \`lines\`: \`{ id, from, to }\` joining two given point ids (straight);
+- \`curves\`: \`{ id, pointIds: [...] }\` — a smooth curve through 3 or more
+  given point ids in order, for anything that isn't straight: U-shaped cost
+  curves, a bowed-out PPC, exponential growth, a velocity–time curve. A few
+  well-placed points (3–6) are enough; the curve passes through each exactly;
 - \`labels\`: \`{ id, x, y, text }\` placed just beyond the end of each line
-  (e.g. “D1”, “S”, “AD”).
+  or curve (e.g. “D1”, “S”, “MC”, “PPC”).
 
 Never put the answer in \`given\`. It holds only what the student starts from.
 

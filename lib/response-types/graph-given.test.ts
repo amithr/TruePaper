@@ -4,7 +4,7 @@ import { resolveGraphGiven } from "@/lib/response-types/graph-coords";
 
 describe("resolveGraphGiven", () => {
   it("returns empty sets when there is no starting graph", () => {
-    expect(resolveGraphGiven({})).toEqual({ points: [], lines: [], labels: [] });
+    expect(resolveGraphGiven({})).toEqual({ points: [], lines: [], labels: [], curves: [] });
   });
 
   it("keeps valid elements and drops malformed ones (AI-imported JSON)", () => {
@@ -31,5 +31,23 @@ describe("resolveGraphGiven", () => {
     expect(given.points.map((p) => p.id)).toEqual(["g1", "g2"]);
     expect(given.lines.map((l) => l.id)).toEqual(["ok"]);
     expect(given.labels.map((l) => l.id)).toEqual(["l1"]);
+  });
+
+  it("keeps curves whose points all exist", () => {
+    const given = resolveGraphGiven({
+      given: {
+        points: [
+          { id: "g1", x: 1, y: 8 },
+          { id: "g2", x: 4, y: 1 },
+          { id: "g3", x: 7, y: 8 },
+        ],
+        curves: [
+          { id: "mc", pointIds: ["g1", "g2", "g3"] },
+          { id: "broken", pointIds: ["g1", "nope", "g3"] },
+          { id: "short", pointIds: ["g1"] },
+        ],
+      },
+    });
+    expect(given.curves.map((c) => c.id)).toEqual(["mc"]);
   });
 });

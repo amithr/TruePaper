@@ -10,18 +10,33 @@ import {
   resolveGraphGiven,
   snapGraphCoord,
 } from "@/lib/response-types/graph-coords";
-import type { GraphConfig, GraphLabel, GraphLine, GraphPoint } from "@/lib/response-types/types";
+import type {
+  GraphConfig,
+  GraphCurve,
+  GraphLabel,
+  GraphLine,
+  GraphPoint,
+} from "@/lib/response-types/types";
 import { ui } from "@/lib/ui";
 
-type GraphMode = "point" | "line" | "label";
+type GraphMode = "point" | "line" | "curve" | "label";
+
+/** A curve needs at least this many points to finish (two would just be a line). */
+export const MIN_CURVE_POINTS = 3;
 
 type Props = {
   points: GraphPoint[];
   lines: GraphLine[];
   labels: GraphLabel[];
+  curves?: GraphCurve[];
   disabled: boolean;
   config: GraphConfig;
-  onChange: (points: GraphPoint[], lines: GraphLine[], labels: GraphLabel[]) => void;
+  onChange: (
+    points: GraphPoint[],
+    lines: GraphLine[],
+    labels: GraphLabel[],
+    curves: GraphCurve[],
+  ) => void;
 };
 
 function newId(prefix: string): string {
@@ -38,9 +53,10 @@ export function GraphResponder({
   points,
   lines,
   labels,
+  curves = [],
   disabled,
   config,
-  onChange,
+  onChange: onChangeAll,
 }: Props) {
   const t = useTranslations();
   const bounds = resolveGraphBounds(config);
@@ -53,6 +69,13 @@ export function GraphResponder({
   const [pendingLabel, setPendingLabel] = useState<{ x: number; y: number } | null>(null);
   const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
   const [draftLabelText, setDraftLabelText] = useState("");
+  // Curve being drawn: ordered point ids, plus which of those points it created.
+  const [draftCurve, setDraftCurve] = useState<string[]>([]);
+  const [draftCreated, setDraftCreated] = useState<string[]>([]);
+
+  // Most edits leave curves alone; keep the old 3-argument call sites readable.
+  const onChange = (nextPoints: GraphPoint[], nextLines: GraphLine[], nextLabels: GraphLabel[]) =>
+    onChangeAll(nextPoints, nextLines, nextLabels, curves);
 
   const findPointAt = useCallback(
     (clientX: number, clientY: number): GraphPoint | null => {
@@ -169,6 +192,38 @@ export function GraphResponder({
     setDraftLabelText("");
   };
 
+  const resetDraftCurve = () => {
+    setDraftCurve([]);
+    setDraftCreated([]);
+  };
+
+  const finishCurve = () => {
+    if (draftCurve.length < MIN_CURVE_POINTS) {
+      return;
+    }
+    onChangeAll(points, lines, labels, [...curves, { id: newId("c"), pointIds: draftCurve }]);
+    resetDraftCurve();
+  };
+
+  const handleCurveClick = (clientX: number, clientY: number, mathX: number, mathY: number) => {
+    const hit = findPointAt(clientX, clientY);
+    if (hit) {
+      const last = draftCurve[draftCurve.length - 1];
+      if (hit.id === last) {
+        // Tapping the last point again finishes the curve.
+        finishCurve();
+        return;
+      }
+      setDraftCurve([...draftCurve, hit.id]);
+      return;
+    }
+    // Empty space: create a point there and add it to the curve in one step.
+    const point = { id: newId("p"), ...snapPosition(mathX, mathY) };
+    onChangeAll([...points, point], lines, labels, curves);
+    setDraftCurve([...draftCurve, point.id]);
+    setDraftCreated([...draftCreated, point.id]);
+  };
+
   const handlePlaneClick = (event: React.MouseEvent<SVGSVGElement>) => {
     if (disabled) {
       return;
@@ -191,6 +246,19 @@ export function GraphResponder({
       const py = (event.clientY - rect.top) * scaleY;
       const { x, y } = pixelToMath(px, py, bounds, width, height);
       beginLabelPlacement(x, y);
+      return;
+    }
+
+    if (mode === "curve") {
+      const svg = svgRef.current;
+      if (!svg) {
+        return;
+      }
+      const rect = svg.getBoundingClientRect();
+      const px = (event.clientX - rect.left) * (width / rect.width);
+      const py = (event.clientY - rect.top) * (height / rect.height);
+      const { x, y } = pixelToMath(px, py, bounds, width, height);
+      handleCurveClick(event.clientX, event.clientY, x, y);
       return;
     }
 
@@ -223,6 +291,20 @@ export function GraphResponder({
   };
 
   const handleUndo = () => {
+    if (draftCurve.length > 0) {
+      // Step back one point in the curve being drawn (and drop it if the curve made it).
+      const lastId = draftCurve[draftCurve.length - 1];
+      setDraftCurve(draftCurve.slice(0, -1));
+      if (draftCreated.includes(lastId)) {
+        setDraftCreated(draftCreated.filter((id) => id !== lastId));
+        onChangeAll(points.filter((p) => p.id !== lastId), lines, labels, curves);
+      }
+      return;
+    }
+    if (curves.length > 0) {
+      onChangeAll(points, lines, labels, curves.slice(0, -1));
+      return;
+    }
     if (lines.length > 0) {
       onChange(points, lines.slice(0, -1), labels);
       setLineStartId(null);
@@ -235,25 +317,28 @@ export function GraphResponder({
     }
     if (points.length > 0) {
       const removed = points[points.length - 1];
-      onChange(
+      onChangeAll(
         points.slice(0, -1),
         lines.filter((line) => line.from !== removed.id && line.to !== removed.id),
         labels,
+        curves.filter((curve) => !curve.pointIds.includes(removed.id)),
       );
     }
     setLineStartId(null);
   };
 
   const handleClear = () => {
-    onChange([], [], []);
+    onChangeAll([], [], [], []);
     setLineStartId(null);
     cancelLabelEdit();
+    resetDraftCurve();
   };
 
   const handleModeChange = (next: GraphMode) => {
     setMode(next);
     setLineStartId(null);
     cancelLabelEdit();
+    resetDraftCurve();
   };
 
   const showLabelEditor = pendingLabel !== null || editingLabelId !== null;
@@ -287,6 +372,13 @@ export function GraphResponder({
           </button>
           <button
             type="button"
+            className={mode === "curve" ? "tp-btn-primary text-sm" : "tp-btn-secondary text-sm"}
+            onClick={() => handleModeChange("curve")}
+          >
+            {t("responseTypes.graph.curveMode")}
+          </button>
+          <button
+            type="button"
             className={mode === "label" ? "tp-btn-primary text-sm" : "tp-btn-secondary text-sm"}
             onClick={() => handleModeChange("label")}
           >
@@ -308,9 +400,41 @@ export function GraphResponder({
               ? lineStartId
                 ? t("responseTypes.graph.lineHintSecond")
                 : t("responseTypes.graph.lineHintFirst")
-              : t("responseTypes.graph.labelHint")}
+              : mode === "curve"
+                ? draftCurve.length === 0
+                  ? t("responseTypes.graph.curveHintStart")
+                  : t("responseTypes.graph.curveHintProgress", { n: draftCurve.length })
+                : t("responseTypes.graph.labelHint")}
           {hasGiven ? ` ${t("responseTypes.graph.givenHint")}` : ""}
         </p>
+      ) : null}
+      {mode === "curve" && draftCurve.length > 0 && !disabled ? (
+        <div className="flex flex-wrap items-center gap-2" data-testid="graph-curve-actions">
+          <button
+            type="button"
+            className="tp-btn-primary text-sm"
+            disabled={draftCurve.length < MIN_CURVE_POINTS}
+            onClick={finishCurve}
+          >
+            {t("responseTypes.graph.finishCurve")}
+          </button>
+          <button
+            type="button"
+            className="tp-btn-secondary text-sm"
+            onClick={() => {
+              // Drop points this unfinished curve created; keep pre-existing ones.
+              onChangeAll(
+                points.filter((p) => !draftCreated.includes(p.id)),
+                lines,
+                labels,
+                curves,
+              );
+              resetDraftCurve();
+            }}
+          >
+            {t("common.cancel")}
+          </button>
+        </div>
       ) : null}
       {showLabelEditor && !disabled ? (
         <div className="flex flex-wrap items-end gap-2 rounded-[var(--tp-radius-sm)] border border-[var(--tp-border)] bg-[var(--tp-bg-subtle)] p-3">
@@ -358,6 +482,9 @@ export function GraphResponder({
           points={points}
           lines={lines}
           labels={displayLabels}
+          curves={curves}
+          draftCurvePointIds={draftCurve}
+          highlightPointIds={draftCurve}
           selectedPointId={lineStartId}
           selectedLabelId={editingLabelId}
         />

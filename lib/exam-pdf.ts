@@ -26,11 +26,13 @@ import {
   resolveGraphGiven,
   resolveGraphSize,
 } from "@/lib/response-types/graph-coords";
+import { curveSegments } from "@/lib/response-types/graph-curve";
 import {
   normalizeResponseType,
   type AnnotateSourceConfig,
   type DrawDiagramConfig,
   type GraphConfig,
+  type GraphPoint,
   type LabellingConfig,
   type MatchingConfig,
   type OrderingConfig,
@@ -625,6 +627,27 @@ function renderGraphAnswer(
       doc.moveTo(start.px, start.py).lineTo(end.px, end.py).stroke();
     }
   }
+  const strokeCurve = (pointIds: string[]): void => {
+    const pts = pointIds
+      .map((id) => pointById.get(id))
+      .filter((p): p is GraphPoint => Boolean(p))
+      .map((p) => {
+        const { px, py } = map(p.x, p.y);
+        return { x: px, y: py };
+      });
+    const segments = curveSegments(pts);
+    if (segments.length === 0) {
+      return;
+    }
+    doc.moveTo(pts[0].x, pts[0].y);
+    for (const seg of segments) {
+      doc.bezierCurveTo(seg.c1.x, seg.c1.y, seg.c2.x, seg.c2.y, seg.to.x, seg.to.y);
+    }
+    doc.stroke();
+  };
+  for (const curve of given.curves) {
+    strokeCurve(curve.pointIds);
+  }
   for (const point of given.points) {
     const { px, py } = map(point.x, point.y);
     doc.circle(px, py, 5 * scale).fillColor(COLOR_GRAPH_GIVEN).fill();
@@ -636,6 +659,9 @@ function renderGraphAnswer(
   }
 
   doc.lineWidth(2.5 * scale).lineCap("round").strokeColor(COLOR_GRAPH_INK);
+  for (const curve of value.type === "graph" ? value.curves ?? [] : []) {
+    strokeCurve(curve.pointIds);
+  }
   for (const line of lines) {
     const from = pointById.get(line.from);
     const to = pointById.get(line.to);

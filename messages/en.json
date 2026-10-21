@@ -1206,7 +1206,11 @@
       "labelPlaceholder": "e.g. (2, 3) or Point A",
       "addLabel": "Add label",
       "saveLabel": "Save label",
-      "givenHint": "Grey parts are given and can't be changed."
+      "givenHint": "Grey parts are given and can't be changed.",
+      "curveMode": "Draw curve",
+      "curveHintStart": "Tap points in order, or tap empty space to add one. The curve passes through each point.",
+      "curveHintProgress": "{n} points picked. Tap the last point again or press Finish curve (3 or more points).",
+      "finishCurve": "Finish curve"
     },
     "photoHandwritten": {
       "label": "Photo handwritten work",

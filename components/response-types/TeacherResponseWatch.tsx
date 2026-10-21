@@ -387,6 +387,7 @@ export function TeacherResponseWatch({
     const hasStudentWork =
       value.points.length > 0 ||
       value.lines.length > 0 ||
+      (value.curves?.length ?? 0) > 0 ||
       value.labels.some((label) => label.text.trim().length > 0);
     return (
       <div className="space-y-3">
@@ -395,6 +396,7 @@ export function TeacherResponseWatch({
           points={value.points}
           lines={value.lines}
           labels={value.labels}
+          curves={value.curves ?? []}
           readOnly
           data-testid="teacher-watch-answer"
         />

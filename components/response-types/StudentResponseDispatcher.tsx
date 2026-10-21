@@ -267,10 +267,11 @@ export function StudentResponseDispatcher({
           points={value.points}
           lines={value.lines}
           labels={value.labels}
+          curves={value.curves ?? []}
           disabled={disabled}
           config={question.responseConfig as GraphConfig}
-          onChange={(points, lines, labels) =>
-            onAnswerChange(serializeResponseValue({ type: "graph", points, lines, labels }))
+          onChange={(points, lines, labels, curves) =>
+            onAnswerChange(serializeResponseValue({ type: "graph", points, lines, labels, curves }))
           }
         />
       ) : null}

@@ -94,6 +94,7 @@ export type GraphGiven = {
   points?: GraphPoint[];
   lines?: GraphLine[];
   labels?: GraphLabel[];
+  curves?: GraphCurve[];
 };
 
 export type PhotoHandwrittenConfig = {
@@ -176,11 +177,16 @@ export type DrawDiagramValue = {
 export type GraphPoint = { id: string; x: number; y: number };
 export type GraphLine = { id: string; from: string; to: string };
 export type GraphLabel = { id: string; x: number; y: number; text: string };
+/** Smooth curve through the listed point ids, in order (student or given points). */
+export type GraphCurve = { id: string; pointIds: string[] };
+
 export type GraphValue = {
   type: "graph";
   points: GraphPoint[];
   lines: GraphLine[];
   labels: GraphLabel[];
+  /** Optional: absent on answers saved before curves existed. */
+  curves?: GraphCurve[];
 };
 
 export type PhotoHandwrittenValue = {

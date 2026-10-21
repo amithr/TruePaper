@@ -113,9 +113,10 @@ export function parseResponseValue(
         points: parsed.points,
         lines: Array.isArray(parsed.lines) ? parsed.lines : [],
         labels: Array.isArray(parsed.labels) ? parsed.labels : [],
+        curves: Array.isArray(parsed.curves) ? parsed.curves : [],
       };
     }
-    return { type: "graph", points: [], lines: [], labels: [] };
+    return { type: "graph", points: [], lines: [], labels: [], curves: [] };
   }
 
   if (normalized === "photoHandwritten") {
@@ -228,6 +229,8 @@ export function serializeResponseValue(value: ResponseValue): string {
         points: value.points,
         lines: value.lines,
         labels: value.labels,
+        // Only written when used, so answers without curves serialise exactly as before.
+        ...(value.curves && value.curves.length > 0 ? { curves: value.curves } : {}),
       });
     case "photoHandwritten":
       return JSON.stringify({
@@ -316,6 +319,10 @@ export function previewResponseText(
       if (value.points.length > 0) {
         parts.push(`${value.points.length} point${value.points.length === 1 ? "" : "s"}`);
       }
+      const curveCount = value.curves?.length ?? 0;
+      if (curveCount > 0) {
+        parts.push(`${curveCount} curve${curveCount === 1 ? "" : "s"}`);
+      }
       const labelText = value.labels
         .map((label) => label.text.trim())
         .filter(Boolean)
@@ -362,6 +369,7 @@ export function isResponseAnswered(
       return (
         value.points.length > 0 ||
         value.lines.length > 0 ||
+        (value.curves?.length ?? 0) > 0 ||
         value.labels.some((label) => label.text.trim().length > 0)
       );
     case "photoHandwritten":

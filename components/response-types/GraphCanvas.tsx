@@ -1,6 +1,13 @@
 "use client";
 
-import type { GraphConfig, GraphLabel, GraphLine, GraphPoint } from "@/lib/response-types/types";
+import { curvePathData } from "@/lib/response-types/graph-curve";
+import type {
+  GraphConfig,
+  GraphCurve,
+  GraphLabel,
+  GraphLine,
+  GraphPoint,
+} from "@/lib/response-types/types";
 import {
   formatGraphCoord,
   GRAPH_PADDING,
@@ -20,6 +27,9 @@ type PlaneProps = {
   points: GraphPoint[];
   lines: GraphLine[];
   labels?: GraphLabel[];
+  curves?: GraphCurve[];
+  /** Points picked so far for a curve being drawn (shown dashed). */
+  draftCurvePointIds?: string[];
   selectedPointId?: string | null;
   selectedLabelId?: string | null;
   highlightPointIds?: string[];
@@ -30,6 +40,8 @@ export function GraphPlane({
   points,
   lines,
   labels = [],
+  curves = [],
+  draftCurvePointIds = [],
   selectedPointId = null,
   selectedLabelId = null,
   highlightPointIds = [],
@@ -42,6 +54,17 @@ export function GraphPlane({
   // Student lines may end on a given point, so resolve ends against both sets.
   const pointById = new Map([...given.points, ...points].map((point) => [point.id, point]));
   const highlightSet = new Set(highlightPointIds);
+  const curvePath = (pointIds: string[]): string =>
+    curvePathData(
+      pointIds
+        .map((id) => pointById.get(id))
+        .filter((p): p is GraphPoint => Boolean(p))
+        .map((p) => {
+          const { px, py } = mathToPixel(p.x, p.y, bounds, width, height);
+          return { x: px, y: py };
+        }),
+    );
+  const draftPath = draftCurvePointIds.length >= 2 ? curvePath(draftCurvePointIds) : "";
 
   const xTicks: number[] = [];
   for (let x = Math.ceil(bounds.xMin); x <= Math.floor(bounds.xMax); x += 1) {
@@ -181,6 +204,17 @@ export function GraphPlane({
       ) : null}
 
       <g data-testid="graph-given">
+        {given.curves.map((curve) => (
+          <path
+            key={curve.id}
+            d={curvePath(curve.pointIds)}
+            fill="none"
+            stroke={GIVEN_INK}
+            strokeWidth={2.5}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        ))}
         {given.lines.map((line) => {
           const from = pointById.get(line.from);
           const to = pointById.get(line.to);
@@ -234,6 +268,30 @@ export function GraphPlane({
           );
         })}
       </g>
+
+      {curves.map((curve) => (
+        <path
+          key={curve.id}
+          d={curvePath(curve.pointIds)}
+          fill="none"
+          stroke="#2563eb"
+          strokeWidth={2.5}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          data-testid="graph-curve"
+        />
+      ))}
+      {draftPath ? (
+        <path
+          d={draftPath}
+          fill="none"
+          stroke="#c2410c"
+          strokeWidth={2}
+          strokeDasharray="6 4"
+          strokeLinecap="round"
+          data-testid="graph-curve-draft"
+        />
+      ) : null}
 
       {lines.map((line) => {
         const from = pointById.get(line.from);
@@ -325,6 +383,7 @@ export function GraphCanvas({
   points,
   lines,
   labels = [],
+  curves = [],
   readOnly = false,
   selectedPointId = null,
   selectedLabelId = null,
@@ -349,6 +408,7 @@ export function GraphCanvas({
         points={points}
         lines={lines}
         labels={labels}
+        curves={curves}
         selectedPointId={selectedPointId}
         selectedLabelId={selectedLabelId}
         highlightPointIds={highlightPointIds}

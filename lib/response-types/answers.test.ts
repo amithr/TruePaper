@@ -134,3 +134,25 @@ describe("drawDiagram photo answers", () => {
     expect(JSON.parse(raw)).toEqual({ type: "drawDiagram", strokes: [] });
   });
 });
+
+describe("graph curves", () => {
+  it("round-trips curves and counts a curve as answered", () => {
+    const raw = serializeResponseValue({
+      type: "graph",
+      points: [],
+      lines: [],
+      labels: [],
+      curves: [{ id: "c1", pointIds: ["p1", "p2", "p3"] }],
+    });
+    const parsed = parseResponseValue("graph", raw);
+    expect(parsed).toMatchObject({ curves: [{ id: "c1", pointIds: ["p1", "p2", "p3"] }] });
+    expect(isResponseAnswered("graph", raw)).toBe(true);
+  });
+
+  it("keeps answers without curves byte-for-byte as before", () => {
+    const raw = serializeResponseValue({ type: "graph", points: [], lines: [], labels: [], curves: [] });
+    expect(JSON.parse(raw)).toEqual({ type: "graph", points: [], lines: [], labels: [] });
+    // Older saved answers (no `curves` key) parse with an empty list.
+    expect(parseResponseValue("graph", raw)).toMatchObject({ curves: [] });
+  });
+});

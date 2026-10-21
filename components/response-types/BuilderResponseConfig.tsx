@@ -236,9 +236,12 @@ export function BuilderResponseConfig({ question, updateActiveForm }: Props) {
             points={resolveGraphGiven(config).points}
             lines={resolveGraphGiven(config).lines}
             labels={resolveGraphGiven(config).labels}
+            curves={resolveGraphGiven(config).curves}
             disabled={false}
             config={{ ...config, given: undefined }}
-            onChange={(points, lines, labels) => patchConfig({ given: { points, lines, labels } })}
+            onChange={(points, lines, labels, curves) =>
+              patchConfig({ given: { points, lines, labels, curves } })
+            }
           />
         </div>
       </div>

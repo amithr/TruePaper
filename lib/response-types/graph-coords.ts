@@ -1,4 +1,10 @@
-import type { GraphConfig, GraphLabel, GraphLine, GraphPoint } from "@/lib/response-types/types";
+import type {
+  GraphConfig,
+  GraphCurve,
+  GraphLabel,
+  GraphLine,
+  GraphPoint,
+} from "@/lib/response-types/types";
 
 export const GRAPH_PADDING = 40;
 
@@ -73,7 +79,12 @@ export function formatGraphCoord(value: number): string {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
-export type ResolvedGraphGiven = { points: GraphPoint[]; lines: GraphLine[]; labels: GraphLabel[] };
+export type ResolvedGraphGiven = {
+  points: GraphPoint[];
+  lines: GraphLine[];
+  labels: GraphLabel[];
+  curves: GraphCurve[];
+};
 
 const finite = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n);
 
@@ -84,7 +95,7 @@ const finite = (n: unknown): n is number => typeof n === "number" && Number.isFi
 export function resolveGraphGiven(config: GraphConfig): ResolvedGraphGiven {
   const raw = config.given;
   if (!raw || typeof raw !== "object") {
-    return { points: [], lines: [], labels: [] };
+    return { points: [], lines: [], labels: [], curves: [] };
   }
   const points = (Array.isArray(raw.points) ? raw.points : []).filter(
     (p): p is GraphPoint =>
@@ -104,6 +115,14 @@ export function resolveGraphGiven(config: GraphConfig): ResolvedGraphGiven {
       finite(l.x) &&
       finite(l.y),
   );
-  return { points, lines, labels };
+  const curves = (Array.isArray(raw.curves) ? raw.curves : []).filter(
+    (c): c is GraphCurve =>
+      Boolean(c) &&
+      typeof c.id === "string" &&
+      Array.isArray(c.pointIds) &&
+      c.pointIds.length >= 2 &&
+      c.pointIds.every((id) => ids.has(id)),
+  );
+  return { points, lines, labels, curves };
 }
 

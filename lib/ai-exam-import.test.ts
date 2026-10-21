@@ -263,4 +263,10 @@ describe("buildAiExamGuideMarkdown", () => {
     expect(given.lines).toHaveLength(2);
     expect(given.labels).toHaveLength(2);
   });
+
+  it("documents smooth curves for graphs", () => {
+    expect(guide).toMatch(/smooth curves/i);
+    expect(guide).toContain("pointIds");
+    expect(guide).not.toMatch(/drawn as straight segments/);
+  });
 });

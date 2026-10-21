@@ -36,4 +36,26 @@ describe("GraphCanvas starting graph", () => {
     // 1 given line + 1 student line (resolved against the given point).
     expect(screen.getByTestId("graph").querySelectorAll("line[stroke='#2563eb']")).toHaveLength(1);
   });
+
+  it("draws student and given curves as smooth paths", () => {
+    render(
+      <GraphCanvas
+        config={{
+          ...config,
+          given: { ...config.given, curves: [{ id: "gc", pointIds: ["g1", "g2", "g1"] }] },
+        }}
+        points={[
+          { id: "a", x: 1, y: 8 },
+          { id: "b", x: 4, y: 1 },
+          { id: "c", x: 7, y: 8 },
+        ]}
+        lines={[]}
+        labels={[]}
+        curves={[{ id: "mc", pointIds: ["a", "b", "c"] }]}
+      />,
+    );
+    const curve = screen.getByTestId("graph-curve");
+    expect(curve.getAttribute("d")).toMatch(/^M [\d.]+ [\d.]+ C /);
+    expect(screen.getByTestId("graph-given").querySelectorAll("path")).toHaveLength(1);
+  });
 });

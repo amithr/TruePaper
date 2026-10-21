@@ -274,6 +274,54 @@ describe("exam-pdf", () => {
     expect(pdfHeader(empty)).toBe("%PDF");
   });
 
+  it("draws graph curves (student and given) as Bézier paths", async () => {
+    const graphForm = formWithQuestion({
+      id: "q-curve",
+      type: "graph",
+      responseConfig: {
+        xMin: 0,
+        xMax: 10,
+        yMin: 0,
+        yMax: 10,
+        given: {
+          points: [
+            { id: "g1", x: 0, y: 9 },
+            { id: "g2", x: 6, y: 7 },
+            { id: "g3", x: 9, y: 0 },
+          ],
+          curves: [{ id: "ppc", pointIds: ["g1", "g2", "g3"] }],
+        },
+      },
+    });
+    const withCurve = await buildWithAnswer(graphForm, {
+      "q-curve": JSON.stringify({
+        type: "graph",
+        points: [
+          { id: "a", x: 1, y: 8 },
+          { id: "b", x: 4, y: 2 },
+          { id: "c", x: 7, y: 8 },
+        ],
+        lines: [],
+        labels: [],
+        curves: [{ id: "mc", pointIds: ["a", "b", "c"] }],
+      }),
+    });
+    const withoutCurve = await buildWithAnswer(graphForm, {
+      "q-curve": JSON.stringify({
+        type: "graph",
+        points: [
+          { id: "a", x: 1, y: 8 },
+          { id: "b", x: 4, y: 2 },
+          { id: "c", x: 7, y: 8 },
+        ],
+        lines: [],
+        labels: [],
+      }),
+    });
+    expect(pdfHeader(withCurve)).toBe("%PDF");
+    expect(withCurve.byteLength).toBeGreaterThan(withoutCurve.byteLength);
+  });
+
   it("embeds photoHandwritten answers from their data URL", async () => {
     const photoForm = formWithQuestion({ id: "q-photo", type: "photoHandwritten" });
     const dataUrl =

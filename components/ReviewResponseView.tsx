@@ -172,6 +172,7 @@ export function ReviewResponseView({ question, answer, feedbackMessage, feedback
           points={value.points}
           lines={value.lines}
           labels={value.labels}
+          curves={value.curves ?? []}
           readOnly
           data-testid="review-graph-answer"
         />
