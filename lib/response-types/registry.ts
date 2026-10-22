@@ -176,8 +176,7 @@ const REGISTRY: Record<ResponseTypeId, ResponseTypeMeta> = {
     defaultPoints: 5,
     defaultConfig: () =>
       ({
-        passageText:
-          "Paste the source passage here. Students will highlight spans and add margin notes.",
+        passageText: "",
       }) satisfies AnnotateSourceConfig,
     defaultPrompt: () => "Annotate the source",
   },
@@ -371,3 +370,21 @@ export function getRubricForQuestion(
 export function questionSupportsLiveFeedback(type: ResponseTypeId | string): boolean {
   return getResponseTypeMeta(type).supportsLiveFeedback;
 }
+
+/**
+ * Older annotate questions were created with this teacher instruction saved as the
+ * passage itself (and students saw it). Treat it as "no passage".
+ */
+const LEGACY_ANNOTATE_PLACEHOLDER =
+  "Paste the source passage here. Students will highlight spans and add margin notes.";
+
+/** The real source passage of an annotate question ("" when none has been added). */
+export function annotatePassageText(config: unknown): string {
+  const raw =
+    config && typeof config === "object" && "passageText" in config
+      ? (config as { passageText?: unknown }).passageText
+      : "";
+  const text = typeof raw === "string" ? raw : "";
+  return text.trim() === LEGACY_ANNOTATE_PLACEHOLDER ? "" : text;
+}
+

@@ -1213,7 +1213,7 @@
     },
     "annotateSource": {
       "label": "Annotate source",
-      "emptyPassage": "Source passage will appear here.",
+      "emptyPassage": "Your teacher hasn't added the source passage yet.",
       "noteLabel": "Note",
       "highlightSelection": "Highlight selection",
       "hint": "Select words in the passage to highlight them. Tap a highlight to add a note or remove it.",
@@ -1221,7 +1221,9 @@
       "notePlaceholder": "Why does this matter?",
       "saveNote": "Save note",
       "removeHighlight": "Remove highlight",
-      "builderPassageHint": "Students select words in this text to highlight them and can add a note to each highlight. Keep the instruction in the question text above."
+      "builderPassageHint": "Students select words in this text to highlight them and can add a note to each highlight. Keep the instruction in the question text above.",
+      "builderPassagePlaceholder": "Paste the source text students should annotate.",
+      "builderPassageEmpty": "Add the source passage here. Students can only highlight text in this box, not in the question text."
     },
     "drawDiagram": {
       "label": "Draw / diagram",

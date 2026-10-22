@@ -27,6 +27,7 @@ import {
   resolveGraphSize,
 } from "@/lib/response-types/graph-coords";
 import { curveSegments } from "@/lib/response-types/graph-curve";
+import { annotatePassageText } from "@/lib/response-types/registry";
 import {
   normalizeResponseType,
   type AnnotateSourceConfig,
@@ -870,7 +871,7 @@ function renderAnnotateSourceAnswer(
   const config = question.responseConfig as AnnotateSourceConfig;
   const value = parseResponseValue("annotateSource", studentAnswer);
   const highlights = value.type === "annotateSource" ? value.highlights : [];
-  const passage = config.passageText ?? "";
+  const passage = annotatePassageText(config);
   if (highlights.length === 0) {
     renderTextAnswer(doc, "");
     return;

@@ -6,7 +6,7 @@ import { BuilderResponseConfig } from "@/components/response-types/BuilderRespon
 import type { BuilderPanelKey } from "@/lib/builder/summary-tokens";
 import type { Form, Question } from "@/lib/forms";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
-import { parseResponseConfig } from "@/lib/response-types/registry";
+import { parseResponseConfig, annotatePassageText } from "@/lib/response-types/registry";
 import { ui } from "@/lib/ui";
 
 type Props = {
@@ -436,9 +436,9 @@ export function BuilderQuestionFields({
               {t("responseTypes.builder.sourcePassage")}
               <textarea
                 rows={5}
-                value={String(
-                  (question.responseConfig as { passageText?: string }).passageText ?? "",
-                )}
+                value={annotatePassageText(question.responseConfig)}
+                placeholder={t("responseTypes.annotateSource.builderPassagePlaceholder")}
+                data-testid="builder-annotate-passage"
                 onChange={(event) =>
                   updateActiveForm((form) => ({
                     ...form,
@@ -460,9 +460,18 @@ export function BuilderQuestionFields({
                 }
                 className="tp-input"
               />
-              <span className="mt-1 block text-xs font-normal text-[var(--tp-text-muted)]">
-                {t("responseTypes.annotateSource.builderPassageHint")}
-              </span>
+              {annotatePassageText(question.responseConfig).trim() ? (
+                <span className="mt-1 block text-xs font-normal text-[var(--tp-text-muted)]">
+                  {t("responseTypes.annotateSource.builderPassageHint")}
+                </span>
+              ) : (
+                <span
+                  role="status"
+                  className="mt-1 block text-xs font-medium text-[var(--tp-warning-text)]"
+                >
+                  {t("responseTypes.annotateSource.builderPassageEmpty")}
+                </span>
+              )}
             </label>
           ) : null}
 

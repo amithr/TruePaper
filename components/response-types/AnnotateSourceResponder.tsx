@@ -10,6 +10,7 @@ import {
   type ReactNode,
 } from "react";
 
+import { annotatePassageText } from "@/lib/response-types/registry";
 import type { AnnotateSourceConfig, HighlightSpan } from "@/lib/response-types/types";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { focusRing } from "@/lib/ui";
@@ -84,8 +85,9 @@ export function AnnotateSourceResponder({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
 
-  const hasPassage = Boolean(config.passageText?.trim());
-  const passage = hasPassage ? config.passageText : t("responseTypes.annotateSource.emptyPassage");
+  const passageText = annotatePassageText(config);
+  const hasPassage = Boolean(passageText.trim());
+  const passage = hasPassage ? passageText : t("responseTypes.annotateSource.emptyPassage");
   const editing = highlights.find((h) => h.id === editingId) ?? null;
 
   useEffect(() => {

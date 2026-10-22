@@ -135,3 +135,23 @@ describe("addHighlight", () => {
     expect(addHighlight([], { start: 5, end: 6 }, text)).toEqual([]);
   });
 });
+
+describe("annotate passage placeholder (legacy questions)", () => {
+  it("treats the old saved teacher instruction as no passage", () => {
+    renderWithI18n(
+      <AnnotateSourceResponder
+        passageId="p1"
+        highlights={[]}
+        disabled={false}
+        config={{
+          passageText:
+            "Paste the source passage here. Students will highlight spans and add margin notes.",
+        }}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/hasn't added the source passage yet/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /highlight selection/i })).toBeNull();
+  });
+});
+

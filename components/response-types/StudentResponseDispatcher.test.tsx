@@ -58,7 +58,7 @@ describe("StudentResponseDispatcher", () => {
     expect(screen.getByTestId("student-short-answer")).toBeInTheDocument();
   });
 
-  it("renders annotate source passage and tools for empty answers", () => {
+  it("shows a student-facing message when the annotate passage is missing", () => {
     renderWithI18n(
       <StudentResponseDispatcher
         question={makeQuestion("annotateSource")}
@@ -74,10 +74,11 @@ describe("StudentResponseDispatcher", () => {
         onChoiceChange={vi.fn()}
       />,
     );
-    expect(screen.getByRole("button", { name: /highlight/i })).toBeInTheDocument();
-    expect(
-      screen.getByText(/Paste the source passage here/i),
-    ).toBeInTheDocument();
+    // A new question has no passage yet: students get a plain message, not teacher
+    // instructions, and no highlight tool for text that isn't there.
+    expect(screen.getByText(/hasn't added the source passage yet/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Paste the source passage here/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: /highlight selection/i })).toBeNull();
   });
 
   it("renders math working + final answer and serializes both on change", () => {
