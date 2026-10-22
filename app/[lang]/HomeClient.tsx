@@ -38,7 +38,9 @@ import { FormAssetImage } from "@/components/FormAssetImage";
 import { FormAssetImageEditor } from "@/components/FormAssetImageEditor";
 import { OverflowMenu } from "@/components/OverflowMenu";
 import { BuilderTypePicker } from "@/components/builder/BuilderTypePicker";
+import { AnnotatePassageField } from "@/components/builder/AnnotatePassageField";
 import { BuilderQuestionFields } from "@/components/builder/BuilderQuestionFields";
+import { looksLikeSourceText, withAnnotatePassage } from "@/lib/builder/annotate-source";
 import { QuestionTypeBadge } from "@/components/response-types/QuestionTypeBadge";
 import {
   buildSummaryTokens,
@@ -64,7 +66,7 @@ import {
   type TeacherHomeIntent,
 } from "@/lib/home-url-intent";
 import { mergePendingBuilderForm, peekPendingBuilderForm } from "@/lib/pending-builder-form";
-import { questionSupportsLiveFeedback } from "@/lib/response-types/registry";
+import { questionSupportsLiveFeedback, annotatePassageText } from "@/lib/response-types/registry";
 import { isResponseAnswered } from "@/lib/response-types/answers";
 import { postExamTabLeave, postExamTabLeaveAwait } from "@/lib/exam-tab-leave";
 import { formatExamWatermarkLabel } from "@/lib/exam-capture-protection";
@@ -290,6 +292,12 @@ export default function HomeClient({
   const [mode, setMode] = useState<"teacher" | "student">("student");
   const [authForms, setAuthForms] = useState<Form[]>([]);
   const [activeFormId, setActiveFormId] = useState("");
+  /** A long paste into an annotate question's text that was moved into its passage (undoable). */
+  const [annotatePasteMoved, setAnnotatePasteMoved] = useState<{
+    questionId: string;
+    previousPrompt: string;
+    pasted: string;
+  } | null>(null);
   const [pendingAutoResumeCode, setPendingAutoResumeCode] = useState("");
   /** Exam remembered on this device from before a reload; rejoined automatically once. */
   const [pendingActiveExamRestore, setPendingActiveExamRestore] = useState<ActiveExam | null>(null);
@@ -3204,9 +3212,67 @@ export default function HomeClient({
                             ),
                           }))
                         }
+                        onPaste={(event) => {
+                          // Annotate questions: students can only highlight the passage, so a
+                          // pasted article belongs there, not in the question text.
+                          if (
+                            question.type !== "annotateSource" ||
+                            annotatePassageText(question.responseConfig).trim()
+                          ) {
+                            return;
+                          }
+                          const pasted = event.clipboardData.getData("text/plain");
+                          if (!looksLikeSourceText(pasted)) {
+                            return;
+                          }
+                          event.preventDefault();
+                          const previousPrompt = question.prompt;
+                          updateActiveForm((form) => ({
+                            ...form,
+                            questions: form.questions.map((formQuestion) =>
+                              formQuestion.id === question.id
+                                ? {
+                                    ...withAnnotatePassage(formQuestion, pasted.trim()),
+                                    prompt: formQuestion.prompt.trim()
+                                      ? formQuestion.prompt
+                                      : t("responseTypes.annotateSource.defaultInstruction"),
+                                  }
+                                : formQuestion,
+                            ),
+                          }));
+                          setAnnotatePasteMoved({ questionId: question.id, previousPrompt, pasted });
+                        }}
                         className="tp-builder-card__prompt"
                         aria-label={t("home.builder.prompt")}
                       />
+                      {question.type === "annotateSource" ? (
+                        <AnnotatePassageField
+                          question={question}
+                          updateActiveForm={updateActiveForm}
+                          pasteMoved={annotatePasteMoved?.questionId === question.id}
+                          onUndoPasteMove={() => {
+                            const moved = annotatePasteMoved;
+                            if (!moved) {
+                              return;
+                            }
+                            // Put the text back where the teacher pasted it.
+                            updateActiveForm((form) => ({
+                              ...form,
+                              questions: form.questions.map((formQuestion) =>
+                                formQuestion.id === moved.questionId
+                                  ? {
+                                      ...withAnnotatePassage(formQuestion, ""),
+                                      prompt: [moved.previousPrompt.trim(), moved.pasted.trim()]
+                                        .filter(Boolean)
+                                        .join("\n\n"),
+                                    }
+                                  : formQuestion,
+                              ),
+                            }));
+                            setAnnotatePasteMoved(null);
+                          }}
+                        />
+                      ) : null}
                       <BuilderQuestionFields
                         formId={activeForm.id}
                         question={question}

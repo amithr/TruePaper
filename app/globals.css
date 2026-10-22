@@ -8006,3 +8006,35 @@ code,
   font-weight: 600;
   color: #fff;
 }
+
+/* Builder: always-visible source passage for annotate questions. */
+.tp-builder-passage {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.tp-builder-passage__alert {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  border-radius: var(--tp-radius-sm);
+  border: 1px solid var(--tp-warning-border);
+  background: var(--tp-amber-soft);
+  padding: 0.65rem 0.8rem;
+  font-size: 0.875rem;
+  color: var(--tp-warning-text);
+}
+
+.tp-builder-passage__note {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--tp-text-muted);
+}
+
+.tp-builder-passage__note--warn {
+  font-weight: 500;
+  color: var(--tp-warning-text);
+}

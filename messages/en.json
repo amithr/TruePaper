@@ -386,7 +386,6 @@
         "partsOne": "1 part",
         "partsOther": "{n} parts",
         "answerKey": "Answer key",
-        "sourcePassage": "Source passage",
         "canvasSettings": "Canvas settings",
         "pointsOne": "1 pt",
         "pointsOther": "{n} pts",
@@ -1223,7 +1222,13 @@
       "removeHighlight": "Remove highlight",
       "builderPassageHint": "Students select words in this text to highlight them and can add a note to each highlight. Keep the instruction in the question text above.",
       "builderPassagePlaceholder": "Paste the source text students should annotate.",
-      "builderPassageEmpty": "Add the source passage here. Students can only highlight text in this box, not in the question text."
+      "builderPassageEmpty": "Add the source passage here. Students can only highlight text in this box, not in the question text.",
+      "builderPassageLabel": "Source passage — the text students highlight and annotate",
+      "defaultInstruction": "Highlight and annotate the source below.",
+      "promptLooksLikeSource": "This question text looks like the source itself. Students can only highlight the source passage, not the question text.",
+      "moveToPassage": "Move it to the source passage",
+      "pasteMoved": "The pasted text was added as the source passage.",
+      "undoPasteMove": "Undo"
     },
     "drawDiagram": {
       "label": "Draw / diagram",
@@ -1338,7 +1343,6 @@
       "acceptedAnswersPlaceholder": "Comma separated",
       "parts": "Parts",
       "partPrompt": "Part prompt",
-      "sourcePassage": "Source passage",
       "correctAnswer": "Correct answer",
       "canvasWidth": "Canvas width",
       "canvasHeight": "Canvas height",

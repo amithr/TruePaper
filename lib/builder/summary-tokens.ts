@@ -61,8 +61,6 @@ export function buildSummaryTokens(question: Question): BuilderSummaryToken[] {
     });
   } else if (type === "matching" || type === "ordering" || type === "labelling") {
     tokens.push({ key: "response", labelKey: "answerKey" });
-  } else if (type === "annotateSource") {
-    tokens.push({ key: "response", labelKey: "sourcePassage" });
   } else if (type === "drawDiagram" || type === "graph" || type === "photoHandwritten") {
     tokens.push({ key: "response", labelKey: "canvasSettings" });
   }

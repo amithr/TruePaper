@@ -6,7 +6,7 @@ import { BuilderResponseConfig } from "@/components/response-types/BuilderRespon
 import type { BuilderPanelKey } from "@/lib/builder/summary-tokens";
 import type { Form, Question } from "@/lib/forms";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
-import { parseResponseConfig, annotatePassageText } from "@/lib/response-types/registry";
+import { parseResponseConfig } from "@/lib/response-types/registry";
 import { ui } from "@/lib/ui";
 
 type Props = {
@@ -429,50 +429,6 @@ export function BuilderQuestionFields({
                 </div>
               ))}
             </div>
-          ) : null}
-
-          {question.type === "annotateSource" ? (
-            <label className={ui.label}>
-              {t("responseTypes.builder.sourcePassage")}
-              <textarea
-                rows={5}
-                value={annotatePassageText(question.responseConfig)}
-                placeholder={t("responseTypes.annotateSource.builderPassagePlaceholder")}
-                data-testid="builder-annotate-passage"
-                onChange={(event) =>
-                  updateActiveForm((form) => ({
-                    ...form,
-                    questions: form.questions.map((formQuestion) =>
-                      formQuestion.id === question.id
-                        ? {
-                            ...formQuestion,
-                            responseConfig: {
-                              ...parseResponseConfig(
-                                formQuestion.type,
-                                formQuestion.responseConfig,
-                              ),
-                              passageText: event.target.value,
-                            },
-                          }
-                        : formQuestion,
-                    ),
-                  }))
-                }
-                className="tp-input"
-              />
-              {annotatePassageText(question.responseConfig).trim() ? (
-                <span className="mt-1 block text-xs font-normal text-[var(--tp-text-muted)]">
-                  {t("responseTypes.annotateSource.builderPassageHint")}
-                </span>
-              ) : (
-                <span
-                  role="status"
-                  className="mt-1 block text-xs font-medium text-[var(--tp-warning-text)]"
-                >
-                  {t("responseTypes.annotateSource.builderPassageEmpty")}
-                </span>
-              )}
-            </label>
           ) : null}
 
           {question.type !== "multipleChoice" &&
