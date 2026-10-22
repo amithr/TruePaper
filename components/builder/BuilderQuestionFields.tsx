@@ -460,6 +460,9 @@ export function BuilderQuestionFields({
                 }
                 className="tp-input"
               />
+              <span className="mt-1 block text-xs font-normal text-[var(--tp-text-muted)]">
+                {t("responseTypes.annotateSource.builderPassageHint")}
+              </span>
             </label>
           ) : null}
 

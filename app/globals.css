@@ -7923,3 +7923,86 @@ code,
     animation: none;
   }
 }
+
+/* Annotate source: selectable passage inside the copy-protected exam. */
+.tp-annotate-passage {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tp-annotate-passage[data-empty="true"] {
+  font-style: italic;
+  color: var(--tp-text-muted);
+}
+
+/* The exam disables selection (and hides it) to discourage copying; the passage is
+   the one place students must select, so re-enable it and make it visible. */
+[data-exam-protected] .tp-annotate-passage[data-selectable="true"],
+.tp-annotate-passage[data-selectable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+  cursor: text;
+}
+
+/* Both forms: text sits directly in the passage (::selection on the element itself)
+   and inside highlight <mark>s (descendant ::selection). */
+[data-exam-protected] .tp-annotate-passage[data-selectable="true"]::selection,
+[data-exam-protected] .tp-annotate-passage[data-selectable="true"] ::selection,
+.tp-annotate-passage[data-selectable="true"]::selection,
+.tp-annotate-passage[data-selectable="true"] ::selection {
+  background: #fde68a;
+  color: var(--tp-text);
+}
+
+.tp-annotate-highlight {
+  border-radius: 3px;
+  background: #fef3c7;
+  box-shadow: inset 0 -2px 0 #fbbf24;
+  color: inherit;
+  padding: 0 1px;
+}
+
+.tp-annotate-highlight[role="button"] {
+  cursor: pointer;
+}
+
+.tp-annotate-highlight[role="button"]:hover,
+.tp-annotate-highlight[data-active="true"] {
+  background: #fde68a;
+}
+
+.tp-annotate-highlight:focus-visible {
+  outline: 2px solid var(--tp-accent-ring);
+  outline-offset: 1px;
+}
+
+.tp-annotate-highlight[data-note]::after {
+  content: attr(data-note);
+  display: inline-block;
+  margin-left: 2px;
+  min-width: 1rem;
+  border-radius: 9999px;
+  background: var(--tp-amber);
+  padding: 0 0.25rem;
+  vertical-align: super;
+  text-align: center;
+  font-size: 0.625rem;
+  font-weight: 600;
+  line-height: 1rem;
+  color: #fff;
+}
+
+.tp-annotate-note-ref--list {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  margin-top: 0.05rem;
+  border-radius: 9999px;
+  background: var(--tp-amber);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #fff;
+}

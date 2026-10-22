@@ -350,7 +350,7 @@ function Phone({ f }: { f: DemoFrame }) {
               {f.queued > 0 ? (
                 <div className="tp-lp-warn-pill tp-lp-warn-pill--sm">
                   <Smartphone aria-hidden className="h-3 w-3" />
-                  {t("home.landing.demo.queued", { n: f.queued })}
+                  {t("sync.summary.queued", { count: f.queued })}
                 </div>
               ) : null}
               <div className="tp-lp-progress">
@@ -384,13 +384,13 @@ function Phone({ f }: { f: DemoFrame }) {
               </div>
               {f.feedbackVisible ? (
                 <div className="tp-teacher-feedback-card tp-lp-feedback">
-                  <div className="tp-lp-feedback__title">{t("home.landing.demo.feedbackTitle")}</div>
+                  <div className="tp-lp-feedback__title">{t("feedback.title")}</div>
                   <div className="tp-lp-feedback__body">{t("home.landing.demo.feedbackBody")}</div>
                 </div>
               ) : null}
               <div className="tp-lp-exam__footer">
                 <div className="tp-lp-phone-btn" data-pressed={f.handInPressed ? "true" : undefined}>
-                  {t("home.landing.demo.handIn")}
+                  {t("home.exam.handIn")}
                 </div>
                 <div className="tp-lp-exam__hint">
                   {f.allAnswered ? t("home.landing.demo.allAnswered") : t("home.landing.demo.oneBlank")}

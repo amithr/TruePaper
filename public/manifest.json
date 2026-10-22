@@ -1,6 +1,6 @@
 {
-  "name": "Truepaper",
-  "short_name": "Truepaper",
+  "name": "TruePaper",
+  "short_name": "TruePaper",
   "description": "Classroom forms and live sessions — works offline when you need it.",
   "start_url": "/",
   "display": "standalone",

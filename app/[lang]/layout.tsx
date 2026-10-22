@@ -26,7 +26,7 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Truepaper — Classroom forms & live sessions",
+  title: "TruePaper — Classroom forms & live sessions",
   description:
     "Teachers create forms and run live sessions; students join with a code—no account required.",
   manifest: "/manifest.json",

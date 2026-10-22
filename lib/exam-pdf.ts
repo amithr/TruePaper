@@ -1207,8 +1207,8 @@ function createDoc(engine: ExamPdfEngine): ExamPdfDoc {
       right: PAGE_MARGIN,
     },
     info: {
-      Producer: "Truepaper",
-      Creator: "Truepaper",
+      Producer: "TruePaper",
+      Creator: "TruePaper",
     },
     bufferPages: true,
   });

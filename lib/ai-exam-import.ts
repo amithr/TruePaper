@@ -365,10 +365,10 @@ export function buildAiExamGuideMarkdown(): string {
       `### \`${doc.type}\`\n\n${doc.summary}\n\n${FENCE}json\n${JSON.stringify(doc.example, null, 2)}\n${FENCE}`,
   ).join("\n\n");
 
-  return `# Truepaper — AI Exam Authoring Guide
+  return `# TruePaper — AI Exam Authoring Guide
 
 This file tells an AI assistant (ChatGPT, Claude, etc.) how to turn your teaching
-content into an exam you can import into Truepaper.
+content into an exam you can import into TruePaper.
 
 ## How to use this
 
@@ -377,7 +377,7 @@ content into an exam you can import into Truepaper.
    (notes, a textbook chapter, a topic outline, learning objectives…).
 3. Ask: *"Using the guide above, generate an exam as a single JSON file."*
 4. Save the assistant's reply as a \`.json\` file (no Markdown fences).
-5. In Truepaper: **Dashboard → Form library → Import exam**, and upload that file.
+5. In TruePaper: **Dashboard → Form library → Import exam**, and upload that file.
 6. The exam opens in the form builder, fully editable before you start a session.
 
 ## Output rules (important)
@@ -527,7 +527,7 @@ Also:
   diagram, figure, graph, map, or photo, write a short instruction only
   (e.g. “Refer to the diagram.” / “Label the parts shown.”) and use
   \`drawDiagram\`, \`labelling\`, or \`graph\` as appropriate. Teachers attach the
-  real image in Truepaper — do **not** invent ASCII art, long visual
+  real image in TruePaper — do **not** invent ASCII art, long visual
   descriptions, or fake figure captions that try to stand in for the image.
   Exception: a simple diagram **with axes** that the student must build on
   (e.g. a demand curve to shift) can be pre-drawn as a \`graph\` with
@@ -551,10 +551,10 @@ ${FENCE}
 ## Making the exam look organized on the student screen
 
 Students answer one question card after another in a single scrolling column,
-often on a phone. Truepaper draws some of each card itself, so write content
+often on a phone. TruePaper draws some of each card itself, so write content
 that fits the layout instead of repeating it.
 
-### What Truepaper already shows (do not repeat it)
+### What TruePaper already shows (do not repeat it)
 
 - Every card header shows the question number (\`Q1\`, \`Q2\`, …) and the marks
   (\`3 marks\`). Do **not** start a prompt with “Question 1:”, “1.”, “Q1)”, and
@@ -694,6 +694,6 @@ ${FENCE}
 - Keep ids short and unique within a question (e.g. \`l1\`, \`r1\`, \`i1\`).
 - Do not invent new \`type\` values or extra top-level fields.
 - Do **not** add teacher notes, mark schemes, or diagram descriptions — leave
-  images and teacher-only guidance for the human teacher in Truepaper.
+  images and teacher-only guidance for the human teacher in TruePaper.
 `;
 }

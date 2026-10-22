@@ -1,6 +1,6 @@
 {
   "common": {
-    "appName": "Truepaper",
+    "appName": "TruePaper",
     "cancel": "Cancel",
     "save": "Save",
     "saving": "Saving…",
@@ -222,14 +222,11 @@
         "startTask": "Start task",
         "quizTitle": "Photosynthesis quiz",
         "syncing": "Back online — saving…",
-        "queued": "{n} waiting to save",
         "questionMeta": "Question 1 · 5 pts",
         "saved": "Saved",
         "question": "In one sentence, what powers photosynthesis?",
         "restored": "Welcome back, Ava — your answers were restored on this device.",
-        "feedbackTitle": "Your teacher says",
         "feedbackBody": "Great start — name the pigment too.",
-        "handIn": "Hand in",
         "allAnswered": "All questions answered",
         "oneBlank": "1 of 1 still blank",
         "batteryDied": "Battery died",
@@ -904,20 +901,20 @@
       "importing": "Importing…",
       "aiGuideEyebrow": "AI-assisted authoring",
       "aiGuideTitle": "Create an exam with AI",
-      "aiGuideIntro": "Use ChatGPT, Claude, or another AI assistant to turn your notes or a textbook chapter into an exam you can import and edit in Truepaper.",
+      "aiGuideIntro": "Use ChatGPT, Claude, or another AI assistant to turn your notes or a textbook chapter into an exam you can import and edit in TruePaper.",
       "aiGuideSteps": {
         "download": "Download the AI guide from this window (or from Import exam).",
         "uploadAi": "Open ChatGPT or Claude. Paste in the guide, then add your teaching material.",
-        "ask": "Ask the AI to create an exam for Truepaper, following the guide.",
+        "ask": "Ask the AI to create an exam for TruePaper, following the guide.",
         "save": "Save or download the exam file the AI gives you.",
-        "import": "Back in Truepaper, open Import exam, upload that file, then review and edit the form before you go live.",
+        "import": "Back in TruePaper, open Import exam, upload that file, then review and edit the form before you go live.",
         "matchTypes": "Optional: tell the AI which formats to use — or let the guide choose (e.g. calculations → math / photo of workings, essays → written). Example: “Make questions 1–5 multiple choice, question 6 a written response, and questions 7–8 matching.”"
       },
       "importEyebrow": "Form library",
       "importTitle": "Import an exam",
-      "importIntro": "Upload the exam file your AI assistant created. Truepaper turns it into a form you can edit.",
+      "importIntro": "Upload the exam file your AI assistant created. TruePaper turns it into a form you can edit.",
       "templateHeading": "Need help creating the file?",
-      "templateHint": "Download the AI guide and paste it into ChatGPT or Claude with your material. The guide tells the assistant how to prepare an exam Truepaper can import.",
+      "templateHint": "Download the AI guide and paste it into ChatGPT or Claude with your material. The guide tells the assistant how to prepare an exam TruePaper can import.",
       "uploadHeading": "Upload your exam file",
       "chooseFile": "Drag your exam file here, or click to choose",
       "acceptedFormats": "Use the file your AI assistant saved for you",
@@ -1007,7 +1004,7 @@
       },
       "dashboard": {
         "welcome": {
-          "title": "Welcome to Truepaper",
+          "title": "Welcome to TruePaper",
           "body": "This is your dashboard. Here's a 30-second tour of how to run your first live exam."
         },
         "running": {
@@ -1217,9 +1214,14 @@
     "annotateSource": {
       "label": "Annotate source",
       "emptyPassage": "Source passage will appear here.",
-      "highlightTool": "Highlight",
-      "noteTool": "Note",
-      "noteLabel": "Note"
+      "noteLabel": "Note",
+      "highlightSelection": "Highlight selection",
+      "hint": "Select words in the passage to highlight them. Tap a highlight to add a note or remove it.",
+      "editHighlightAria": "Highlight: {text}. Add a note or remove it.",
+      "notePlaceholder": "Why does this matter?",
+      "saveNote": "Save note",
+      "removeHighlight": "Remove highlight",
+      "builderPassageHint": "Students select words in this text to highlight them and can add a note to each highlight. Keep the instruction in the question text above."
     },
     "drawDiagram": {
       "label": "Draw / diagram",

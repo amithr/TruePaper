@@ -1,4 +1,4 @@
-# Truepaper — Feature & Architecture Guide
+# TruePaper — Feature & Architecture Guide
 
 **Audience:** AI agents and developers working in this repo.  
 **Goal:** Fast orientation — what the product does, how flows connect, and where code lives.
@@ -36,7 +36,7 @@
 
 ## Product summary
 
-**Truepaper** is a classroom form/exam platform for teachers and anonymous students.
+**TruePaper** is a classroom form/exam platform for teachers and anonymous students.
 
 | Role | Auth | Primary UI |
 |------|------|------------|
@@ -451,7 +451,7 @@ flowchart TD
 | `shortAnswer` | `ShortAnswerResponder.tsx` | Yes (accepted answers) | Yes |
 | `extendedWritten` | `ExtendedWrittenResponder.tsx` | No | Yes |
 | `structuredMultiPart` | `StructuredMultiPartResponder.tsx` (exam-paper list: every part visible with label badge + answered tick, prompt, auto-growing answer box, inline part feedback; review shows all parts read-only) | No | Yes |
-| `annotateSource` | `AnnotateSourceResponder.tsx` | No | Yes |
+| `annotateSource` | `AnnotateSourceResponder.tsx` (passage from `responseConfig.passageText`, keeps paragraphs; mouse drag highlights on release, touch selects then **Highlight selection**; tap/Enter on a highlight to add a note or remove it; overlapping highlights merge; passage re-enables visible selection inside the copy-protected `[data-exam-protected]` exam; note numbers drawn via CSS so text offsets stay exact) | No | Yes |
 | `drawDiagram` | `DrawDiagramResponder.tsx` (optional question-image canvas background via `promptImageAsBackground`; **Draw / Upload a photo** switch unless `allowImageUpload: false`) | No | Yes |
 | `graph` | `GraphResponder.tsx` (tools: point, straight line, **smooth curve** — tap 3+ points in order or empty space to add one, finish by re-tapping the last point; curves stored as optional `curves: [{ id, pointIds }]` on the answer, geometry in `lib/response-types/graph-curve.ts`: monotone cubic when x and y are both monotone, centripetal Catmull–Rom otherwise; optional teacher **starting graph** `responseConfig.given` {points, lines, curves, labels}: drawn muted/read-only under student work in responder, watch, review and PDF; student lines may end on given points; edited in the builder with the same tools; sanitised by `resolveGraphGiven` in `lib/response-types/graph-coords.ts`) | No | Yes |
 | `photoHandwritten` | `PhotoHandwrittenResponder.tsx` | No | Yes |
@@ -506,7 +506,7 @@ Registry & rubrics: `lib/response-types/registry.ts`, `feedback.ts`, `autograde.
 
 - `app/[lang]/LandingHero.tsx` (rendered by `HomeClient` for signed-out visitors on `/[lang]`): offline-first resilience story — own top bar (brand, Investors anchor, Sign in, language toggle; the fixed guest header is hidden on the landing), hero with CTAs (`/register`, `#join`), reliability cards, three steps, investor band (`#investors`; "Request the deck" hidden until `INVESTOR_DECK_HREF` is set), final CTA, and a student join card that validates the code (`isValidJoinCodeFormat`) before `router.push("/join?code=…")`.
 - Scripted demo: `components/landing/LandingDemo.tsx` renders teacher window + phone from one looping clock; all state is derived by the pure `demoFrame(t, outage)` in `lib/landing-demo.ts` (26 s loop, chapter starts, Wi‑Fi / power / no-outage variants, valid demo join code). rAF clock throttled to ~20 fps with capped steps; `prefers-reduced-motion` holds a still frame (chips and play still work). Teacher window hides < 1000px. Styles: `tp-lp*` block at the end of `app/globals.css`.
-- Copy: `home.landing.*` (en + uk); demo reuses `home.exam.sync*` and `session.roster.statusOffline`.
+- Copy: `home.landing.*` (en + uk); demo reuses `home.exam.sync*`, `home.exam.handIn`, `session.roster.statusOffline`, `sync.summary.queued` and `feedback.title`.
 
 ### Site chrome
 

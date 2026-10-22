@@ -1,6 +1,6 @@
 # List UI — design system
 
-**Audience:** developers and agents building teacher-facing collection views in Truepaper.
+**Audience:** developers and agents building teacher-facing collection views in TruePaper.
 
 This doc defines the **flat entity list** pattern used across the dashboard and live-session surfaces. Read it before adding or restyling a list of forms, sessions, roster rows, or similar.
 
