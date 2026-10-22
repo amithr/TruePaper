@@ -27,8 +27,10 @@ describe("BuilderResponseConfig", () => {
       <BuilderResponseConfig question={question} updateActiveForm={updateActiveForm} />,
     );
 
-    const accepted = screen.getByPlaceholderText(/comma separated/i);
+    // The field keeps a local draft while typing and saves when the teacher leaves it.
+    const accepted = screen.getByTestId("accepted-answers-input");
     fireEvent.change(accepted, { target: { value: "7.35, 7.3, 7.347" } });
+    fireEvent.blur(accepted);
 
     expect(updateActiveForm).toHaveBeenCalled();
     const next = updateActiveForm.mock.results.at(-1)?.value as Form;

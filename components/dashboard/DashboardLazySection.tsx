@@ -7,6 +7,8 @@ type Props = {
   children: ReactNode;
   placeholder?: ReactNode;
   rootMargin?: string;
+  /** Mount immediately (e.g. while the first-login tour needs its anchors on the page). */
+  eager?: boolean;
 };
 
 /** Mount children when the section scrolls near the viewport (defers below-the-fold work). */
@@ -15,8 +17,9 @@ export function DashboardLazySection({
   children,
   placeholder = null,
   rootMargin = "240px",
+  eager = false,
 }: Props) {
-  const [visible, setVisible] = useState(false);
+  const [visible, setVisible] = useState(eager);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

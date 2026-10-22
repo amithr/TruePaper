@@ -6,10 +6,13 @@ import { normalizeResponseType } from "@/lib/response-types/types";
 export type BuilderPanelKey = "image" | "response" | "scoring";
 
 export type BuilderSummaryToken = {
-  key: BuilderPanelKey;
+  /** Panel to open, or `prompt` to focus the question text. */
+  key: BuilderPanelKey | "prompt";
   /** i18n key under `home.builder.tokens.*` */
   labelKey: string;
   values?: Record<string, string | number>;
+  /** Amber: something the teacher still has to fill in. */
+  tone?: "warn";
 };
 
 /** Derive clickable summary tokens for a builder question card. */
@@ -17,6 +20,10 @@ export function buildSummaryTokens(question: Question): BuilderSummaryToken[] {
   const type = normalizeResponseType(question.type);
   const tokens: BuilderSummaryToken[] = [];
   const config = question.responseConfig as Record<string, unknown>;
+
+  if (!question.prompt.trim()) {
+    tokens.push({ key: "prompt", labelKey: "needsPrompt", tone: "warn" });
+  }
 
   if (question.promptImagePath) {
     tokens.push({ key: "image", labelKey: "image" });

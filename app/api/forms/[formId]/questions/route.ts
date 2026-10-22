@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import type { Question, QuestionType } from "@/lib/forms";
-import { getResponseTypeMeta, parseResponseConfig } from "@/lib/response-types/registry";
+import { parseResponseConfig } from "@/lib/response-types/registry";
 import { isValidQuestionType } from "@/lib/response-types/valid-types";
 import { getSessionUser } from "@/lib/request-auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -71,14 +71,14 @@ export async function POST(request: Request, { params }: Params) {
   }
 
   const displayOrder = (maxOrderData?.display_order ?? -1) + 1;
-  const meta = getResponseTypeMeta(type);
-  const prompt = body.prompt?.trim() || meta.defaultPrompt();
+  // Empty until the teacher writes it; the builder shows the type's example as a placeholder.
+  const prompt = body.prompt?.trim() ?? "";
   const responseConfig = parseResponseConfig(type, body.responseConfig);
   const options =
     type === "multipleChoice"
       ? body.options && body.options.length > 0
         ? body.options.map((value) => value.trim())
-        : ["Option 1", "Option 2"]
+        : ["", ""]
       : [];
   const requestedCorrectAnswer =
     type === "multipleChoice" ? (typeof body.correctAnswer === "string" ? body.correctAnswer.trim() : "") : "";

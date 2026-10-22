@@ -2,7 +2,8 @@
 
 import { useParams } from "next/navigation";
 
-import { useLocaleRouter as useRouter } from "@/lib/i18n/client";
+import { LocaleLink, useLocaleRouter as useRouter } from "@/lib/i18n/client";
+import { toast } from "sonner";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Breadcrumbs } from "@/components/Breadcrumbs";
@@ -188,7 +189,9 @@ export default function LiveSessionDetailPage() {
       await requestJson<{ ok: true }>(`/api/forms/live-sessions/${liveSessionId}/stop`, {
         method: "POST",
       });
-      router.replace("/dashboard");
+      // Grading starts the moment a session ends: land on the needs-grading queue.
+      toast.success(t("session.stoppedToast"));
+      router.replace(`/dashboard/sessions/${liveSessionId}/exam-list`);
       router.refresh();
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : t("session.errors.stop"));
@@ -503,28 +506,36 @@ export default function LiveSessionDetailPage() {
               </p>
               <SessionJoinShare joinCode={s.joinCode} className="mt-3" />
             </div>
-            <dl className="grid flex-1 grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4 sm:justify-items-end">
+            <div className="grid flex-1 grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4 sm:justify-items-end">
               <div>
-                <dd className="tp-stat-value">{totalCount}</dd>
-                <dt className="tp-stat-label">{t("session.stats.joined")}</dt>
+                <span className="tp-stat-value block">{totalCount}</span>
+                <span className="tp-stat-label block">{t("session.stats.joined")}</span>
               </div>
               <div>
-                <dd className="tp-stat-value">{workingCount}</dd>
-                <dt className="tp-stat-label">{t("session.stats.working")}</dt>
+                <span className="tp-stat-value block">{workingCount}</span>
+                <span className="tp-stat-label block">{t("session.stats.working")}</span>
               </div>
-              <div>
-                <dd className="tp-stat-value">{needsGradingCount}</dd>
-                <dt className="tp-stat-label">{t("session.stats.submitted")}</dt>
-              </div>
-              <div>
-                <dd className="tp-stat-value">{gradedCount}</dd>
-                <dt className="tp-stat-label">{t("session.stats.graded")}</dt>
-              </div>
+              {/* The grading tiles open the needs-grading queue. */}
+              <LocaleLink
+                href={`/dashboard/sessions/${liveSessionId}/exam-list`}
+                className={`tp-stat-link ${focusRing}`}
+                data-testid="session-stat-to-grade"
+              >
+                <span className="tp-stat-value block">{needsGradingCount}</span>
+                <span className="tp-stat-label block">{t("session.stats.submitted")}</span>
+              </LocaleLink>
+              <LocaleLink
+                href={`/dashboard/sessions/${liveSessionId}/exam-list?filter=graded`}
+                className={`tp-stat-link ${focusRing}`}
+              >
+                <span className="tp-stat-value block">{gradedCount}</span>
+                <span className="tp-stat-label block">{t("session.stats.graded")}</span>
+              </LocaleLink>
               <div className="col-span-2 sm:col-span-4 sm:text-right">
                 <dd className="tp-stat-value tabular-nums">{timeLeftValue}</dd>
                 <dt className="tp-stat-label">{t("session.stats.timeLeft")}</dt>
               </div>
-            </dl>
+            </div>
           </div>
         </section>
 

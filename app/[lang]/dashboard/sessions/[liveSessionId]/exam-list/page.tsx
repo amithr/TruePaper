@@ -1,6 +1,6 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 
 import { useLocaleRouter as useRouter } from "@/lib/i18n/client";
 import { useCallback, useEffect, useState } from "react";
@@ -43,6 +43,8 @@ export default function SessionExamListPage() {
   const router = useRouter();
   const params = useParams();
   const liveSessionId = typeof params.liveSessionId === "string" ? params.liveSessionId : "";
+  // `?filter=graded` (from the session page's Graded tile) opens on that list.
+  const requestedFilter = useSearchParams().get("filter");
 
   const [overview, setOverview] = useState<LiveSessionOverviewPayload | null>(null);
   const [nowTick, setNowTick] = useState(() => Date.now());
@@ -68,7 +70,9 @@ export default function SessionExamListPage() {
       setOverview(data);
       if (!filterInitialized) {
         const needs = countNeedsGrading(data.participants);
-        if (needs > 0) {
+        if (requestedFilter === "graded") {
+          setRosterFilter("graded");
+        } else if (needs > 0) {
           setRosterFilter("needs-grading");
         }
         setFilterInitialized(true);
@@ -79,7 +83,7 @@ export default function SessionExamListPage() {
         setLoadError(message);
       }
     }
-  }, [filterInitialized, liveSessionId, t]);
+  }, [filterInitialized, requestedFilter, liveSessionId, t]);
 
   useEffect(() => {
     if (!liveSessionId) {
@@ -192,28 +196,6 @@ export default function SessionExamListPage() {
               title={t("session.downloadAllPdfTitle")}
             >
               {t("session.downloadAllPdfShort")}
-            </button>
-            <button
-              type="button"
-              onClick={() => void refreshOverview()}
-              className={`tp-btn-ghost ${focusRing}`}
-              aria-label={t("session.refreshAria")}
-            >
-              <svg
-                aria-hidden
-                className="h-4 w-4"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
-                <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
-                <path d="M21 3v5h-5" />
-                <path d="M3 21v-5h5" />
-              </svg>
             </button>
           </div>
         </div>

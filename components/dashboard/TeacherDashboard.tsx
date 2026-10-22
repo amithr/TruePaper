@@ -68,9 +68,17 @@ export function TeacherDashboard({
         /* best-effort; tour still won't re-run this session */
       });
     };
-    // Let the dashboard paint (and async sections settle) before anchoring steps.
-    const timer = window.setTimeout(() => {
+    // Let the dashboard paint, then wait (briefly) for the form library's "New form"
+    // button: it loads asynchronously, and the tour skips steps whose anchor is missing.
+    const started = Date.now();
+    let timer = 0;
+    const tryStart = () => {
       if (cancelled) {
+        return;
+      }
+      const anchorsReady = document.querySelector('[data-tour="new-form"]') !== null;
+      if (!anchorsReady && Date.now() - started < 2500) {
+        timer = window.setTimeout(tryStart, 150);
         return;
       }
       void import("@/lib/onboarding-tour")
@@ -82,7 +90,8 @@ export function TeacherDashboard({
         .catch(() => {
           /* tour is non-critical */
         });
-    }, 600);
+    };
+    timer = window.setTimeout(tryStart, 600);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
@@ -151,6 +160,7 @@ export function TeacherDashboard({
 
         <DashboardLazySection
           id="past-sessions"
+          eager={!tourCompleted}
           placeholder={
             <div className="tp-card p-6">
               <p className={ui.sectionTitle}>{t("dashboard.historyEyebrow")}</p>
@@ -168,6 +178,7 @@ export function TeacherDashboard({
 
         <DashboardLazySection
           id="form-library"
+          eager={!tourCompleted}
           placeholder={
             <div className="tp-card p-6">
               <p className={ui.sectionTitle}>{t("dashboard.formsEyebrow")}</p>

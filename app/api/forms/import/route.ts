@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 
-import { AiExamParseError, parseAiExamDocument } from "@/lib/ai-exam-import";
+import {
+  AiExamParseError,
+  extractJsonFromAiReply,
+  parseAiExamDocument,
+} from "@/lib/ai-exam-import";
 import { buildForms } from "@/lib/forms-api";
 import { getSessionUser } from "@/lib/request-auth";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -14,24 +18,18 @@ async function parseImportPayload(request: Request) {
     if (!(file instanceof File)) {
       throw new AiExamParseError("Choose a JSON exam file to upload.");
     }
-    const text = await file.text();
-    try {
-      return parseAiExamDocument(JSON.parse(text) as unknown);
-    } catch (error) {
-      if (error instanceof AiExamParseError) {
-        throw error;
-      }
-      throw new AiExamParseError(
-        "That file isn't valid JSON. Save the AI's reply as a .json file and try again.",
-      );
-    }
+    return parseAiExamDocument(extractJsonFromAiReply(await file.text()));
   }
 
-  let body: { document?: unknown };
+  let body: { document?: unknown; text?: unknown };
   try {
-    body = (await request.json()) as { document?: unknown };
+    body = (await request.json()) as { document?: unknown; text?: unknown };
   } catch {
-    throw new AiExamParseError("The uploaded file is not valid JSON.");
+    throw new AiExamParseError("The request body is not valid JSON.", "invalid_json");
+  }
+  // Pasted reply text from the import dialog.
+  if (typeof body.text === "string") {
+    return parseAiExamDocument(extractJsonFromAiReply(body.text));
   }
   return parseAiExamDocument(body.document ?? body);
 }
@@ -52,7 +50,7 @@ export async function POST(request: Request) {
     parsed = await parseImportPayload(request);
   } catch (error) {
     if (error instanceof AiExamParseError) {
-      return NextResponse.json({ error: error.message }, { status: 422 });
+      return NextResponse.json({ error: error.message, code: error.code }, { status: 422 });
     }
     return NextResponse.json({ error: "Could not read the exam file." }, { status: 422 });
   }

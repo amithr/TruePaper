@@ -48,3 +48,13 @@ export type Form = {
 };
 
 export type StudentAnswers = Record<string, string>;
+
+/** Server default title for a new form (`POST /api/forms`). */
+export const UNTITLED_FORM_TITLE = "Untitled Form";
+
+/** True for a form the teacher hasn't named yet. */
+export function isUntitledFormTitle(title: string): boolean {
+  const trimmed = title.trim();
+  return trimmed === "" || trimmed.toLowerCase() === UNTITLED_FORM_TITLE.toLowerCase();
+}
+

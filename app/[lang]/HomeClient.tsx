@@ -39,6 +39,8 @@ import { FormAssetImageEditor } from "@/components/FormAssetImageEditor";
 import { OverflowMenu } from "@/components/OverflowMenu";
 import { BuilderTypePicker } from "@/components/builder/BuilderTypePicker";
 import { AnnotatePassageField } from "@/components/builder/AnnotatePassageField";
+import { toast } from "sonner";
+import { ConfirmButton } from "@/components/ConfirmButton";
 import { BuilderQuestionFields } from "@/components/builder/BuilderQuestionFields";
 import { looksLikeSourceText, withAnnotatePassage } from "@/lib/builder/annotate-source";
 import { QuestionTypeBadge } from "@/components/response-types/QuestionTypeBadge";
@@ -49,7 +51,7 @@ import {
 } from "@/lib/builder/summary-tokens";
 import { typeBadgeFamily } from "@/lib/response-types/builder-groups";
 import { SaveTemplateModal } from "@/components/library/SaveTemplateModal";
-import { Bookmark, Copy, ImagePlus, Trash2 } from "lucide-react";
+import { Bookmark, Copy, ImagePlus } from "lucide-react";
 import {
   createFreshAnonymousSessionId,
   getOrCreateAnonymousSessionId,
@@ -66,7 +68,11 @@ import {
   type TeacherHomeIntent,
 } from "@/lib/home-url-intent";
 import { mergePendingBuilderForm, peekPendingBuilderForm } from "@/lib/pending-builder-form";
-import { questionSupportsLiveFeedback, annotatePassageText } from "@/lib/response-types/registry";
+import {
+  annotatePassageText,
+  getResponseTypeMeta,
+  questionSupportsLiveFeedback,
+} from "@/lib/response-types/registry";
 import { isResponseAnswered } from "@/lib/response-types/answers";
 import { postExamTabLeave, postExamTabLeaveAwait } from "@/lib/exam-tab-leave";
 import { formatExamWatermarkLabel } from "@/lib/exam-capture-protection";
@@ -470,9 +476,14 @@ export default function HomeClient({
       /* ignore */
     }
     let cancelled = false;
+    const firstQuestion = activeForm.questions[0];
     const timer = window.setTimeout(() => {
       if (cancelled) {
         return;
+      }
+      if (firstQuestion) {
+        // The scoring step anchors inside Q1's open scoring panel.
+        setBuilderOpenPanel({ questionId: firstQuestion.id, panel: "scoring" });
       }
       void import("@/lib/onboarding-tour")
         .then(({ startBuilderTour }) => {
@@ -2056,31 +2067,84 @@ export default function HomeClient({
     }
   };
 
-  const removeQuestion = async (questionId: string) => {
-    setIsMutating(true);
-    setStatusMessage("");
+  /**
+   * Soft delete with Undo: the question leaves the form immediately, but the server
+   * DELETE (which also removes the prompt image from storage) only runs once the undo
+   * toast has gone. A reload during that window simply shows the question again.
+   */
+  const pendingQuestionDeletesRef = useRef<Map<string, { question: Question; index: number }>>(
+    new Map(),
+  );
+
+  const commitQuestionDelete = async (questionId: string) => {
+    const pending = pendingQuestionDeletesRef.current.get(questionId);
+    if (!pending) {
+      return; // undone, or already committed
+    }
+    pendingQuestionDeletesRef.current.delete(questionId);
     try {
-      await requestJson<{ ok: true }>(`/api/questions/${questionId}`, {
-        method: "DELETE",
-      });
-      updateActiveForm((form) => ({
-        ...form,
-        questions: form.questions.filter((question) => question.id !== questionId),
-      }));
+      await requestJson<{ ok: true }>(`/api/questions/${questionId}`, { method: "DELETE" });
       setPersistedBuilderQuestionJsonById((prev) => {
         const next = { ...prev };
         delete next[questionId];
         return next;
       });
-      const nextAnswers = { ...latestStudentAnswersRef.current };
-      delete nextAnswers[questionId];
-      latestStudentAnswersRef.current = nextAnswers;
-      setExamAnswers(nextAnswers);
     } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : t("home.errors.removeQuestion"));
-    } finally {
-      setIsMutating(false);
+      // Put it back so nothing silently disappears from the teacher's form.
+      updateActiveForm((form) => {
+        if (form.questions.some((q) => q.id === questionId)) {
+          return form;
+        }
+        const questions = [...form.questions];
+        questions.splice(Math.min(pending.index, questions.length), 0, pending.question);
+        return { ...form, questions };
+      });
+      toast.error(error instanceof Error ? error.message : t("home.errors.removeQuestion"));
     }
+  };
+
+  const undoQuestionDelete = (questionId: string) => {
+    const pending = pendingQuestionDeletesRef.current.get(questionId);
+    if (!pending) {
+      return;
+    }
+    pendingQuestionDeletesRef.current.delete(questionId);
+    updateActiveForm((form) => {
+      const questions = [...form.questions];
+      questions.splice(Math.min(pending.index, questions.length), 0, pending.question);
+      return { ...form, questions };
+    });
+  };
+
+  const removeQuestion = (questionId: string) => {
+    const form = activeForm;
+    if (!form) {
+      return;
+    }
+    const index = form.questions.findIndex((q) => q.id === questionId);
+    const question = form.questions[index];
+    if (!question) {
+      return;
+    }
+    pendingQuestionDeletesRef.current.set(questionId, { question, index });
+    setStatusMessage("");
+    updateActiveForm((current) => ({
+      ...current,
+      questions: current.questions.filter((q) => q.id !== questionId),
+    }));
+    const nextAnswers = { ...latestStudentAnswersRef.current };
+    delete nextAnswers[questionId];
+    latestStudentAnswersRef.current = nextAnswers;
+    setExamAnswers(nextAnswers);
+    toast(t("home.builder.questionDeleted", { n: index + 1 }), {
+      duration: 6000,
+      action: {
+        label: t("common.undo"),
+        onClick: () => undoQuestionDelete(questionId),
+      },
+      onAutoClose: () => void commitQuestionDelete(questionId),
+      onDismiss: () => void commitQuestionDelete(questionId),
+    });
   };
 
   const rejoinWithResumeCode = async (rawCode: string) => {
@@ -2860,8 +2924,19 @@ export default function HomeClient({
                       ? builderSaveError || t("home.builder.saveFailed")
                       : builderHasUnsavedChanges
                         ? t("home.builder.saving")
-                        : t("home.builder.savedJustNow")}
+                        : builderSaveStatus === "saved"
+                          ? t("home.builder.savedJustNow")
+                          : t("home.builder.allSaved")}
                 </span>
+                {builderSaveStatus === "error" ? (
+                  <button
+                    type="button"
+                    onClick={() => void saveBuilderForm()}
+                    className={`tp-btn-secondary text-sm ${focusRing}`}
+                  >
+                    {t("home.builder.retrySave")}
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => setMode("student")}
@@ -2969,15 +3044,10 @@ export default function HomeClient({
         ) : showTeacherTools && !activeForm ? (
           <div className="py-10 text-center text-sm text-[var(--tp-text-secondary)]">
             <p className="font-medium text-[var(--tp-text)]">{t("home.teacher.noFormOpen")}</p>
-            <p className="mt-2 max-w-md mx-auto">
-              {t("home.teacher.noFormOpenHintPrefix")}{" "}
-              <Link href="/dashboard" className={`tp-link ${focusRing}`}>
-                {t("home.teacher.formLibraryLink")}
-              </Link>
-              , {t("home.teacher.noFormOpenHintSuffix")}{" "}
-              <span className="font-medium text-[var(--tp-text)]">{t("home.teacher.editInBuilder")}</span>{" "}
-              {t("home.teacher.noFormOpenHintEnd")}
-            </p>
+            <p className="mx-auto mt-2 max-w-md">{t("home.teacher.noFormOpenHint")}</p>
+            <Link href="/dashboard" className={`tp-btn-primary mt-4 inline-flex ${focusRing}`}>
+              {t("home.teacher.goToDashboard")}
+            </Link>
           </div>
         ) : showTeacherTools && activeForm ? (
           <section className="tp-builder-shell space-y-5">
@@ -2990,6 +3060,7 @@ export default function HomeClient({
                       type="text"
                       data-tour="form-title"
                       value={activeForm.title}
+                      placeholder={t("common.untitledForm")}
                       onChange={(event) =>
                         updateActiveForm((form) => ({ ...form, title: event.target.value }))
                       }
@@ -3077,6 +3148,18 @@ export default function HomeClient({
                     total: activeForm.questions.length,
                   })}
                 </span>
+                {activeForm.questions.some((q) => !q.prompt.trim()) ? (
+                  <>
+                    <span className="tp-builder-summary__sep" aria-hidden>
+                      ·
+                    </span>
+                    <span className="tp-builder-summary__warn" role="status">
+                      {t("home.builder.summaryNeedsPrompt", {
+                        n: activeForm.questions.filter((q) => !q.prompt.trim()).length,
+                      })}
+                    </span>
+                  </>
+                ) : null}
               </div>
               <span className="tp-builder-summary__hint">{t("home.builder.dragToReorder")}</span>
             </div>
@@ -3139,13 +3222,23 @@ export default function HomeClient({
                                 type="button"
                                 className={`tp-builder-token ${focusRing}`}
                                 data-active={active ? "true" : undefined}
+                                data-tone={token.tone}
                                 onClick={() => {
                                   setBuilderOpenMenuId(null);
                                   setBuilderPickerOpen(false);
+                                  if (token.key === "prompt") {
+                                    document
+                                      .querySelector<HTMLTextAreaElement>(
+                                        `[data-builder-prompt="${question.id}"]`,
+                                      )
+                                      ?.focus();
+                                    return;
+                                  }
+                                  const panel = token.key;
                                   setBuilderOpenPanel((prev) =>
-                                    prev?.questionId === question.id && prev.panel === token.key
+                                    prev?.questionId === question.id && prev.panel === panel
                                       ? null
-                                      : { questionId: question.id, panel: token.key },
+                                      : { questionId: question.id, panel },
                                   );
                                 }}
                               >
@@ -3188,12 +3281,22 @@ export default function HomeClient({
                             },
                             { type: "divider", key: `div-${question.id}` },
                             {
-                              type: "button",
-                              label: t("home.builder.deleteEllipsis"),
-                              icon: Trash2,
-                              tone: "danger",
-                              disabled: isMutating,
-                              onClick: () => void removeQuestion(question.id),
+                              type: "custom",
+                              key: `delete-${question.id}`,
+                              node: (
+                                <ConfirmButton
+                                  label={t("home.builder.deleteEllipsis")}
+                                  confirmLabel={t("home.builder.deleteConfirm")}
+                                  tone="danger"
+                                  disabled={isMutating}
+                                  onConfirm={() => {
+                                    setBuilderOpenMenuId(null);
+                                    removeQuestion(question.id);
+                                  }}
+                                  className="tp-overflow-menu__confirm"
+                                  testId={`delete-question-${question.id}`}
+                                />
+                              ),
                             },
                           ]}
                         />
@@ -3244,6 +3347,9 @@ export default function HomeClient({
                         }}
                         className="tp-builder-card__prompt"
                         aria-label={t("home.builder.prompt")}
+                        placeholder={t(
+                          `responseTypes.${getResponseTypeMeta(question.type).labelKey}.promptPlaceholder` as TranslationPath,
+                        )}
                       />
                       {question.type === "annotateSource" ? (
                         <AnnotatePassageField

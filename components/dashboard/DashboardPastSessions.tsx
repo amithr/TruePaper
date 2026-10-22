@@ -1,6 +1,6 @@
 "use client";
 
-import { useLocaleRouter as useRouter } from "@/lib/i18n/client";
+import { LocaleLink, useLocaleRouter as useRouter } from "@/lib/i18n/client";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ConfirmButton } from "@/components/ConfirmButton";
@@ -17,7 +17,7 @@ import { PAST_SESSIONS_PAGE_SIZE } from "@/lib/teacher-dashboard-server";
 import type { TeacherSessionSummary } from "@/lib/teacher-sessions";
 import { deferEffect } from "@/lib/defer-effect";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
-import { ui } from "@/lib/ui";
+import { focusRing, ui } from "@/lib/ui";
 import { requestJson } from "@/lib/request-json";
 
 const ROW_EXIT_MS = 320;
@@ -191,9 +191,14 @@ export function DashboardPastSessions({ onError }: Props) {
                     <div className="flex flex-wrap items-center gap-2">
                       <span>{s.responseCount}</span>
                       {s.needsGradingCount > 0 ? (
-                        <span className="tp-grade-pill tp-grade-pill--needs">
+                        <LocaleLink
+                          href={`/dashboard/sessions/${s.id}/exam-list`}
+                          className={`tp-grade-pill tp-grade-pill--needs tp-grade-pill--link ${focusRing}`}
+                          onClick={(event) => event.stopPropagation()}
+                          data-testid="past-session-to-grade"
+                        >
                           {t("pastSessions.toGrade", { n: s.needsGradingCount })}
-                        </span>
+                        </LocaleLink>
                       ) : null}
                     </div>
                   </div>

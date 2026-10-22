@@ -51,13 +51,18 @@ test.describe("Teacher roster sync status E2E", () => {
     await typeStudentAnswerAndWaitForAutosave(page, longStudentAnswer);
     await silenceStudentClient(context);
 
-    await sendStudentHeartbeat(request, {
-      liveSessionId: fixture!.liveSessionId,
-      deviceId,
-      displayName: "E2E Roster Sync",
-      pendingSyncCount: 2,
-      syncState: "offline",
-    });
+    // Send it twice: a heartbeat the student client had already started before going
+    // offline can land after the first one and overwrite it.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      await sendStudentHeartbeat(request, {
+        liveSessionId: fixture!.liveSessionId,
+        deviceId,
+        displayName: "E2E Roster Sync",
+        pendingSyncCount: 2,
+        syncState: "offline",
+      });
+      await page.waitForTimeout(1500);
+    }
 
     const teacherContext = await browser.newContext({ storageState: teacherAuth });
     const teacherPage = await teacherContext.newPage();

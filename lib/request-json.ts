@@ -3,11 +3,14 @@ type ApiError = { error?: string };
 /** Error thrown for a non-2xx JSON response; carries the HTTP status for callers that branch on it. */
 export class RequestJsonError extends Error {
   readonly status: number;
+  /** The parsed JSON error body (e.g. `{ error, code }`). */
+  readonly body: unknown;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, body?: unknown) {
     super(message);
     this.name = "RequestJsonError";
     this.status = status;
+    this.body = body;
   }
 }
 
@@ -30,7 +33,7 @@ export async function requestJson<T>(input: RequestInfo | URL, init?: RequestIni
 
   const data = (await response.json()) as T & ApiError;
   if (!response.ok) {
-    throw new RequestJsonError(data.error ?? "Request failed.", response.status);
+    throw new RequestJsonError(data.error ?? "Request failed.", response.status, data);
   }
   return data;
 }

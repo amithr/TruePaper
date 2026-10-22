@@ -1,6 +1,10 @@
 "use client";
 
+import { ClipboardCopy } from "lucide-react";
 import { useEffect } from "react";
+import { toast } from "sonner";
+
+import { copyAiGuide } from "@/components/dashboard/ImportExamModal";
 
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { focusRing, ui } from "@/lib/ui";
@@ -82,10 +86,26 @@ export function AiGuideModal({ open, onClose, onImportExam }: Props) {
         </ol>
 
         <div className="mt-6 flex flex-wrap items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              void copyAiGuide().then((ok) => {
+                if (ok) {
+                  toast.success(t("formLibrary.import.guideCopied"));
+                } else {
+                  toast.error(t("formLibrary.import.guideCopyFailed"));
+                }
+              });
+            }}
+            className={`${ui.btnPrimary} inline-flex items-center gap-2 ${focusRing}`}
+          >
+            <ClipboardCopy aria-hidden className="h-4 w-4" />
+            {t("formLibrary.import.copyGuide")}
+          </button>
           <a
             href="/api/forms/ai-template"
             download
-            className={`${ui.btnPrimary} inline-flex items-center gap-2 ${focusRing}`}
+            className={`${ui.btnSecondary} inline-flex items-center gap-2 ${focusRing}`}
           >
             <svg
               aria-hidden

@@ -7,7 +7,8 @@ import { deferEffect } from "@/lib/defer-effect";
 
 import { AiGuideModal } from "@/components/dashboard/AiGuideModal";
 import { FormLibraryRow, type FormLibraryPopover } from "@/components/dashboard/FormLibraryRow";
-import { ImportExamModal } from "@/components/dashboard/ImportExamModal";
+import { toast } from "sonner";
+import { ImportExamModal, type ImportExamPayload } from "@/components/dashboard/ImportExamModal";
 import { NewFormMenu } from "@/components/dashboard/NewFormMenu";
 import {
   EntityList,
@@ -26,9 +27,9 @@ import type { Form } from "@/lib/forms";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { stashPendingBuilderForm } from "@/lib/pending-builder-form";
 import { ui } from "@/lib/ui";
-import { requestJson } from "@/lib/request-json";
+import { requestJson, RequestJsonError } from "@/lib/request-json";
 import { startLiveSession } from "@/lib/start-live-session";
-import { Copy, Link2, Trash2 } from "lucide-react";
+import { Copy, Link2, Trash2, Files } from "lucide-react";
 
 const FORM_LIBRARY_PAGE_SIZE = 5;
 
@@ -75,6 +76,7 @@ export function DashboardFormLibrary({ onError }: Props) {
   const [importingExam, setImportingExam] = useState(false);
   const [aiGuideOpen, setAiGuideOpen] = useState(false);
   const [importExamOpen, setImportExamOpen] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
   const [deletingFormId, setDeletingFormId] = useState<string | null>(null);
   const [formLibraryPage, setFormLibraryPage] = useState(0);
   const [formLibrarySearch, setFormLibrarySearch] = useState("");
@@ -190,15 +192,22 @@ export function DashboardFormLibrary({ onError }: Props) {
     }
   };
 
-  const importExamFromFile = async (file: File) => {
+  const importExam = async (payload: ImportExamPayload) => {
     setImportingExam(true);
+    setImportError(null);
     try {
-      const body = new FormData();
-      body.append("file", file);
-      const data = await requestJson<{ form: Form }>("/api/forms/import", {
-        method: "POST",
-        body,
-      });
+      let data: { form: Form };
+      if (payload.file) {
+        const body = new FormData();
+        body.append("file", payload.file);
+        data = await requestJson<{ form: Form }>("/api/forms/import", { method: "POST", body });
+      } else {
+        data = await requestJson<{ form: Form }>("/api/forms/import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: payload.text ?? "" }),
+        });
+      }
       const created = {
         ...data.form,
         questionCount: data.form.questions.length,
@@ -211,11 +220,44 @@ export function DashboardFormLibrary({ onError }: Props) {
       stashPendingBuilderForm(created);
       router.push(`/?form=${encodeURIComponent(data.form.id)}`);
     } catch (e) {
-      onError(e instanceof Error ? e.message : t("formLibrary.import.errors.failed"));
+      // Shown inside the dialog (the dashboard banner would sit behind it).
+      const code =
+        e instanceof RequestJsonError ? (e.body as { code?: string } | undefined)?.code : undefined;
+      setImportError(
+        code === "invalid_json"
+          ? t("formLibrary.import.errors.invalidJson")
+          : e instanceof Error
+            ? e.message
+            : t("formLibrary.import.errors.failed"),
+      );
     } finally {
       setImportingExam(false);
     }
   };
+
+  const duplicateForm = useCallback(async (formId: string) => {
+    try {
+      const data = await requestJson<{ form: Form; imagesSkipped: boolean }>(
+        `/api/forms/${formId}/duplicate`,
+        { method: "POST" },
+      );
+      const created = {
+        ...data.form,
+        questionCount: data.form.questions.length,
+        autogradeCount: 0,
+        lastRunAt: null,
+        lastSessionDefaults: null,
+      };
+      setForms((prev) => [...prev, created]);
+      toast.success(
+        data.imagesSkipped
+          ? t("formLibrary.duplicatedNoImages", { title: created.title })
+          : t("formLibrary.duplicated", { title: created.title }),
+      );
+    } catch (e) {
+      onError(e instanceof Error ? e.message : t("formLibrary.errors.duplicate"));
+    }
+  }, [onError, t]);
 
   const questionCount = useCallback(
     (form: Form) => form.questionCount ?? form.questions.length,
@@ -248,6 +290,12 @@ export function DashboardFormLibrary({ onError }: Props) {
           setSaveTemplateTitle(form.title || "");
         },
       },
+      {
+        type: "button",
+        label: t("formLibrary.duplicate"),
+        icon: Files,
+        onClick: () => void duplicateForm(form.id),
+      },
       { type: "divider", key: `divider-${form.id}` },
       {
         type: "custom",
@@ -274,7 +322,7 @@ export function DashboardFormLibrary({ onError }: Props) {
         ),
       },
     ],
-    [deleteForm, deletingFormId, origin, startingFormId, t],
+    [deleteForm, deletingFormId, duplicateForm, origin, startingFormId, t],
   );
 
   const createBlankForm = async () => {
@@ -465,12 +513,15 @@ export function DashboardFormLibrary({ onError }: Props) {
         <ImportExamModal
           open
           importing={importingExam}
+          error={importError}
+          onClearError={() => setImportError(null)}
           onClose={() => {
             if (!importingExam) {
               setImportExamOpen(false);
+              setImportError(null);
             }
           }}
-          onImport={(file) => void importExamFromFile(file)}
+          onImport={(payload) => void importExam(payload)}
         />
       ) : null}
     </section>

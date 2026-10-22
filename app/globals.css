@@ -5656,6 +5656,37 @@ code,
   color: #0f172a;
 }
 
+.tp-watch-score__input {
+  width: 3.25rem;
+  min-height: 2rem;
+  border: 1px solid var(--tp-border-strong);
+  border-radius: 8px;
+  background: var(--tp-surface);
+  padding: 0 0.4rem;
+  text-align: center;
+  font: inherit;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--tp-text);
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.tp-watch-score__input::-webkit-outer-spin-button,
+.tp-watch-score__input::-webkit-inner-spin-button {
+  margin: 0;
+  -webkit-appearance: none;
+}
+
+.tp-watch-score__input::placeholder {
+  color: var(--tp-text-muted);
+}
+
+.tp-watch-score__input:disabled {
+  background: var(--tp-bg-subtle);
+  color: var(--tp-text-muted);
+}
+
 .tp-watch-score__sep,
 .tp-watch-score__max {
   color: #94a3b8;
@@ -8038,3 +8069,48 @@ code,
   font-weight: 500;
   color: var(--tp-warning-text);
 }
+
+/* Session overview: grading stat tiles are links into the needs-grading queue. */
+.tp-stat-link {
+  display: block;
+  border-radius: 8px;
+  margin: -0.25rem -0.4rem;
+  padding: 0.25rem 0.4rem;
+  text-decoration: none;
+  color: inherit;
+  transition: background 0.1s;
+}
+
+.tp-stat-link:hover {
+  background: var(--tp-bg-subtle);
+}
+
+.tp-stat-link .tp-stat-value {
+  color: var(--tp-accent);
+}
+
+.tp-grade-pill--link {
+  text-decoration: none;
+}
+
+.tp-grade-pill--link:hover {
+  filter: brightness(0.96);
+}
+
+/* Builder: things the teacher still has to fill in. */
+.tp-builder-token[data-tone="warn"] {
+  border-color: var(--tp-warning-border);
+  background: var(--tp-amber-soft);
+  color: var(--tp-warning-text);
+}
+
+.tp-builder-summary__warn {
+  font-weight: 500;
+  color: var(--tp-warning-text);
+}
+
+.tp-form-library-row__title--untitled {
+  font-style: italic;
+  color: var(--tp-text-muted);
+}
+

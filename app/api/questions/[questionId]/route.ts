@@ -34,12 +34,8 @@ export async function PATCH(request: Request, { params }: Params) {
 
   const { questionId } = await params;
   const body = (await request.json()) as UpdateQuestionBody;
-  const prompt = body.prompt?.trim();
+  const prompt = body.prompt?.trim() ?? "";
   const points = Math.max(1, Math.min(1000, Math.floor(Number(body.points) || 1)));
-
-  if (!prompt) {
-    return NextResponse.json({ error: "Prompt is required." }, { status: 400 });
-  }
 
   const type = body.type;
   if (!type || !isValidQuestionType(type)) {

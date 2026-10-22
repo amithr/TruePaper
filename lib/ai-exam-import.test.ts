@@ -4,6 +4,7 @@ import {
   AI_EXAM_MAX_QUESTIONS,
   AiExamParseError,
   buildAiExamGuideMarkdown,
+  extractJsonFromAiReply,
   parseAiExamDocument,
 } from "@/lib/ai-exam-import";
 import { VALID_QUESTION_TYPES } from "@/lib/response-types/valid-types";
@@ -268,5 +269,31 @@ describe("buildAiExamGuideMarkdown", () => {
     expect(guide).toMatch(/smooth curves/i);
     expect(guide).toContain("pointIds");
     expect(guide).not.toMatch(/drawn as straight segments/);
+  });
+});
+
+describe("extractJsonFromAiReply", () => {
+  const exam = { title: "Quiz", questions: [{ type: "trueFalse", prompt: "Sky is blue." }] };
+
+  it("accepts bare JSON", () => {
+    expect(extractJsonFromAiReply(JSON.stringify(exam))).toEqual(exam);
+  });
+
+  it("strips a ```json fence and surrounding chat text", () => {
+    const reply = `Here is your exam:\n\n\`\`\`json\n${JSON.stringify(exam, null, 2)}\n\`\`\`\n\nLet me know if you want changes!`;
+    expect(extractJsonFromAiReply(reply)).toEqual(exam);
+  });
+
+  it("falls back to the outermost braces when there is no fence", () => {
+    expect(extractJsonFromAiReply(`Sure! ${JSON.stringify(exam)} Enjoy.`)).toEqual(exam);
+  });
+
+  it("explains in teacher terms when no JSON is found", () => {
+    expect(() => extractJsonFromAiReply("just some prose")).toThrow(/starts with \{/);
+    try {
+      extractJsonFromAiReply("");
+    } catch (error) {
+      expect((error as AiExamParseError).code).toBe("invalid_json");
+    }
   });
 });

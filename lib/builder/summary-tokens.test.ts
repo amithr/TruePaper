@@ -70,3 +70,13 @@ describe("countAutogradableQuestions", () => {
     ).toBe(2);
   });
 });
+
+describe("needs-a-question token", () => {
+  it("flags questions whose text is still empty", async () => {
+    const { buildSummaryTokens } = await import("@/lib/builder/summary-tokens");
+    const { makeQuestion } = await import("@/lib/test/question-fixtures");
+    const tokens = buildSummaryTokens(makeQuestion("shortAnswer", { prompt: "   " }));
+    expect(tokens[0]).toMatchObject({ key: "prompt", labelKey: "needsPrompt", tone: "warn" });
+    expect(buildSummaryTokens(makeQuestion("shortAnswer", { prompt: "Name the gas." })).some((t) => t.key === "prompt")).toBe(false);
+  });
+});

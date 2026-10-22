@@ -17,7 +17,8 @@ type StepDef = {
   bodyKey: TranslationPath;
 };
 
-function toDriveSteps(t: Translator, defs: StepDef[]): DriveStep[] {
+/** Steps whose anchor isn't on the page are skipped (exported for tests). */
+export function toDriveSteps(t: Translator, defs: StepDef[]): DriveStep[] {
   return defs
     .filter((d) => d.selector === null || document.querySelector(d.selector))
     .map((d) => ({
@@ -102,6 +103,16 @@ export function startBuilderTour(t: Translator, onDone: () => void): boolean {
       selector: '[data-tour="add-question"]',
       titleKey: "help.tour.builder.addQuestion.title",
       bodyKey: "help.tour.builder.addQuestion.body",
+    },
+    {
+      selector: '[data-tour="question-points"]',
+      titleKey: "help.tour.builder.scoring.title",
+      bodyKey: "help.tour.builder.scoring.body",
+    },
+    {
+      selector: '[data-tour="correct-answer"]',
+      titleKey: "help.tour.builder.answerKey.title",
+      bodyKey: "help.tour.builder.answerKey.body",
     },
     {
       selector: '[data-tour="builder-autosave"]',

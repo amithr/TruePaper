@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { buildFormSummaries, buildForms, mapQuestionRow, type FormSummaryExtras } from "@/lib/forms-api";
-import type { Form, FormLastSessionDefaults, QuestionType } from "@/lib/forms";
+import { UNTITLED_FORM_TITLE, type Form, type FormLastSessionDefaults, type QuestionType } from "@/lib/forms";
 import { hasAutogradeKey } from "@/lib/response-types/autograde";
 import { getSessionUser } from "@/lib/request-auth";
 import {
@@ -161,7 +161,7 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json()) as CreateFormBody;
-  const title = body.title?.trim() || "Untitled Form";
+  const title = body.title?.trim() || UNTITLED_FORM_TITLE;
   const description = body.description?.trim() || "";
 
   const { data, error } = await supabase

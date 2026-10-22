@@ -8,11 +8,49 @@ export const AI_EXAM_TEMPLATE_FILENAME = "truepaper-exam-authoring-guide.md";
 /** Hard cap so a malformed/huge file can't create thousands of rows. */
 export const AI_EXAM_MAX_QUESTIONS = 200;
 
+export type AiExamParseErrorCode = "invalid_json" | "schema";
+
 export class AiExamParseError extends Error {
-  constructor(message: string) {
+  readonly code: AiExamParseErrorCode;
+
+  constructor(message: string, code: AiExamParseErrorCode = "schema") {
     super(message);
     this.name = "AiExamParseError";
+    this.code = code;
   }
+}
+
+/**
+ * Find the exam JSON inside whatever the teacher pasted: a bare object, a reply
+ * wrapped in ```json fences, or chat text around the JSON.
+ */
+export function extractJsonFromAiReply(text: string): unknown {
+  const trimmed = text.trim();
+  const candidates: string[] = [];
+  const fence = /```(?:json|JSON)?\s*([\s\S]*?)```/.exec(trimmed);
+  if (fence?.[1]) {
+    candidates.push(fence[1].trim());
+  }
+  candidates.push(trimmed);
+  const first = trimmed.indexOf("{");
+  const last = trimmed.lastIndexOf("}");
+  if (first >= 0 && last > first) {
+    candidates.push(trimmed.slice(first, last + 1));
+  }
+  for (const candidate of candidates) {
+    if (!candidate) {
+      continue;
+    }
+    try {
+      return JSON.parse(candidate) as unknown;
+    } catch {
+      // try the next shape
+    }
+  }
+  throw new AiExamParseError(
+    "We couldn't find the exam in that text. Paste the AI's whole reply — the part that starts with { and ends with }.",
+    "invalid_json",
+  );
 }
 
 export type ParsedAiExamQuestion = {

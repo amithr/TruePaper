@@ -1,5 +1,7 @@
 "use client";
 
+import { AcceptedAnswersField } from "@/components/builder/AcceptedAnswersField";
+
 import { HelpHint } from "@/components/HelpHint";
 import { FormAssetImageEditor } from "@/components/FormAssetImageEditor";
 import { BuilderResponseConfig } from "@/components/response-types/BuilderResponseConfig";
@@ -285,48 +287,42 @@ export function BuilderQuestionFields({
                   </label>
                 </div>
               ) : (
-                <label className="text-sm">
-                  <span className="inline-flex items-center gap-1">
-                    {t("responseTypes.builder.acceptedAnswers")}
-                    {index === 0 ? (
-                      <HelpHint
-                        id="builder-accepted-answers"
-                        text={t("help.builder.acceptedAnswers")}
-                      />
-                    ) : null}
-                  </span>
-                  <input
-                    type="text"
-                    value={(
-                      (question.responseConfig as { acceptedAnswers?: string[] })
-                        .acceptedAnswers ?? []
-                    ).join(", ")}
-                    onChange={(event) =>
-                      updateActiveForm((form) => ({
-                        ...form,
-                        questions: form.questions.map((formQuestion) =>
-                          formQuestion.id === question.id
-                            ? {
-                                ...formQuestion,
-                                responseConfig: {
-                                  ...parseResponseConfig(
-                                    formQuestion.type,
-                                    formQuestion.responseConfig,
-                                  ),
-                                  acceptedAnswers: event.target.value
-                                    .split(",")
-                                    .map((v) => v.trim())
-                                    .filter(Boolean),
-                                },
-                              }
-                            : formQuestion,
-                        ),
-                      }))
-                    }
-                    className="tp-input"
-                    placeholder={t("responseTypes.builder.acceptedAnswersPlaceholder")}
-                  />
-                </label>
+                <AcceptedAnswersField
+                  questionId={question.id}
+                  acceptedAnswers={
+                    (question.responseConfig as { acceptedAnswers?: string[] }).acceptedAnswers ?? []
+                  }
+                  caseSensitive={
+                    (question.responseConfig as { caseSensitive?: boolean }).caseSensitive === true
+                  }
+                  onPatch={(patch) =>
+                    updateActiveForm((form) => ({
+                      ...form,
+                      questions: form.questions.map((formQuestion) =>
+                        formQuestion.id === question.id
+                          ? {
+                              ...formQuestion,
+                              responseConfig: {
+                                ...parseResponseConfig(formQuestion.type, formQuestion.responseConfig),
+                                ...patch,
+                              },
+                            }
+                          : formQuestion,
+                      ),
+                    }))
+                  }
+                  label={
+                    <span className="inline-flex items-center gap-1">
+                      {t("responseTypes.builder.acceptedAnswers")}
+                      {index === 0 ? (
+                        <HelpHint
+                          id="builder-accepted-answers"
+                          text={t("help.builder.acceptedAnswers")}
+                        />
+                      ) : null}
+                    </span>
+                  }
+                />
               )}
             </>
           ) : null}

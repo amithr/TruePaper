@@ -1,5 +1,7 @@
 "use client";
 
+import { useState, type KeyboardEvent } from "react";
+
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { focusRing } from "@/lib/ui";
 
@@ -13,11 +15,48 @@ type Props = {
   onChange: (next: number) => void;
 };
 
-/** − / score / max / + stepper with Full marks + autosave status. */
+/** − / typed score / max / + stepper with Full marks + autosave status. */
 export function WatchScoreStepper({ score, max, disabled, saveState, onChange }: Props) {
   const t = useTranslations();
   const marked = score != null;
-  const display = marked ? score : "–";
+  // Typed value is local until blur/Enter so the per-question autosave doesn't fire per keystroke.
+  const savedText = marked ? String(score) : "";
+  const [draft, setDraft] = useState(savedText);
+  // Adjust the draft when the saved score changes (−/+/Full marks or a refresh) — the
+  // React "derive state from props" pattern, done during render rather than in an effect.
+  const [syncedText, setSyncedText] = useState(savedText);
+  if (syncedText !== savedText) {
+    setSyncedText(savedText);
+    setDraft(savedText);
+  }
+
+  const commitDraft = () => {
+    const trimmed = draft.trim();
+    if (trimmed === "") {
+      setDraft(marked ? String(score) : "");
+      return;
+    }
+    const parsed = Number(trimmed);
+    if (!Number.isFinite(parsed)) {
+      setDraft(marked ? String(score) : "");
+      return;
+    }
+    const next = Math.max(0, Math.min(max, Math.round(parsed)));
+    setDraft(String(next));
+    if (next !== score) {
+      onChange(next);
+    }
+  };
+
+  const onDraftKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      event.currentTarget.blur();
+    } else if (event.key === "Escape") {
+      setDraft(marked ? String(score) : "");
+      event.currentTarget.blur();
+    }
+  };
 
   const dec = () => {
     if (disabled) return;
@@ -41,8 +80,24 @@ export function WatchScoreStepper({ score, max, disabled, saveState, onChange }:
         >
           −
         </button>
-        <span className="tp-watch-score__value" aria-live="polite">
-          <span className="tp-watch-score__num">{display}</span>
+        <span className="tp-watch-score__value">
+          <input
+            type="number"
+            inputMode="numeric"
+            min={0}
+            max={max}
+            step={1}
+            value={draft}
+            placeholder="–"
+            disabled={disabled}
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={commitDraft}
+            onKeyDown={onDraftKeyDown}
+            onFocus={(event) => event.currentTarget.select()}
+            aria-label={t("session.watch.scoreInputAria", { max })}
+            className={`tp-watch-score__input ${focusRing}`}
+            data-testid="watch-score-input"
+          />
           <span className="tp-watch-score__sep"> / </span>
           <span className="tp-watch-score__max">{max}</span>
         </span>

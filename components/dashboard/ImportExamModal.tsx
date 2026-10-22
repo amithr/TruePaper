@@ -1,6 +1,10 @@
 "use client";
 
+import { ClipboardCopy } from "lucide-react";
 import { type DragEvent, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+
+import { copyToClipboard } from "@/lib/copy-to-clipboard";
 
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { focusRing, ui } from "@/lib/ui";
@@ -13,17 +17,46 @@ function hasDraggedFiles(event: DragEvent): boolean {
   return Array.from(event.dataTransfer.types).includes("Files");
 }
 
+export type ImportExamPayload = { file?: File; text?: string };
+
 type Props = {
   open: boolean;
   importing: boolean;
+  /** Import error to show inside the dialog (cleared when the teacher edits). */
+  error?: string | null;
   onClose: () => void;
-  onImport: (file: File) => void;
+  onImport: (payload: ImportExamPayload) => void;
+  onClearError?: () => void;
 };
 
-export function ImportExamModal({ open, importing, onClose, onImport }: Props) {
+/** Fetch the Markdown guide and put it on the clipboard (paste into ChatGPT / Claude). */
+export async function copyAiGuide(): Promise<boolean> {
+  try {
+    const res = await fetch("/api/forms/ai-template");
+    if (!res.ok) {
+      return false;
+    }
+    return await copyToClipboard(await res.text());
+  } catch {
+    return false;
+  }
+}
+
+export function ImportExamModal({
+  open,
+  importing,
+  error = null,
+  onClose,
+  onImport,
+  onClearError,
+}: Props) {
   const t = useTranslations();
   const inputRef = useRef<HTMLInputElement>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  // Pasting the AI's reply is the common path; a file upload is the fallback.
+  const [tab, setTab] = useState<"paste" | "upload">("paste");
+  const [pasted, setPasted] = useState("");
+  const canImport = tab === "paste" ? pasted.trim().length > 0 : selectedFile !== null;
   const [dragActive, setDragActive] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   // dragenter/dragleave also fire for child elements; count depth so the highlight doesn't flicker.
@@ -57,7 +90,9 @@ export function ImportExamModal({ open, importing, onClose, onImport }: Props) {
     }
     setSelectedFile(null);
     setFileError(null);
+    setPasted("");
     resetDrag();
+    onClearError?.();
     onClose();
   };
 
@@ -125,10 +160,27 @@ export function ImportExamModal({ open, importing, onClose, onImport }: Props) {
           <p className="mt-1 text-sm text-[var(--tp-text-secondary)]">
             {t("formLibrary.import.templateHint")}
           </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                void copyAiGuide().then((ok) => {
+                  if (ok) {
+                    toast.success(t("formLibrary.import.guideCopied"));
+                  } else {
+                    toast.error(t("formLibrary.import.guideCopyFailed"));
+                  }
+                });
+              }}
+              className={`${ui.btnPrimary} inline-flex items-center gap-2 text-sm ${focusRing}`}
+            >
+              <ClipboardCopy aria-hidden className="h-4 w-4" />
+              {t("formLibrary.import.copyGuide")}
+            </button>
           <a
             href="/api/forms/ai-template"
             download
-            className={`${ui.btnSecondary} mt-3 inline-flex items-center gap-2 text-sm ${focusRing}`}
+            className={`${ui.btnSecondary} inline-flex items-center gap-2 text-sm ${focusRing}`}
           >
             <svg
               aria-hidden
@@ -144,10 +196,50 @@ export function ImportExamModal({ open, importing, onClose, onImport }: Props) {
             </svg>
             {t("formLibrary.import.downloadTemplate")}
           </a>
+          </div>
         </div>
 
         <div className="mt-4">
-          <p className="text-sm font-medium text-[var(--tp-text)]">
+          <div className="flex items-center gap-1 border-b border-[var(--tp-border)]" role="tablist">
+            {(["paste", "upload"] as const).map((key) => (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={tab === key}
+                onClick={() => {
+                  setTab(key);
+                  onClearError?.();
+                }}
+                className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${focusRing} ${
+                  tab === key
+                    ? "border-[var(--tp-accent)] text-[var(--tp-text)]"
+                    : "border-transparent text-[var(--tp-text-secondary)]"
+                }`}
+              >
+                {key === "paste" ? t("formLibrary.import.pasteTab") : t("formLibrary.import.uploadTab")}
+              </button>
+            ))}
+          </div>
+          {tab === "paste" ? (
+            <label className="mt-3 block text-sm font-medium text-[var(--tp-text)]">
+              {t("formLibrary.import.pasteHeading")}
+              <textarea
+                rows={7}
+                value={pasted}
+                onChange={(event) => {
+                  setPasted(event.target.value);
+                  onClearError?.();
+                }}
+                placeholder={t("formLibrary.import.pastePlaceholder")}
+                spellCheck={false}
+                className="tp-input mt-2 w-full font-mono text-xs"
+                data-testid="import-exam-paste"
+              />
+            </label>
+          ) : null}
+          <div hidden={tab !== "upload"}>
+          <p className="mt-3 text-sm font-medium text-[var(--tp-text)]">
             {t("formLibrary.import.uploadHeading")}
           </p>
           <input
@@ -237,6 +329,12 @@ export function ImportExamModal({ open, importing, onClose, onImport }: Props) {
               {fileError}
             </p>
           ) : null}
+          </div>
+          {error ? (
+            <p role="alert" className="mt-3 text-sm text-[var(--tp-danger-text)]" data-testid="import-exam-error">
+              {error}
+            </p>
+          ) : null}
         </div>
 
         <div className="mt-6 flex flex-wrap items-center justify-end gap-2">
@@ -250,10 +348,12 @@ export function ImportExamModal({ open, importing, onClose, onImport }: Props) {
           </button>
           <button
             type="button"
-            disabled={!selectedFile || importing}
+            disabled={!canImport || importing}
             onClick={() => {
-              if (selectedFile) {
-                onImport(selectedFile);
+              if (tab === "paste") {
+                onImport({ text: pasted });
+              } else if (selectedFile) {
+                onImport({ file: selectedFile });
               }
             }}
             className={`${ui.btnPrimary} inline-flex items-center gap-2 ${focusRing} disabled:opacity-50`}

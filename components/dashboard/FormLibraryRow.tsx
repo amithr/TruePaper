@@ -18,7 +18,7 @@ import { LocaleLink as Link } from "@/lib/i18n/client";
 import { copyToClipboard } from "@/lib/copy-to-clipboard";
 import { avatarTintForForm, formInitial, lastRunAge } from "@/lib/form-library-meta";
 import { buildFormStartUrl } from "@/lib/form-start-link";
-import type { Form } from "@/lib/forms";
+import { isUntitledFormTitle, type Form } from "@/lib/forms";
 import { useLocale, useTranslations } from "@/lib/i18n/I18nProvider";
 import { focusRing, ui } from "@/lib/ui";
 
@@ -121,7 +121,8 @@ export function FormLibraryRow({
 }: Props) {
   const t = useTranslations();
   const locale = useLocale();
-  const title = form.title || t("common.untitledForm");
+  const untitled = isUntitledFormTitle(form.title);
+  const title = untitled ? t("common.untitledForm") : form.title;
   const tint = avatarTintForForm(form.id);
   const startOpen = openPopover === "start" || openPopover === "start-link";
   const linkTab = openPopover === "start-link";
@@ -273,7 +274,7 @@ export function FormLibraryRow({
       <div className="tp-entity-list-row__heading tp-form-library-row__heading">
         <Link
           href={`/?form=${form.id}`}
-          className={`tp-entity-list-row__title tp-form-library-row__title ${focusRing}`}
+          className={`tp-entity-list-row__title tp-form-library-row__title${untitled ? " tp-form-library-row__title--untitled" : ""} ${focusRing}`}
           onClick={() => onOpenPopoverChange(null)}
         >
           {title}

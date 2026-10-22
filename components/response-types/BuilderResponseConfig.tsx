@@ -2,6 +2,7 @@
 
 import type { Form, Question } from "@/lib/forms";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
+import { AcceptedAnswersField } from "@/components/builder/AcceptedAnswersField";
 import { GraphResponder } from "@/components/response-types/GraphResponder";
 import { drawDiagramImageUploadAllowed } from "@/lib/response-types/drawing";
 import { resolveGraphGiven } from "@/lib/response-types/graph-coords";
@@ -252,23 +253,13 @@ export function BuilderResponseConfig({ question, updateActiveForm }: Props) {
     const config = parseResponseConfig(question.type, question.responseConfig) as MathInputConfig;
     return (
       <div className="space-y-3">
-        <label className={ui.label}>
-          {t("responseTypes.builder.acceptedAnswers")}
-          <input
-            type="text"
-            value={(config.acceptedAnswers ?? []).join(", ")}
-            onChange={(event) =>
-              patchConfig({
-                acceptedAnswers: event.target.value
-                  .split(",")
-                  .map((v) => v.trim())
-                  .filter(Boolean),
-              })
-            }
-            className="tp-input"
-            placeholder={t("responseTypes.builder.acceptedAnswersPlaceholder")}
-          />
-        </label>
+        <AcceptedAnswersField
+          questionId={question.id}
+          acceptedAnswers={config.acceptedAnswers ?? []}
+          caseSensitive={config.caseSensitive === true}
+          onPatch={patchConfig}
+          label={t("responseTypes.builder.acceptedAnswers")}
+        />
         <label className={ui.label}>
           {t("responseTypes.builder.mathPlaceholder")}
           <input

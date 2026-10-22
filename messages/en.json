@@ -45,7 +45,8 @@
     "min": "min",
     "noTimeLimit": "No time limit",
     "updatedAt": "Updated {time}",
-    "signIn": "Sign in"
+    "signIn": "Sign in",
+    "undo": "Undo"
   },
   "brand": {
     "forTeachers": "For teachers",
@@ -308,11 +309,9 @@
       "classDisplay": "Class display (projector)",
       "dismissBanner": "Dismiss banner",
       "noFormOpen": "No form open",
-      "noFormOpenHintPrefix": "In the",
       "formLibraryLink": "form library",
-      "noFormOpenHintSuffix": ", click",
-      "editInBuilder": "Edit in builder",
-      "noFormOpenHintEnd": "on a form to open it here."
+      "noFormOpenHint": "Open a form from your dashboard to edit it here.",
+      "goToDashboard": "Go to dashboard"
     },
     "builder": {
       "eyebrow": "Form builder",
@@ -390,8 +389,14 @@
         "pointsOne": "1 pt",
         "pointsOther": "{n} pts",
         "pointsOneAuto": "1 pt · auto",
-        "pointsOtherAuto": "{n} pts · auto"
-      }
+        "pointsOtherAuto": "{n} pts · auto",
+        "needsPrompt": "Needs a question"
+      },
+      "allSaved": "All changes saved",
+      "retrySave": "Retry",
+      "questionDeleted": "Question {n} deleted",
+      "deleteConfirm": "Delete question",
+      "summaryNeedsPrompt": "{n} need a question"
     },
     "exam": {
       "previewTitle": "Preview mode",
@@ -539,7 +544,6 @@
     "liveOpenTimeLeft": "Live session open · Time left {timeLeft}",
     "windowClosed": "Session closed",
     "lastUpdated": "Last updated {time}",
-    "refreshAria": "Refresh",
     "moreActions": "More session actions",
     "loadingSession": "Loading session",
     "stats": {
@@ -724,8 +728,10 @@
       "lastServerUpdate": "Last response update (server): {datetime}",
       "gradeSavedAria": "Saved: {earned} of {max} point(s) for question.",
       "statusPointsUpdated": "Point value updated.",
-      "statusMarkedGraded": "Exam marked as graded."
-    }
+      "statusMarkedGraded": "Exam marked as graded.",
+      "scoreInputAria": "Score out of {max}"
+    },
+    "stoppedToast": "Session stopped — time to grade."
   },
   "liveDisplay": {
     "eyebrow": "Live class display",
@@ -902,11 +908,11 @@
       "aiGuideTitle": "Create an exam with AI",
       "aiGuideIntro": "Use ChatGPT, Claude, or another AI assistant to turn your notes or a textbook chapter into an exam you can import and edit in TruePaper.",
       "aiGuideSteps": {
-        "download": "Download the AI guide from this window (or from Import exam).",
-        "uploadAi": "Open ChatGPT or Claude. Paste in the guide, then add your teaching material.",
+        "download": "Copy the AI guide from this window (or download it).",
+        "uploadAi": "Open ChatGPT or Claude. Paste the guide, then add your teaching material.",
         "ask": "Ask the AI to create an exam for TruePaper, following the guide.",
-        "save": "Save or download the exam file the AI gives you.",
-        "import": "Back in TruePaper, open Import exam, upload that file, then review and edit the form before you go live.",
+        "save": "Copy the exam the AI gives you — the block that starts with { and ends with }.",
+        "import": "Back in TruePaper, open Import exam, paste it, then review and edit the form before you go live.",
         "matchTypes": "Optional: tell the AI which formats to use — or let the guide choose (e.g. calculations → math / photo of workings, essays → written). Example: “Make questions 1–5 multiple choice, question 6 a written response, and questions 7–8 matching.”"
       },
       "importEyebrow": "Form library",
@@ -920,15 +926,23 @@
       "dropToAdd": "Drop to add this file",
       "wrongFileType": "That isn't an exam file. Use the .json file your AI assistant saved for you.",
       "errors": {
-        "invalidJson": "We couldn't read that file. Ask the AI to create the exam again, save the file it provides, and try uploading once more.",
+        "invalidJson": "We couldn't find an exam in that text. Paste the AI's whole reply, or ask it to give you the exam again.",
         "failed": "Could not import the exam."
-      }
+      },
+      "copyGuide": "Copy the AI guide",
+      "guideCopied": "Guide copied — paste it into ChatGPT or Claude, then add your material.",
+      "guideCopyFailed": "Couldn't copy. Use Download instead.",
+      "pasteTab": "Paste",
+      "uploadTab": "Upload a file",
+      "pasteHeading": "Paste the exam your AI assistant wrote",
+      "pastePlaceholder": "Paste the AI's whole reply here — the part that starts with { and ends with }."
     },
     "errors": {
       "load": "Failed to load forms.",
       "delete": "Could not delete form.",
       "create": "Could not create form.",
-      "start": "Could not start session."
+      "start": "Could not start session.",
+      "duplicate": "Could not duplicate the form."
     },
     "newFormMenu": {
       "label": "Create a new form",
@@ -949,7 +963,10 @@
       "durationCustom": "Custom",
       "copyLink": "Copy start link",
       "copyLinkHint": "Opening the link starts a session with these settings. Handy for calendar invites and lesson plans."
-    }
+    },
+    "duplicate": "Duplicate",
+    "duplicated": "Copy created: {title}",
+    "duplicatedNoImages": "Copy created: {title}. Images weren’t copied — add them again if you need them."
   },
   "help": {
     "toggle": {
@@ -970,10 +987,10 @@
       "acceptLateSync": "When on, students can sync answers or submit after the session window closes. Turn off for strict in-class deadlines."
     },
     "builder": {
-      "questionType": "Click Add (+) on a question type to insert it into your form. Hover a chip for details. Multiple choice, true/false and short answer are auto-graded; written and visual types are marked by you.",
+      "questionType": "Pick what students have to do; the picker explains each type. Types marked AUTO grade themselves once you add the answer key. Written and visual types are marked by you.",
       "points": "Marks awarded for this question. The total updates automatically as you add questions.",
       "correctAnswer": "The option that's marked correct. Set this so the question scores itself the moment a student submits.",
-      "acceptedAnswers": "Answers counted as correct. Add common variants and spellings; you can make matching case-insensitive.",
+      "acceptedAnswers": "Answers that count as correct. Separate them with commas, or put one per line if an answer contains a comma. Capitalisation is ignored unless you untick the box.",
       "liveFeedback": "When on, you can leave comments students see while they're still writing during a live session.",
       "responseConfig": "Settings specific to this question type — passage text, parts, items, axis ranges, and so on."
     },
@@ -1027,10 +1044,6 @@
         "title": {
           "title": "Name your exam",
           "body": "Give the form a title and an optional description. Everything autosaves as you work."
-        },
-        "liveFeedback": {
-          "title": "Live feedback",
-          "body": "Turn this on to leave comments students can see while they're still writing."
         },
         "addQuestion": {
           "title": "Add questions",
@@ -1193,11 +1206,13 @@
   },
   "responseTypes": {
     "multipleChoice": {
-      "label": "Multiple choice"
+      "label": "Multiple choice",
+      "promptPlaceholder": "Ask the question students pick an answer to"
     },
     "shortAnswer": {
       "label": "Short answer",
-      "placeholder": "Write a short answer"
+      "placeholder": "Write a short answer",
+      "promptPlaceholder": "Ask for a short answer — a word, number or phrase"
     },
     "extendedWritten": {
       "label": "Extended written response",
@@ -1205,10 +1220,12 @@
       "wordCount": "{count} words",
       "charCount": "{count} characters",
       "belowMin": "Minimum {min} words",
-      "belowTarget": "Target {target} words"
+      "belowTarget": "Target {target} words",
+      "promptPlaceholder": "Ask for a written response"
     },
     "structuredMultiPart": {
-      "label": "Structured multi-part"
+      "label": "Structured multi-part",
+      "promptPlaceholder": "Set the scenario; the parts below ask the sub-questions"
     },
     "annotateSource": {
       "label": "Annotate source",
@@ -1228,7 +1245,8 @@
       "promptLooksLikeSource": "This question text looks like the source itself. Students can only highlight the source passage, not the question text.",
       "moveToPassage": "Move it to the source passage",
       "pasteMoved": "The pasted text was added as the source passage.",
-      "undoPasteMove": "Undo"
+      "undoPasteMove": "Undo",
+      "promptPlaceholder": "Tell students what to highlight in the source below"
     },
     "drawDiagram": {
       "label": "Draw / diagram",
@@ -1241,7 +1259,8 @@
       "removePhotoAndDraw": "Remove photo and draw",
       "photoSubmitted": "Uploaded a photo instead of drawing",
       "photoAlt": "Uploaded photo of the diagram",
-      "modeAria": "How do you want to answer?"
+      "modeAria": "How do you want to answer?",
+      "promptPlaceholder": "Describe what students should draw"
     },
     "graph": {
       "label": "Graph",
@@ -1262,7 +1281,8 @@
       "curveMode": "Draw curve",
       "curveHintStart": "Tap points in order, or tap empty space to add one. The curve passes through each point.",
       "curveHintProgress": "{n} points picked. Tap the last point again or press Finish curve (3 or more points).",
-      "finishCurve": "Finish curve"
+      "finishCurve": "Finish curve",
+      "promptPlaceholder": "Describe what students should plot or draw on the axes"
     },
     "photoHandwritten": {
       "label": "Photo handwritten work",
@@ -1271,12 +1291,14 @@
       "empty": "Upload a photo of your handwritten work.",
       "previewAlt": "Uploaded handwritten work",
       "uploadError": "Could not process that image. Try another photo.",
-      "dimensions": "{width} × {height} px"
+      "dimensions": "{width} × {height} px",
+      "promptPlaceholder": "Describe the working students should photograph"
     },
     "trueFalse": {
       "label": "True / false",
       "true": "True",
-      "false": "False"
+      "false": "False",
+      "promptPlaceholder": "Write a statement students judge true or false"
     },
     "matching": {
       "label": "Matching",
@@ -1287,16 +1309,19 @@
       "choose": "Choose a definition…",
       "usedBy": "matched to {n}",
       "usedByShort": "→ {n}",
-      "clearFor": "Clear the match for {term}"
+      "clearFor": "Clear the match for {term}",
+      "promptPlaceholder": "Tell students what to match"
     },
     "ordering": {
       "label": "Ordering",
       "moveUp": "Move up",
-      "moveDown": "Move down"
+      "moveDown": "Move down",
+      "promptPlaceholder": "Tell students what to put in order"
     },
     "labelling": {
       "label": "Labelling",
-      "choose": "Choose a label"
+      "choose": "Choose a label",
+      "promptPlaceholder": "Tell students what to label"
     },
     "mathInput": {
       "label": "Math / equation",
@@ -1305,7 +1330,8 @@
       "workingPlaceholder": "Show your calculations here…",
       "workingHint": "Show your steps — you can earn marks for working even if the final answer is off.",
       "answerLabel": "Final answer",
-      "insertSymbol": "Insert {symbol}"
+      "insertSymbol": "Insert {symbol}",
+      "promptPlaceholder": "State the problem to solve"
     },
     "watch": {
       "annotate": "Teacher annotation"
@@ -1340,7 +1366,7 @@
       "minWords": "Minimum words",
       "targetWords": "Target words",
       "acceptedAnswers": "Accepted answers",
-      "acceptedAnswersPlaceholder": "Comma separated",
+      "acceptedAnswersPlaceholder": "oxygen, O2 — or one answer per line",
       "parts": "Parts",
       "partPrompt": "Part prompt",
       "correctAnswer": "Correct answer",
@@ -1369,7 +1395,10 @@
       "canvasAllowPhoto": "Let students upload a photo instead of drawing",
       "canvasAllowPhotoHint": "Useful on small screens or for detailed diagrams drawn on paper.",
       "graphGiven": "Starting graph (optional)",
-      "graphGivenHint": "Draw anything students should start from, like the original demand curve or given data points. Students see it in grey and can't change it, but they can draw lines from its points."
+      "graphGivenHint": "Draw anything students should start from, like the original demand curve or given data points. Students see it in grey and can't change it, but they can draw lines from its points.",
+      "acceptedAnswersPreview": "Counts as correct: {list}",
+      "acceptedAnswersNone": "No answers yet — this question won't auto-grade.",
+      "ignoreCase": "Ignore capitalisation"
     }
   },
   "offline": {
