@@ -127,4 +127,18 @@ describe("PUT /api/public/live-sessions/[id]/responses", () => {
     expect(res.status).toBe(423);
     expect(await res.json()).toMatchObject({ code: "suspended" });
   });
+  it("returns 410 (final — the sync queue drops it) once the attempt moved to another device", async () => {
+    createSupabaseAnonServiceClient.mockReturnValue(
+      createMockSupabase({
+        rpc: () => ({ data: null, error: { message: "exam moved to another device" } }),
+      }),
+    );
+    const res = await PUT(
+      putRequest({ deviceId: TEST_DEVICE_ID, displayName: TEST_DISPLAY_NAME, answers: {}, submissionId: TEST_SUBMISSION_ID }),
+      { params: Promise.resolve({ liveSessionId: TEST_LIVE_SESSION_ID }) },
+    );
+    expect(res.status).toBe(410);
+    expect(await res.json()).toMatchObject({ code: "moved_to_another_device" });
+  });
+
 });

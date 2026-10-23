@@ -5,6 +5,7 @@ import { isValidAnonymousSessionId } from "@/lib/anonymous-session";
 import { isValidLiveSessionDisplayName, normalizeLiveSessionDisplayName } from "@/lib/live-session-display-name";
 import { finalizeLiveSessionIfClosed } from "@/lib/live-session-finalize";
 import { parseLiveSessionStudentGet } from "@/lib/live-session-student-get";
+import { movedDeviceErrorResponse } from "@/lib/moved-device-response";
 import { createSupabaseAnonServiceClient } from "@/lib/supabase/anon-service";
 
 type Params = {
@@ -71,6 +72,7 @@ export async function GET(request: Request, { params }: Params) {
       resumeCode,
       liveTeacherFeedback,
       liveTeacherFeedbackEnabled,
+      movedToAnotherDevice,
     } = parseLiveSessionStudentGet(data);
     return NextResponse.json({
       answers,
@@ -83,6 +85,7 @@ export async function GET(request: Request, { params }: Params) {
       resumeCode: resumeCode || null,
       liveTeacherFeedback,
       liveTeacherFeedbackEnabled,
+      movedToAnotherDevice,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Configuration error.";
@@ -143,6 +146,10 @@ export async function PUT(request: Request, { params }: Params) {
         // Temporary: the save succeeds once the teacher lets the student back in.
         // 423 tells the offline sync queue to keep and retry it instead of dropping it.
         return NextResponse.json({ error: error.message, code: "suspended" }, { status: 423 });
+      }
+      const moved = movedDeviceErrorResponse(error);
+      if (moved) {
+        return moved;
       }
       return NextResponse.json({ error: error.message }, { status: 400 });
     }

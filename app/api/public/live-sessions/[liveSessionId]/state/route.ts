@@ -50,7 +50,16 @@ export async function GET(request: Request, { params }: Params) {
       finished?: boolean;
       handRaiseQuestionId?: string | null;
       handRaisedAt?: string | null;
+      hasResponse?: boolean;
+      movedToAnotherDevice?: boolean;
+      rejoinRequest?: string;
     };
+    const rejoinRequest =
+      row.rejoinRequest === "pending" ||
+      row.rejoinRequest === "declined" ||
+      row.rejoinRequest === "expired"
+        ? row.rejoinRequest
+        : "none";
 
     return NextResponse.json({
       opensAt: typeof row.opensAt === "string" ? row.opensAt : null,
@@ -60,6 +69,10 @@ export async function GET(request: Request, { params }: Params) {
       handRaiseQuestionId:
         typeof row.handRaiseQuestionId === "string" ? row.handRaiseQuestionId : null,
       handRaisedAt: typeof row.handRaisedAt === "string" ? row.handRaisedAt : null,
+      // Pre-migration RPCs omit these; a missing row then reads as "no row".
+      hasResponse: row.hasResponse === true,
+      movedToAnotherDevice: row.movedToAnotherDevice === true,
+      rejoinRequest,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Configuration error.";

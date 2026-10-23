@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { isValidAnonymousSessionId } from "@/lib/anonymous-session";
 import { isValidLiveSessionDisplayName, normalizeLiveSessionDisplayName } from "@/lib/live-session-display-name";
 import { notifyLiveSessionActivity } from "@/lib/notify-live-session-activity";
+import { movedDeviceErrorResponse } from "@/lib/moved-device-response";
 import { createSupabaseAnonServiceClient } from "@/lib/supabase/anon-service";
 
 type Params = {
@@ -99,6 +100,10 @@ export async function POST(request: Request, { params }: Params) {
           },
           { status: 503 },
         );
+      }
+      const moved = movedDeviceErrorResponse(error);
+      if (moved) {
+        return moved;
       }
       return NextResponse.json({ error: error.message }, { status: 400 });
     }

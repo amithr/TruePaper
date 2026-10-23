@@ -69,5 +69,43 @@ describe("POST /api/forms/live-sessions/resume-student", () => {
       p_live_session_id: TEST_LIVE_SESSION_ID,
       p_device_id: TEST_DEVICE_ID.toLowerCase(),
     });
+    expect(await res.json()).toEqual({ ok: true, transferred: false, toDeviceId: null });
+  });
+
+  it("reports an approved device transfer", async () => {
+    getSessionUser.mockResolvedValue(TEST_TEACHER_SESSION);
+    const rpc = vi
+      .fn()
+      .mockResolvedValue({ data: { ok: true, transferred: true, toDeviceId: "B2C3D4E5-F6A7-4890-B123-456789ABCDEF" }, error: null });
+    createSupabaseServerClient.mockResolvedValue({ rpc });
+
+    const res = await POST(
+      new Request("http://localhost/api/resume-student", {
+        method: "POST",
+        body: JSON.stringify({ deviceId: TEST_DEVICE_ID }),
+      }),
+      { params: Promise.resolve({ liveSessionId: TEST_LIVE_SESSION_ID }) },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      transferred: true,
+      toDeviceId: "b2c3d4e5-f6a7-4890-b123-456789abcdef",
+    });
+  });
+
+  it("maps a submitted target device to 409", async () => {
+    getSessionUser.mockResolvedValue(TEST_TEACHER_SESSION);
+    createSupabaseServerClient.mockResolvedValue({
+      rpc: vi.fn().mockResolvedValue({ data: null, error: { message: "target device already submitted" } }),
+    });
+    const res = await POST(
+      new Request("http://localhost/api/resume-student", {
+        method: "POST",
+        body: JSON.stringify({ deviceId: TEST_DEVICE_ID }),
+      }),
+      { params: Promise.resolve({ liveSessionId: TEST_LIVE_SESSION_ID }) },
+    );
+    expect(res.status).toBe(409);
   });
 });

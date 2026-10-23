@@ -244,6 +244,29 @@ export default function LiveSessionDetailPage() {
     [liveSessionId, refreshOverview, t],
   );
 
+  const declineRejoin = useCallback(
+    async (deviceId: string) => {
+      if (!liveSessionId) {
+        return;
+      }
+      const deviceIdNorm = deviceId.toLowerCase();
+      setParticipantBusyDeviceId(deviceIdNorm);
+      setLoadError("");
+      try {
+        await requestJson<{ ok: true }>(
+          `/api/forms/live-sessions/${liveSessionId}/participants/${encodeURIComponent(deviceIdNorm)}/rejoin-request`,
+          { method: "DELETE" },
+        );
+        refreshOverview();
+      } catch (e) {
+        setLoadError(e instanceof Error ? e.message : t("session.errors.declineRejoin"));
+      } finally {
+        setParticipantBusyDeviceId(null);
+      }
+    },
+    [liveSessionId, refreshOverview, t],
+  );
+
   // Stable handlers + memoized lists so RosterRow (React.memo) doesn't re-render on
   // the 1s countdown tick — only on real data / heatmap-bucket changes.
   const handleOpenExam = useCallback(
@@ -259,6 +282,13 @@ export default function LiveSessionDetailPage() {
       void resumeStudent(deviceId);
     },
     [resumeStudent],
+  );
+
+  const handleDeclineRejoin = useCallback(
+    (deviceId: string) => {
+      void declineRejoin(deviceId);
+    },
+    [declineRejoin],
   );
 
   const rosterPreviewQuestions = useMemo(() => {
@@ -614,6 +644,7 @@ export default function LiveSessionDetailPage() {
                 participants={displayedParticipants}
                 onOpenExam={handleOpenExam}
                 onResumeStudent={handleResumeStudent}
+                onDeclineRejoin={handleDeclineRejoin}
                 resumeBusyDeviceId={participantBusyDeviceId}
                 activityThresholds={activityThresholds}
                 sessionOpen={sessionRunning}

@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 
 import { countAnsweredQuestions } from "@/lib/count-answered-questions";
 import { parseQuestionGrades, sumEarnedPoints, sumPossiblePoints } from "@/lib/exam-grades";
-import { isMissingColumnError } from "@/lib/is-missing-db-column";
+import { isMissingColumnError, isMissingRelationError } from "@/lib/is-missing-db-column";
 import {
   OVERVIEW_STATUS_BUCKET_MS,
   overviewFingerprint,
@@ -54,6 +54,9 @@ type PresenceOverviewRow = {
 type Params = {
   params: Promise<{ liveSessionId: string }>;
 };
+
+/** Must match live_session_rejoin_request_pending() in the migration. */
+const REJOIN_REQUEST_TTL_MS = 15 * 60_000;
 
 function sessionWindowOpen(opensAt: string, closesAt: string, nowMs: number): boolean {
   return nowMs >= new Date(opensAt).getTime() && nowMs <= new Date(closesAt).getTime();
@@ -220,6 +223,24 @@ export async function GET(request: Request, { params }: Params) {
     }
   }
 
+  // Pending device-rejoin requests (student asked to continue on a new device;
+  // Let in approves). Missing table = migration not applied yet → no requests.
+  const rejoinRequestedByDevice = new Map<string, string>();
+  const transfers = await supabase
+    .from("live_session_device_transfers")
+    .select("from_device_id, requested_at")
+    .eq("live_session_id", liveSessionId)
+    .is("approved_at", null)
+    .is("declined_at", null);
+  if (transfers.error && !isMissingRelationError(transfers.error, "live_session_device_transfers")) {
+    return NextResponse.json({ error: transfers.error.message }, { status: 500 });
+  }
+  for (const t of (transfers.data ?? []) as { from_device_id: string; requested_at: string }[]) {
+    if (nowMs - new Date(t.requested_at).getTime() <= REJOIN_REQUEST_TTL_MS) {
+      rejoinRequestedByDevice.set(t.from_device_id.toLowerCase(), t.requested_at);
+    }
+  }
+
   const { data: questionRows, error: qError } = await supabase
     .from("questions")
     .select("id, points, question_type")
@@ -271,6 +292,8 @@ export async function GET(request: Request, { params }: Params) {
       suspendedAt: r.suspended_at ?? null,
       finishedAt: r.finished_at ?? null,
       gradedAt: (r.text_graded_at as string | null | undefined) ?? null,
+      rejoinRequestedAt:
+        rejoinRequestedByDevice.get(r.anonymous_session_id?.toLowerCase() ?? "") ?? null,
     })),
     presenceByDevice: fingerprintPresence,
   });
@@ -327,6 +350,7 @@ export async function GET(request: Request, { params }: Params) {
       handRaiseQuestionId: pres?.handRaiseQuestionId ?? null,
       handRaisedAt: pres?.handRaisedAt ?? null,
       focusQuestionId: pres?.focusQuestionId ?? null,
+      rejoinRequestedAt: rejoinRequestedByDevice.get(deviceKey) ?? null,
       updatedAt: r.updated_at as string,
     };
   });

@@ -7,6 +7,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 
 import { JoinCodeInput } from "@/components/JoinCodeInput";
+import { StudentExamMovedCard } from "@/components/student/StudentExamMovedCard";
+import { StudentRejoinOnNewDeviceCard } from "@/components/student/StudentRejoinOnNewDeviceCard";
+import { StudentRejoinWaitingCard } from "@/components/student/StudentRejoinWaitingCard";
+import { StudentWelcomeBackCard } from "@/components/student/StudentWelcomeBackCard";
 import { StudentExamHeader } from "@/components/exam/StudentExamHeader";
 import { StudentExamHandIn } from "@/components/exam/StudentExamHandIn";
 import { useBodyFocusMode } from "@/lib/use-body-focus-mode";
@@ -55,7 +59,7 @@ import { Bookmark, Copy, ImagePlus } from "lucide-react";
 import {
   createFreshAnonymousSessionId,
   getOrCreateAnonymousSessionId,
-  joinUrlRequestsFreshDevice,
+  peekStoredAnonymousSessionId,
   persistAnonymousSessionId,
 } from "@/lib/anonymous-session";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
@@ -96,7 +100,7 @@ import { fetchStudentAlreadySubmitted } from "@/lib/fetch-student-submission-sta
 import { fetchStudentExamStatus } from "@/lib/fetch-student-exam-status";
 import { fetchStudentLiveTeacherFeedback } from "@/lib/fetch-student-live-feedback";
 import { hasLiveTeacherFeedbackContent } from "@/lib/live-teacher-feedback";
-import { requestJson } from "@/lib/request-json";
+import { requestJson, RequestJsonError } from "@/lib/request-json";
 import { stableStringifyStudentAnswers } from "@/lib/student-answers-json";
 import { usePollingRefresh } from "@/lib/use-polling-refresh";
 import { loadLocalAnswers, mergeAnswersLastWrite } from "@/lib/offline/answer-store";
@@ -109,6 +113,9 @@ import { LIVE_PRESENCE_KEEPALIVE_MS } from "@/lib/participant-status";
 import { LiveCountdown } from "@/components/LiveCountdown";
 import { cacheExamSession, loadCachedExamSession } from "@/lib/offline/session-cache";
 import { type ActiveExam, clearActiveExam, loadActiveExam, saveActiveExam } from "@/lib/active-exam";
+import { resolveJoinEntry } from "@/lib/join-entry";
+import { fetchRejoinCandidate, type RejoinCandidate } from "@/lib/fetch-rejoin-candidate";
+import { useRejoinRequestPoll, type RejoinRequestStatus } from "@/lib/use-rejoin-request-poll";
 import type { ConnectionSnapshot } from "@/lib/offline/types";
 import { newSubmissionId } from "@/lib/offline/sync-queue";
 import { isRetryableNetworkError } from "@/lib/network-error";
@@ -307,6 +314,27 @@ export default function HomeClient({
   const [pendingAutoResumeCode, setPendingAutoResumeCode] = useState("");
   /** Exam remembered on this device from before a reload; rejoined automatically once. */
   const [pendingActiveExamRestore, setPendingActiveExamRestore] = useState<ActiveExam | null>(null);
+  /** Class link / QR opened on the browser already taking that exam: offer to continue. */
+  const [welcomeBack, setWelcomeBack] = useState<ActiveExam | null>(null);
+  /** The exam was re-entered after a reload / welcome back: friendlier paused copy. */
+  const [restoredAfterReload, setRestoredAfterReload] = useState(false);
+  /** The typed name matches an unfinished attempt on another device. */
+  const [rejoinCandidate, setRejoinCandidate] = useState<{
+    joinData: JoinApiResponse;
+    code: string;
+    displayName: string;
+    candidate: RejoinCandidate;
+  } | null>(null);
+  /** Waiting for the teacher to approve continuing on this device. */
+  const [rejoinRequest, setRejoinRequest] = useState<{
+    joinData: JoinApiResponse;
+    code: string;
+    displayName: string;
+  } | null>(null);
+  const [rejoinRequestStatus, setRejoinRequestStatus] = useState<RejoinRequestStatus>("pending");
+  const [rejoinRequestBusy, setRejoinRequestBusy] = useState(false);
+  /** The teacher moved this attempt to another device; this one is done. */
+  const [examMovedAway, setExamMovedAway] = useState(false);
   const [joinCodeInput, setJoinCodeInput] = useState("");
   const [rejoinCodeInput, setRejoinCodeInput] = useState("");
   const [joinDisplayNameInput, setJoinDisplayNameInput] = useState("");
@@ -736,27 +764,31 @@ export default function HomeClient({
     deferEffect(() => {
       const params = new URLSearchParams(window.location.search);
 
-      const freshDevice = joinUrlRequestsFreshDevice(params);
-      const deviceId = freshDevice
-        ? createFreshAnonymousSessionId()
-        : getOrCreateAnonymousSessionId();
+      // Continue the exam this browser was taking (silently after a reload; with a
+      // "Welcome back" card when the class link/QR is opened again), start a new
+      // student for a class link to a different exam, or just show the form.
+      const storedId = peekStoredAnonymousSessionId();
+      const entry = resolveJoinEntry({
+        params,
+        activeExam: guestView === "join" && storedId ? loadActiveExam(storedId) : null,
+      });
+      const deviceId =
+        entry.kind === "fresh" ? createFreshAnonymousSessionId() : getOrCreateAnonymousSessionId();
       setAnonymousSessionId(deviceId);
 
-      // A reload of the exam page has no URL intent: put the student back into the
-      // exam they were taking on this device instead of showing the join form.
-      const hasExplicitIntent =
-        freshDevice || params.has("code") || params.has("join") || params.has("resume");
-      if (guestView === "join" && !hasExplicitIntent) {
-        const active = loadActiveExam(deviceId);
-        if (active) {
-          setJoinCodeInput(active.joinCode);
-          setJoinDisplayNameInput(active.displayName);
-          setPendingActiveExamRestore(active);
-        }
+      if (entry.kind === "auto-restore") {
+        setJoinCodeInput(entry.active.joinCode);
+        setJoinDisplayNameInput(entry.active.displayName);
+        setRestoredAfterReload(true);
+        setPendingActiveExamRestore(entry.active);
+      } else if (entry.kind === "welcome-back") {
+        setJoinCodeInput(entry.code);
+        setJoinDisplayNameInput(entry.active.displayName);
+        setWelcomeBack(entry.active);
       }
 
       const raw = params.get("code") ?? params.get("join");
-      if (raw) {
+      if (raw && entry.kind !== "welcome-back") {
         const normalized = normalizeJoinCode(raw);
         if (isValidJoinCodeFormat(normalized)) {
           setJoinCodeInput(normalized);
@@ -1151,6 +1183,13 @@ export default function HomeClient({
           router.replace("/join/submitted");
           return;
         }
+        if (parsed?.movedToAnotherDevice) {
+          clearActiveExam();
+          setExamMovedAway(true);
+          setExamSuspended(true);
+          setStatusMessage(t("home.status.movedToAnotherDevice"));
+          return;
+        }
 
         const hasLocalEdits = pendingDirtySinceRef.current !== null;
         if (isFirstLoadForKey && shouldApplyServerAnswersOnLoad(isFirstLoadForKey, hasLocalEdits)) {
@@ -1192,7 +1231,11 @@ export default function HomeClient({
               }),
             );
           } else if (parsed.suspended) {
-            setStatusMessage(t("home.status.paused"));
+            setStatusMessage(
+              t(restoredAfterReload ? "home.status.welcomeBackPaused" : "home.status.paused"),
+            );
+          } else {
+            setRestoredAfterReload(false);
           }
         } else if (fetchFailed && localRecord) {
           setStatusMessage(t("offline.status.offline"));
@@ -1238,6 +1281,13 @@ export default function HomeClient({
   }, [joinedLiveSessionId, anonymousSessionId]);
 
   const applyStudentExamRemotePatch = useCallback((patch: StudentExamRemotePatch) => {
+    if (patch.movedToAnotherDevice) {
+      clearActiveExam();
+      setExamMovedAway(true);
+      setExamSuspended(true);
+      setStatusMessage(t("home.status.movedToAnotherDevice"));
+      return;
+    }
     if (patch.liveTeacherFeedback !== undefined) {
       setLiveTeacherFeedback((prev) => ({ ...prev, ...patch.liveTeacherFeedback }));
       if (hasLiveTeacherFeedbackContent(patch.liveTeacherFeedback)) {
@@ -1253,6 +1303,7 @@ export default function HomeClient({
         return;
       }
       serverTabPauseConfirmedRef.current = false;
+      setRestoredAfterReload(false);
       setExamSuspended((prevSuspended) => {
         if (prevSuspended) {
           setStatusMessage(t("home.status.resumed"));
@@ -1275,7 +1326,9 @@ export default function HomeClient({
     liveSessionId: joinedLiveSessionId,
     deviceId: anonymousSessionId,
     enabled:
-      Boolean(joinedLiveSessionId && anonymousSessionId && studentAnswersHydrated) && !examFinished,
+      Boolean(joinedLiveSessionId && anonymousSessionId && studentAnswersHydrated) &&
+      !examFinished &&
+      !examMovedAway,
     onPatch: applyStudentExamRemotePatch,
   });
 
@@ -1284,7 +1337,8 @@ export default function HomeClient({
     deviceId: anonymousSessionId,
     enabled:
       Boolean(joinedLiveSessionId && anonymousSessionId && studentAnswersHydrated) &&
-      !examFinished,
+      !examFinished &&
+      !examMovedAway,
     onPatch: applyStudentExamRemotePatch,
   });
 
@@ -1478,6 +1532,14 @@ export default function HomeClient({
           setExamFinished(false);
           setExamSuspended(false);
           setStatusMessage(body.error ?? t("home.status.alreadySubmitted"));
+          return;
+        }
+        if (res.status === 410) {
+          // The teacher moved this attempt to another device.
+          clearActiveExam();
+          setExamMovedAway(true);
+          setExamSuspended(true);
+          setStatusMessage(t("home.status.movedToAnotherDevice"));
           return;
         }
       } catch {
@@ -2222,6 +2284,68 @@ export default function HomeClient({
     }
   };
 
+  /** Open the exam on this device once `/api/public/join` succeeded. */
+  const enterLiveSession = (
+    data: JoinApiResponse,
+    code: string,
+    displayName: string,
+    deviceIdForJoin: string,
+    teacherPreview: boolean,
+  ) => {
+    setRejoinCandidate(null);
+    setRejoinRequest(null);
+    setExamMovedAway(false);
+    setJoinedSession({
+      liveSessionId: data.liveSessionId,
+      form: data.form,
+      opensAt: data.opensAt,
+      closesAt: data.closesAt,
+      deliveryMode: data.deliveryMode ?? "live",
+    });
+    setLiveTeacherFeedbackEnabledLive(data.form.liveTeacherFeedbackEnabled);
+    if (deviceIdForJoin) {
+      void cacheExamSession({
+        liveSessionId: data.liveSessionId,
+        deviceId: deviceIdForJoin,
+        joinCode: code,
+        displayName,
+        form: data.form,
+        deliveryMode: data.deliveryMode ?? "live",
+      });
+      if (!teacherPreview) {
+        saveActiveExam({
+          liveSessionId: data.liveSessionId,
+          joinCode: code,
+          displayName,
+          deviceId: deviceIdForJoin,
+          opensAt: data.opensAt,
+          closesAt: data.closesAt,
+          deliveryMode: data.deliveryMode ?? "live",
+        });
+      }
+    }
+    setJoinCodeInput(code);
+    setActiveExamDisplayName(displayName);
+    try {
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("truepaper_last_exam_display_name", displayName);
+      }
+    } catch {
+      /* ignore */
+    }
+    latestStudentAnswersRef.current = {};
+    lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers({});
+    pendingDirtySinceRef.current = null;
+    studentResponseLoadKeyRef.current = null;
+    setExamAnswers({});
+    setStudentAnswersHydrated(false);
+    setExamSuspended(false);
+    setExamFinished(false);
+    setAutosaveStatus("");
+    setStatusMessage(t("home.status.inLiveSession"));
+    void clearJoinDraft();
+  };
+
   const joinWithCode = async (
     rawCode: string,
     options?: {
@@ -2262,55 +2386,16 @@ export default function HomeClient({
       ) {
         throw new Error(t("home.status.alreadySubmitted"));
       }
-      setJoinedSession({
-        liveSessionId: data.liveSessionId,
-        form: data.form,
-        opensAt: data.opensAt,
-        closesAt: data.closesAt,
-        deliveryMode: data.deliveryMode ?? "live",
-      });
-      setLiveTeacherFeedbackEnabledLive(data.form.liveTeacherFeedbackEnabled);
-      if (deviceIdForJoin) {
-        void cacheExamSession({
-          liveSessionId: data.liveSessionId,
-          deviceId: deviceIdForJoin,
-          joinCode: code,
-          displayName,
-          form: data.form,
-          deliveryMode: data.deliveryMode ?? "live",
-        });
-        if (!teacherPreview) {
-          saveActiveExam({
-            liveSessionId: data.liveSessionId,
-            joinCode: code,
-            displayName,
-            deviceId: deviceIdForJoin,
-            opensAt: data.opensAt,
-            closesAt: data.closesAt,
-            deliveryMode: data.deliveryMode ?? "live",
-          });
+      if (!restoring && !teacherPreview && deviceIdForJoin) {
+        // Same name already working on another device? Offer to continue that
+        // attempt (the teacher approves) instead of silently starting a blank one.
+        const candidate = await fetchRejoinCandidate(data.liveSessionId, displayName, deviceIdForJoin);
+        if (candidate && (candidate.found || candidate.ambiguous)) {
+          setRejoinCandidate({ joinData: data, code, displayName, candidate });
+          return;
         }
       }
-      setJoinCodeInput(code);
-      setActiveExamDisplayName(displayName);
-      try {
-        if (typeof window !== "undefined") {
-          window.localStorage.setItem("truepaper_last_exam_display_name", displayName);
-        }
-      } catch {
-        /* ignore */
-      }
-      latestStudentAnswersRef.current = {};
-      lastPersistedAnswersJsonRef.current = stableStringifyStudentAnswers({});
-      pendingDirtySinceRef.current = null;
-      studentResponseLoadKeyRef.current = null;
-      setExamAnswers({});
-      setStudentAnswersHydrated(false);
-      setExamSuspended(false);
-      setExamFinished(false);
-      setAutosaveStatus("");
-      setStatusMessage(t("home.status.inLiveSession"));
-      void clearJoinDraft();
+      enterLiveSession(data, code, displayName, deviceIdForJoin, teacherPreview);
     } catch (error) {
       if (restoring) {
         if (isRetryableNetworkError(error)) {
@@ -2357,6 +2442,109 @@ export default function HomeClient({
     }
   };
 
+  const continueWelcomeBack = () => {
+    if (!welcomeBack) {
+      return;
+    }
+    const active = welcomeBack;
+    setWelcomeBack(null);
+    setRestoredAfterReload(true);
+    setPendingActiveExamRestore(active);
+  };
+
+  /** Shared computer: the previous student's exam is not this student's. */
+  const startFreshFromWelcomeBack = () => {
+    const code = welcomeBack?.joinCode ?? joinCodeInput;
+    clearActiveExam();
+    setAnonymousSessionId(createFreshAnonymousSessionId());
+    setWelcomeBack(null);
+    setJoinDisplayNameInput("");
+    setJoinCodeInput(code);
+    setStatusMessage(t("home.status.sessionCodeLoaded"));
+  };
+
+  const requestRejoinOnThisDevice = async (
+    joinData: JoinApiResponse,
+    code: string,
+    displayName: string,
+  ) => {
+    if (!anonymousSessionId) {
+      return;
+    }
+    setRejoinRequestBusy(true);
+    setStatusMessage("");
+    try {
+      await requestJson<{ ok: true }>(
+        `/api/public/live-sessions/${joinData.liveSessionId}/rejoin-request`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ deviceId: anonymousSessionId, displayName }),
+        },
+      );
+      setRejoinCandidate(null);
+      setRejoinRequestStatus("pending");
+      setRejoinRequest({ joinData, code, displayName });
+      setStatusMessage(t("home.status.rejoinRequested"));
+    } catch (error) {
+      const body = error instanceof RequestJsonError ? error.body : null;
+      const errorCode =
+        body && typeof body === "object" && "code" in body ? String(body.code) : "";
+      if (errorCode === "target_has_attempt") {
+        // This device already owns an attempt here: just continue it.
+        enterLiveSession(joinData, code, displayName, anonymousSessionId, false);
+        return;
+      }
+      setStatusMessage(error instanceof Error ? error.message : t("home.errors.joinSession"));
+    } finally {
+      setRejoinRequestBusy(false);
+    }
+  };
+
+  /** A namesake, or the student gave up waiting: a blank attempt on this device. */
+  const startNewAttemptInstead = () => {
+    const source = rejoinCandidate ?? rejoinRequest;
+    if (!source || !anonymousSessionId) {
+      return;
+    }
+    enterLiveSession(source.joinData, source.code, source.displayName, anonymousSessionId, false);
+  };
+
+  const cancelRejoinRequest = async () => {
+    if (!rejoinRequest || !anonymousSessionId) {
+      return;
+    }
+    setRejoinRequestBusy(true);
+    try {
+      await fetch(
+        `/api/public/live-sessions/${rejoinRequest.joinData.liveSessionId}/rejoin-request?deviceId=${encodeURIComponent(anonymousSessionId)}`,
+        { method: "DELETE" },
+      );
+    } catch {
+      /* best effort; the request expires on its own */
+    } finally {
+      setRejoinRequestBusy(false);
+      setRejoinRequest(null);
+      setStatusMessage("");
+    }
+  };
+
+  const enterLiveSessionRef = useLatestRef(enterLiveSession);
+  useRejoinRequestPoll({
+    liveSessionId: rejoinRequest?.joinData.liveSessionId ?? "",
+    deviceId: anonymousSessionId,
+    enabled: Boolean(rejoinRequest) && rejoinRequestStatus === "pending",
+    onStatus: (status) => {
+      if (status === "approved" && rejoinRequest && anonymousSessionId) {
+        // The attempt now belongs to this device; answers hydrate from the server.
+        const { joinData, code, displayName } = rejoinRequest;
+        enterLiveSessionRef.current(joinData, code, displayName, anonymousSessionId, false);
+        return;
+      }
+      setRejoinRequestStatus(status);
+    },
+  });
+
   const rejoinWithResumeCodeRef = useLatestRef(rejoinWithResumeCode);
 
   useEffect(() => {
@@ -2388,6 +2576,8 @@ export default function HomeClient({
 
   const leaveJoinedSession = () => {
     clearActiveExam();
+    setExamMovedAway(false);
+    setRestoredAfterReload(false);
     setIsJoiningSession(false);
     setJoinedSession(null);
     latestStudentAnswersRef.current = {};
@@ -2684,6 +2874,45 @@ export default function HomeClient({
         </div>
       </div>
 
+      {welcomeBack && !joinedSession ? (
+        <StudentWelcomeBackCard
+          displayName={welcomeBack.displayName}
+          liveSessionId={welcomeBack.liveSessionId}
+          deviceId={welcomeBack.deviceId}
+          busy={isJoiningSession}
+          onContinue={continueWelcomeBack}
+          onStartFresh={startFreshFromWelcomeBack}
+        />
+      ) : rejoinCandidate && !joinedSession ? (
+        <StudentRejoinOnNewDeviceCard
+          displayName={rejoinCandidate.displayName}
+          candidate={rejoinCandidate.candidate}
+          busy={rejoinRequestBusy}
+          onContinue={() =>
+            void requestRejoinOnThisDevice(
+              rejoinCandidate.joinData,
+              rejoinCandidate.code,
+              rejoinCandidate.displayName,
+            )
+          }
+          onStartNew={startNewAttemptInstead}
+        />
+      ) : rejoinRequest && !joinedSession ? (
+        <StudentRejoinWaitingCard
+          status={rejoinRequestStatus === "approved" ? "pending" : rejoinRequestStatus}
+          busy={rejoinRequestBusy}
+          onCancel={() => void cancelRejoinRequest()}
+          onTryAgain={() =>
+            void requestRejoinOnThisDevice(
+              rejoinRequest.joinData,
+              rejoinRequest.code,
+              rejoinRequest.displayName,
+            )
+          }
+          onStartNew={startNewAttemptInstead}
+        />
+      ) : (
+        <>
       <div className="mt-6 space-y-5">
         {joinedSession ? (
           <div>
@@ -2799,6 +3028,8 @@ export default function HomeClient({
           </div>
         </details>
       ) : null}
+        </>
+      )}
     </section>
   );
 
@@ -3512,15 +3743,17 @@ export default function HomeClient({
                 </div>
               </div>
             ) : null}
-            {joinedSession && examSuspended ? (
+            {joinedSession && examMovedAway ? <StudentExamMovedCard /> : null}
+            {joinedSession && examSuspended && !examMovedAway ? (
               <div
                 className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-[var(--tp-surface)]/95 p-6 text-center shadow-lg backdrop-blur-sm tp-anim-fade-in"
                 role="alert"
                 data-testid="student-exam-paused"
+                data-variant={restoredAfterReload ? "back" : "paused"}
               >
                 <p className="text-lg font-semibold text-[var(--tp-text)]">{t("home.exam.overlay.paused")}</p>
                 <p className="max-w-md text-sm text-[var(--tp-text-secondary)]">
-                  {t("home.exam.overlay.pausedHint")}
+                  {t(restoredAfterReload ? "home.exam.overlay.pausedHintBack" : "home.exam.overlay.pausedHint")}
                 </p>
               </div>
             ) : null}

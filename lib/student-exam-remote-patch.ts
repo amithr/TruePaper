@@ -6,6 +6,8 @@ export type StudentExamRemotePatch = {
   finished?: boolean;
   handRaiseQuestionId?: string | null;
   handRaisedAt?: string | null;
+  /** The teacher approved continuing this attempt on another device; this one is done. */
+  movedToAnotherDevice?: boolean;
 };
 
 /** Maps a form_responses row to student UI fields. Never includes answers (local state is authoritative). */

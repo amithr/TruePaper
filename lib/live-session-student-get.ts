@@ -23,9 +23,10 @@ const emptyParsed = {
   liveTeacherFeedback: {} as LiveTeacherFeedbackByQuestionId,
   liveTeacherFeedbackEnabled: false,
   resumeCode: "",
+  movedToAnotherDevice: false,
 };
 
-/** Parses RPC / API payload: `{ answers, suspended, finished?, graded?, pointsEarned?, displayName?, resumeCode? }` or legacy flat answers object. */
+/** Parses RPC / API payload: `{ answers, suspended, finished?, graded?, pointsEarned?, displayName?, resumeCode?, movedToAnotherDevice? }` or legacy flat answers object. */
 export function parseLiveSessionStudentGet(data: unknown): {
   answers: StudentAnswers;
   suspended: boolean;
@@ -37,6 +38,8 @@ export function parseLiveSessionStudentGet(data: unknown): {
   liveTeacherFeedback: LiveTeacherFeedbackByQuestionId;
   liveTeacherFeedbackEnabled: boolean;
   resumeCode: string;
+  /** This device's attempt was approved to continue on another device. */
+  movedToAnotherDevice: boolean;
 } {
   if (data === null || data === undefined) {
     return { ...emptyParsed };
@@ -79,6 +82,7 @@ export function parseLiveSessionStudentGet(data: unknown): {
       liveTeacherFeedbackEnabled:
         obj.liveTeacherFeedbackEnabled === true || obj.live_teacher_feedback_enabled === true,
       resumeCode: resumeCodeFromObject(obj),
+      movedToAnotherDevice: obj.movedToAnotherDevice === true,
     };
   }
 
@@ -93,5 +97,6 @@ export function parseLiveSessionStudentGet(data: unknown): {
     liveTeacherFeedback: {},
     liveTeacherFeedbackEnabled: false,
     resumeCode: "",
+    movedToAnotherDevice: false,
   };
 }

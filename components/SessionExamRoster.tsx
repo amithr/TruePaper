@@ -28,6 +28,8 @@ type Props = {
   questionTotal: number;
   onOpenExam: (deviceId: string, questionId?: string | null) => void;
   onResumeStudent?: (deviceId: string) => void;
+  /** "Not them": decline a pending request to move this attempt to a new device. */
+  onDeclineRejoin?: (deviceId: string) => void;
   resumeBusyDeviceId?: string | null;
   activityThresholds?: RosterActivityThresholds;
   sessionOpen?: boolean;
@@ -59,7 +61,12 @@ function statusCopy(
     };
   }
   if (model.kind === "waiting") {
-    return { tone: "waiting", label: t("session.roster.statusWaiting") };
+    return {
+      tone: "waiting",
+      label: model.rejoinRequested
+        ? t("session.roster.statusRejoinRequested")
+        : t("session.roster.statusWaiting"),
+    };
   }
   if (model.offline) {
     return { tone: "offline", label: t("session.roster.statusOffline") };
@@ -104,6 +111,7 @@ const RosterRow = memo(function RosterRow({
   questionTotal,
   onOpenExam,
   onResumeStudent,
+  onDeclineRejoin,
   resumeBusyDeviceId,
   activityThresholds,
   sessionOpen,
@@ -114,6 +122,7 @@ const RosterRow = memo(function RosterRow({
   questionTotal: number;
   onOpenExam: (deviceId: string, questionId?: string | null) => void;
   onResumeStudent?: (deviceId: string) => void;
+  onDeclineRejoin?: (deviceId: string) => void;
   resumeBusyDeviceId?: string | null;
   activityThresholds: RosterActivityThresholds;
   sessionOpen: boolean;
@@ -203,6 +212,20 @@ const RosterRow = memo(function RosterRow({
           {isResumeBusy ? t("common.lettingIn") : t("session.actions.letIn")}
         </button>
       ) : null}
+      {model.rejoinRequested && onDeclineRejoin ? (
+        <button
+          type="button"
+          className={`tp-live-roster-decline ${focusRing}`}
+          disabled={Boolean(resumeBusyDeviceId)}
+          data-testid="roster-rejoin-decline"
+          onClick={(event) => {
+            event.stopPropagation();
+            onDeclineRejoin(p.anonymousSessionId);
+          }}
+        >
+          {t("session.actions.notThem")}
+        </button>
+      ) : null}
 
       <ChevronRight aria-hidden className="tp-live-roster-chevron" />
     </div>
@@ -216,6 +239,7 @@ export function SessionExamRoster({
   questionTotal,
   onOpenExam,
   onResumeStudent,
+  onDeclineRejoin,
   resumeBusyDeviceId,
   activityThresholds = DEFAULT_ROSTER_ACTIVITY_THRESHOLDS,
   sessionOpen = true,
@@ -235,6 +259,7 @@ export function SessionExamRoster({
           questionTotal={total}
           onOpenExam={onOpenExam}
           onResumeStudent={onResumeStudent}
+          onDeclineRejoin={onDeclineRejoin}
           resumeBusyDeviceId={resumeBusyDeviceId}
           activityThresholds={activityThresholds}
           sessionOpen={sessionOpen}
@@ -247,6 +272,7 @@ export function SessionExamRoster({
       total,
       onOpenExam,
       onResumeStudent,
+      onDeclineRejoin,
       resumeBusyDeviceId,
       activityThresholds,
       sessionOpen,

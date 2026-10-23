@@ -58,6 +58,24 @@ describe("live-roster", () => {
     expect(questionIndexForFocus(null, preview)).toBeNull();
   });
 
+  it("flags a waiting row that asked to continue on a new device", () => {
+    const row = deriveLiveRosterRow(
+      participant({
+        suspendedAt: "2026-06-05T11:58:00.000Z",
+        status: "blocked",
+        rejoinRequestedAt: "2026-06-05T11:58:00.000Z",
+      }),
+      baseOpts,
+    );
+    expect(row.kind).toBe("waiting");
+    expect(row.rejoinRequested).toBe(true);
+    // A stale request on a row that is no longer waiting is not surfaced.
+    expect(
+      deriveLiveRosterRow(participant({ rejoinRequestedAt: "2026-06-05T11:58:00.000Z" }), baseOpts)
+        .rejoinRequested,
+    ).toBe(false);
+  });
+
   it("marks waiting and stalled as attention", () => {
     const waiting = deriveLiveRosterRow(
       participant({ suspendedAt: "2026-06-05T11:50:00.000Z", status: "blocked" }),

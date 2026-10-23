@@ -42,6 +42,8 @@ export type LiveSessionOverviewParticipant = {
   handRaisedAt: string | null;
   /** Question the student last focused / typed in (teacher roster “on Qn”). */
   focusQuestionId: string | null;
+  /** A pending request to continue this attempt on another device (Let in approves). */
+  rejoinRequestedAt?: string | null;
 };
 
 export type LiveSessionOverviewPayload = {

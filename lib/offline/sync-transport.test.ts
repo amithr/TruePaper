@@ -77,6 +77,11 @@ describe("putStudentAnswersSync", () => {
     expect(await putStudentAnswersSync(input)).toMatchObject({ retryable: true });
   });
 
+  it("drops saves once the attempt moved to another device (410)", async () => {
+    requestJson.mockRejectedValue(new RequestJsonError("This exam continued on another device.", 410));
+    expect(await putStudentAnswersSync(input)).toMatchObject({ ok: false, retryable: false });
+  });
+
   it("treats other client errors as final", async () => {
     requestJson.mockRejectedValue(new RequestJsonError("A valid deviceId is required.", 400));
     expect(await putStudentAnswersSync(input)).toMatchObject({ ok: false, retryable: false });

@@ -188,15 +188,18 @@ flowchart LR
 ### Suspensions & tab leave
 
 - Student leaving tab → `POST /api/public/live-sessions/[id]/tab-leave` → `suspended_at` set
-- Teacher clears: `POST .../resume-student`
+- A device-rejoin request also sets `suspended_at` (roster: waiting, with "Back on a new device" copy; overview participants carry `rejoinRequestedAt`, folded into the overview ETag fingerprint)
+- Teacher clears: `POST .../resume-student` (also approves a pending device-rejoin request)
 - Client: `lib/exam-tab-leave.ts`, `lib/student-exam-tab-pause.ts`
 
-### Rejoin codes
+### Rejoin & device transfer
 
-- Teacher creates: `POST .../participants/[deviceId]/rejoin-code`
-- UI: `components/TeacherStudentRejoinShare.tsx`
-- Student lookup: `GET /api/public/resume?code=`
-- Rejoin blocked after submit (`20260519100000_block_rejoin_after_submit.sql`)
+Three ways back into an unfinished attempt (migration `20261023120000_device_rejoin_transfer.sql`):
+
+- **Same browser (welcome back):** the class link/QR (`?code=…&new=1&student=…`) no longer wipes the stored device id when this browser already holds an active exam for that join code (`lib/join-entry.ts` → `resolveJoinEntry`; `peekStoredAnonymousSessionId`). The join page shows `components/student/StudentWelcomeBackCard.tsx` ("Welcome back, {name} — {answered} of {total} answered", counts from IndexedDB via `lib/use-local-answer-progress.ts`) with **Continue** (the existing restore path) and **Not you? Start fresh** (new device id, for shared lab computers). A class link for a *different* exam still starts fresh. The paused overlay after a restore says "You're back and your answers are saved" (`data-variant="back"`).
+- **New device (name + teacher approval):** before a blank attempt is created, `joinWithCode` calls `GET /api/public/live-sessions/[id]/rejoin-candidate?name=&deviceId=` (`lookup_live_session_rejoin_candidate`: exactly one unfinished attempt with the same normalised name on another device; never returns that device id; >1 match = `ambiguous`, never guessed). `components/student/StudentRejoinOnNewDeviceCard.tsx` offers **Continue that attempt** → `POST .../rejoin-request` (`request_live_session_device_rejoin`): upserts `live_session_device_transfers (live_session_id, from_device_id) → to_device_id` (last request wins, 15-min expiry) and sets `suspended_at` on the source row, so the roster shows **waiting** with "Back on a new device — waiting to be let in" and the old device's autosaves are held (423). The teacher's ordinary **Let in** (`teacher_clear_live_session_student_suspension`) approves: the `form_responses` row (plus presence and `feedback_items`) moves to the new device id and the request becomes a **tombstone**. **Not them** (`DELETE .../participants/[deviceId]/rejoin-request` → `teacher_decline_live_session_device_rejoin`) restores the prior pause state. The new device waits on `components/student/StudentRejoinWaitingCard.tsx` polling `GET .../state` (`lib/use-rejoin-request-poll.ts`: `hasResponse && rejoinRequest !== "pending"` = approved; `declined` / `expired`; Cancel → `DELETE .../rejoin-request?deviceId=`), then enters the exam and hydrates answers from the server. **No, I'm a different {name}** starts a blank attempt.
+- **Old device after a move:** a `BEFORE INSERT` trigger (`block_moved_device_rows` on `form_responses` + `live_session_presence`) raises `exam moved to another device` for any tombstoned device, so register/save/tab-leave/finish/heartbeat upserts can never re-create a blank row; the routes map it to **410** `code: "moved_to_another_device"` (`lib/moved-device-response.ts`; the offline sync queue drops 410s). `get_live_session_student_state` / `get_live_session_student_response` return `movedToAnotherDevice`, and the client shows `components/student/StudentExamMovedCard.tsx` (terminal). Edits typed on the old device between the request and the approval are lost by design (its overlay blocks input).
+- **Teacher-issued resume codes** remain as the fallback (ambiguous names, no shared name): `POST .../participants/[deviceId]/rejoin-code`, `components/TeacherStudentRejoinShare.tsx`, `GET /api/public/resume?code=`. All paths are blocked after submit (`finished_at`).
 
 ### Grading & PDFs
 
@@ -261,14 +264,14 @@ Two complementary, teacher-scoped aids (students never see either):
 ### Resume after reload (same device)
 
 - On a successful join (or resume-code rejoin) the exam is remembered in `localStorage` (`truepaper_active_exam`: session, join code, display name, device id, window, delivery mode) — `lib/active-exam.ts`.
-- Loading `/join` with no URL intent (`?code=`, `?resume=`, `new=1`) and a matching device id rejoins automatically through the normal join flow, so the server still enforces closed sessions, already-submitted, and the live tab-leave pause (a reload counts as leaving the tab; the teacher lets the student back in).
+- Loading `/join` with no URL intent (`?code=`, `?resume=`, `new=1`) and a matching device id rejoins automatically through the normal join flow, so the server still enforces closed sessions, already-submitted, and the live tab-leave pause (a reload counts as leaving the tab; the teacher lets the student back in). Opening the **class link/QR again** for the same exam shows the Welcome back card instead of wiping the device id — see [Rejoin & device transfer](#rejoin--device-transfer).
 - If that rejoin fails for network reasons, the exam reopens from the IndexedDB session cache and answers hydrate from IDB.
 - Forgotten on leave, submit / submitted redirect, already-submitted (403 register), a non-network rejoin failure, expiry (`closesAt`), or a different device id. Teacher "preview as student" joins are never remembered.
 
 ### Resume after device loss
 
-- Teacher gives 8-char resume code.
-- `GET /api/public/resume?code=` restores `deviceId` + session.
+- Default: type the same name + class code on the new device → "Looks like {name} already started on another device" → Continue → the teacher's **Let in** moves the attempt here (see [Rejoin & device transfer](#rejoin--device-transfer)).
+- Fallback: teacher gives an 8-char resume code; `GET /api/public/resume?code=` restores `deviceId` + session.
 - Answers merged from server + IndexedDB on load — `lib/student-exam-answer-hydration.ts`, `lib/offline/answer-store.ts`.
 
 ### Submit (finish)
@@ -307,6 +310,7 @@ stateDiagram-v2
   Open --> Active: students join + register
   Active --> Suspended: tab leave / teacher action
   Suspended --> Active: teacher resume-student
+  Suspended --> Transferred: teacher resume-student approves a device-rejoin request (row moves to the new device; old device gets 410)
   Active --> Finished: student POST finish
   Active --> Closed: teacher stop OR closes_at
   Closed --> [*]
@@ -395,7 +399,7 @@ flowchart TD
 | `lib/offline/answer-store.ts` | Local answers + per-question revisions |
 | `lib/offline/sync-queue.ts` | Pending answer sync rows in IDB |
 | `lib/offline/sync-engine.ts` | Answer drain with backoff + jitter |
-| `lib/offline/sync-transport.ts` | Network PUT for answers. Retryable: network errors, **423** (student suspended — `PUT .../responses` returns 423 `code: "suspended"`), 429, 5xx. Other 4xx are final and drop the queued row |
+| `lib/offline/sync-transport.ts` | Network PUT for answers. Retryable: network errors, **423** (student suspended — `PUT .../responses` returns 423 `code: "suspended"`), 429, 5xx. Other 4xx (incl. **410** after a device transfer) are final and drop the queued row |
 | `lib/offline/session-cache.ts` | Cached exam shell for offline start |
 | `lib/offline/join-cache.ts` | Pre-join join code + display name draft in IDB |
 | `lib/offline/reachability.ts` | `GET /api/public/ping` reachability checks |
@@ -588,6 +592,11 @@ Run migrations in **filename order**. Latest migration wins for RPC definitions.
 | `finish_live_session_student_response` | Student submit |
 | `lookup_join_code` | Resolve join code |
 | `lookup_student_resume_code` | Resolve resume code |
+| `lookup_live_session_rejoin_candidate` | Same-name unfinished attempt on another device (counts, last active; no device id) |
+| `request_live_session_device_rejoin` / `cancel_live_session_device_rejoin` | File / cancel a device-rejoin request (pauses the source row) |
+| `teacher_clear_live_session_student_suspension` (teacher) | Let in; approves a pending device-rejoin request (moves the row) |
+| `teacher_decline_live_session_device_rejoin` (teacher) | "Not them": decline the request, restore prior pause state |
+| `block_moved_device_rows` (trigger) | Tombstoned device ids can never re-insert `form_responses` / presence rows |
 | `upsert_live_session_heartbeat` | Presence + sync fields |
 | `get_live_session_overview` | Teacher roster |
 | `get_live_session_public_board` | Projector counts |
@@ -660,6 +669,7 @@ Run migrations in **filename order**. Latest migration wins for RPC definitions.
 | `20260718130000_autograde_short_math_tf.sql` | Finish autograde also scores `shortAnswer`, `trueFalse`, `mathInput` from `response_config` |
 | `20260719120000_presence_focus_question.sql` | `live_session_presence.focus_question_id`; heartbeat/touch accept optional focus UUID for teacher watch typing chip |
 | `20260807120000_student_response_config.sql` | join/resume/review RPCs include per-question `responseConfig` with answer keys stripped (canvas background flag, sizes, matching pairs reach students) |
+| `20261023120000_device_rejoin_transfer.sql` | `live_session_device_transfers` (requests + tombstones, teacher SELECT RLS), moved-device BEFORE INSERT trigger, rejoin lookup/request/cancel/decline RPCs, Let in approves transfers, state/response RPCs report `movedToAnotherDevice` / `rejoinRequest`, register RPC regains the post-submit guard |
 
 </details>
 
@@ -705,7 +715,8 @@ PATCH, DELETE — edit / delete question.
 | `GET /exam-bundle-pdf` | All-students PDF (server fallback) |
 | `GET /exam-pdf-data` | JSON for client-side PDF generation (`?deviceId=` for one student) |
 | `GET /suspensions` | Suspended list |
-| `POST /resume-student` | Clear suspension |
+| `POST /resume-student` | Clear suspension; approves a pending device-rejoin request (returns `{ transferred, toDeviceId }`) |
+| `DELETE /participants/[deviceId]/rejoin-request` | "Not them": decline a device-rejoin request |
 | `POST /participants/[deviceId]/rejoin-code` | Create resume code |
 | `DELETE /participants/[deviceId]` | Remove student |
 | `GET /participants/[deviceId]/exam-pdf` | One student PDF (server fallback) |
@@ -728,6 +739,8 @@ GET — IBM Plex woff bytes for client-side PDF generation (allowlisted faces, i
 |------|---------|
 | `GET /join` | Join code lookup |
 | `GET /resume` | Resume code lookup |
+| `GET /live-sessions/[id]/rejoin-candidate` | Same-name unfinished attempt on another device? (`?name=&deviceId=`) |
+| `POST` / `DELETE /live-sessions/[id]/rejoin-request` | File / cancel a request to continue on this device |
 | `GET /ping` | Reachability check (no auth) |
 | `GET /live-board` | Projector board |
 | `GET /forms` | **410** — disabled |
@@ -738,6 +751,7 @@ GET — IBM Plex woff bytes for client-side PDF generation (allowlisted faces, i
 | `GET /live-sessions/[id]/state` | Slim state poll |
 | `POST /live-sessions/[id]/finish` | Submit exam |
 | `POST /live-sessions/[id]/tab-leave` | Suspend |
+| *(register / responses PUT / tab-leave / finish / heartbeat)* | **410** `code: "moved_to_another_device"` once the attempt moved to another device |
 | `GET /live-sessions/[id]/feedback` | Read teacher feedback (legacy live) |
 | `GET /live-sessions/[id]/feedback-items` | Read queued teacher feedback (`FeedbackItem`s) |
 | `POST /live-sessions/[id]/feedback-items/delivered` | Confirm feedback receipt (delivery bookkeeping) |
@@ -781,7 +795,8 @@ Dashboard session summaries.
 | Teacher session SSR | `lib/teacher-dashboard-server.ts` |
 | Request helper | `lib/request-json.ts` |
 | URL intent (join/resume deep links) | `lib/home-url-intent.ts` |
-| Resume exam after reload | `lib/active-exam.ts` |
+| Resume exam after reload | `lib/active-exam.ts`, `lib/join-entry.ts` |
+| Rejoin / device transfer (student) | `components/student/`, `lib/fetch-rejoin-candidate.ts`, `lib/use-rejoin-request-poll.ts`, `lib/use-local-answer-progress.ts`, `lib/moved-device-response.ts` |
 | Form quick-start links | `lib/form-start-link.ts`, `lib/start-live-session.ts` |
 | Flat entity lists (UI) | `docs/LISTS.md`, `components/lists/EntityList.tsx` |
 | Typography (IBM Plex) | `app/[lang]/layout.tsx`, `app/globals.css`, `lib/exam-pdf-fonts.ts` |
@@ -840,6 +855,8 @@ Setup (`e2e/global-setup.ts`) creates a marked form (`E2E Live Exam` / descripti
 | `e2e/live-exam.spec.ts` | Autosave, live feedback |
 | `e2e/offline-sync.spec.ts` | Offline answers survive a reload (exam reopens by itself; answers from IndexedDB), the student is paused (live tab-leave) until the teacher lets them in, then the queued edits sync |
 | `e2e/roster-sync.spec.ts` | Heartbeat sync state reaches the roster: offline status line, `data-sync-state` on `roster-row` and the roster sync-summary chip listing a student with pending work |
+| `e2e/rejoin-same-device.spec.ts` | Re-opening the class link shows Welcome back; Continue keeps the device id + answers (paused until Let in); Not you? starts a fresh student |
+| `e2e/rejoin-new-device.spec.ts` | Same name on a second browser context → request → Let in moves the attempt (old device shows "continued on another device", roster has one row); decline restores the original (needs the `20261023120000` migration) |
 
 ### Load tests
 
@@ -905,4 +922,4 @@ Setup (`e2e/global-setup.ts`) creates a marked form (`E2E Live Exam` / descripti
 - Duplicate README setup steps here (link to `README.md` for install/deploy basics).
 - Document every component — only entry points and non-obvious wiring.
 
-*Last reviewed: 2026-08-23 (E2E global teardown cleans forms/sessions after Playwright runs).*
+*Last reviewed: 2026-10-23 (student rejoin: welcome-back card + teacher-approved device transfer).*

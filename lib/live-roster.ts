@@ -37,6 +37,8 @@ export type LiveRosterRowModel = {
   /** Needs-attention bucket (waiting / help / stalled). */
   attention: boolean;
   done: boolean;
+  /** Waiting because the student asked to continue on a new device (Let in approves). */
+  rejoinRequested: boolean;
 };
 
 export function questionIndexForFocus(
@@ -94,6 +96,7 @@ export function deriveLiveRosterRow(
     total: opts.questionTotal,
     attention,
     done,
+    rejoinRequested: kind === "waiting" && Boolean(p.rejoinRequestedAt),
   };
 }
 

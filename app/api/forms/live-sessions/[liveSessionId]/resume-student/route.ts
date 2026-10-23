@@ -35,7 +35,9 @@ export async function POST(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Only teachers can resume students." }, { status: 403 });
   }
 
-  const { error } = await supabase.rpc("teacher_clear_live_session_student_suspension", {
+  // Let in also approves a pending device-rejoin request (the attempt moves to the
+  // new device); the RPC says which happened.
+  const { data, error } = await supabase.rpc("teacher_clear_live_session_student_suspension", {
     p_live_session_id: liveSessionId,
     p_device_id: deviceId,
   });
@@ -56,8 +58,19 @@ export async function POST(request: Request, { params }: Params) {
     if (error.message.includes("not allowed")) {
       return NextResponse.json({ error: "You do not own this session." }, { status: 403 });
     }
+    if (error.message.includes("target device already submitted")) {
+      return NextResponse.json(
+        { error: "The new device already submitted this exam.", code: "target_already_submitted" },
+        { status: 409 },
+      );
+    }
     return NextResponse.json({ error: error.message }, { status: 400 });
   }
+
+  const result = (data ?? {}) as { transferred?: boolean; toDeviceId?: string };
+  const transferred = result.transferred === true;
+  const toDeviceId =
+    transferred && typeof result.toDeviceId === "string" ? result.toDeviceId.toLowerCase() : null;
 
   try {
     const broadcastClient = createSupabaseAnonServiceClient();
@@ -70,5 +83,5 @@ export async function POST(request: Request, { params }: Params) {
 
   void notifyLiveSessionActivity(liveSessionId);
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, transferred, toDeviceId });
 }

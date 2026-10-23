@@ -20,6 +20,8 @@ export type OverviewFingerprintRow = {
   suspendedAt: string | null;
   finishedAt: string | null;
   gradedAt: string | null;
+  /** Pending device-rejoin request; optional so older callers keep working. */
+  rejoinRequestedAt?: string | null;
 };
 
 export type OverviewFingerprintPresence = {
@@ -83,6 +85,7 @@ export function overviewFingerprint(input: OverviewFingerprintInput): string {
         field(r?.suspendedAt),
         field(r?.finishedAt),
         field(r?.gradedAt),
+        field(r?.rejoinRequestedAt),
         field(p?.syncState),
         field(p?.pendingSyncCount),
         field(p?.lastActivityAt),

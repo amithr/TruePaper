@@ -2364,6 +2364,30 @@ code,
   cursor: not-allowed;
 }
 
+/* "Not them" beside Let in on a device-rejoin request. */
+.tp-live-roster-decline {
+  flex-shrink: 0;
+  min-height: 2rem;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--tp-border-strong);
+  border-radius: 9999px;
+  background: var(--tp-surface);
+  color: var(--tp-text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.tp-live-roster-decline:hover:not(:disabled) {
+  background: var(--tp-bg-subtle);
+}
+
+.tp-live-roster-decline:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .tp-live-roster-chevron {
   flex-shrink: 0;
   width: 1.1rem;

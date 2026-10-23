@@ -1,4 +1,4 @@
-import { screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { SessionExamRoster } from "@/components/SessionExamRoster";
@@ -78,6 +78,52 @@ describe("SessionExamRoster", () => {
       "Left the tab — waiting to re-enter",
     );
     expect(screen.getByTestId("roster-let-in")).toHaveTextContent("Let in");
+  });
+
+  it("shows the new-device copy with Let in and Not them for a rejoin request", () => {
+    const onDeclineRejoin = vi.fn();
+    const onResumeStudent = vi.fn();
+    renderWithI18n(
+      <SessionExamRoster
+        previewQuestions={previewQuestions}
+        questionTotal={2}
+        participants={[
+          participant({
+            suspendedAt: "2026-06-05T11:58:00.000Z",
+            status: "blocked",
+            rejoinRequestedAt: "2026-06-05T11:58:00.000Z",
+          }),
+        ]}
+        liveDraftsByDevice={{}}
+        onOpenExam={vi.fn()}
+        onResumeStudent={onResumeStudent}
+        onDeclineRejoin={onDeclineRejoin}
+        activityNowMs={Date.parse("2026-06-05T12:00:00.000Z")}
+      />,
+    );
+    expect(screen.getByTestId("roster-status-line")).toHaveTextContent(
+      "Back on a new device — waiting to be let in",
+    );
+    expect(screen.getByTestId("roster-let-in")).toHaveTextContent("Let in");
+    fireEvent.click(screen.getByTestId("roster-rejoin-decline"));
+    expect(onDeclineRejoin).toHaveBeenCalledWith(TEST_DEVICE_ID);
+    expect(onResumeStudent).not.toHaveBeenCalled();
+  });
+
+  it("hides Not them when nobody asked to rejoin", () => {
+    renderWithI18n(
+      <SessionExamRoster
+        previewQuestions={previewQuestions}
+        questionTotal={2}
+        participants={[participant({ suspendedAt: "2026-06-05T11:55:00.000Z", status: "blocked" })]}
+        liveDraftsByDevice={{}}
+        onOpenExam={vi.fn()}
+        onResumeStudent={vi.fn()}
+        onDeclineRejoin={vi.fn()}
+        activityNowMs={Date.parse("2026-06-05T12:00:00.000Z")}
+      />,
+    );
+    expect(screen.queryByTestId("roster-rejoin-decline")).not.toBeInTheDocument();
   });
 
   it("shows working-on question from focusQuestionId", () => {

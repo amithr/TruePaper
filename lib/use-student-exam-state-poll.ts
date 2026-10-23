@@ -20,6 +20,7 @@ type StudentStateResponse = {
   finished?: boolean;
   handRaiseQuestionId?: string | null;
   handRaisedAt?: string | null;
+  movedToAnotherDevice?: boolean;
 };
 
 /**
@@ -64,6 +65,7 @@ export function useStudentExamStatePoll({
           handRaiseQuestionId:
             typeof data.handRaiseQuestionId === "string" ? data.handRaiseQuestionId : null,
           handRaisedAt: typeof data.handRaisedAt === "string" ? data.handRaisedAt : null,
+          movedToAnotherDevice: data.movedToAnotherDevice === true,
         });
       } catch {
         /* transient; next tick retries */

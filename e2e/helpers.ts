@@ -269,3 +269,98 @@ export async function teacherLetStudentIn(
     await teacherContext.close();
   }
 }
+
+/** The URL the teacher's "Copy link" / QR produces (`buildStudentJoinUrl`). */
+export function studentClassLink(joinCode: string): string {
+  return `/en/join?code=${joinCode}&new=1&student=${crypto.randomUUID()}`;
+}
+
+/** Join through the class link / QR: the code is prefilled, only the name is typed. */
+export async function joinStudentViaClassLink(
+  page: Page,
+  joinCode: string,
+  displayName: string,
+): Promise<void> {
+  await page.goto(studentClassLink(joinCode));
+  await page.waitForLoadState("domcontentloaded");
+
+  const joinSection = page.locator("#join-session");
+  await expect(joinSection).toBeVisible({ timeout: 30_000 });
+  await expect(joinSection.getByPlaceholder("ABCD12")).toHaveValue(joinCode, { timeout: 15_000 });
+  await joinSection.getByPlaceholder("e.g. Jordan Lee").fill(displayName);
+
+  const joinButton = joinSection.getByTestId("student-join-submit");
+  await expect(joinButton).toBeEnabled({ timeout: 30_000 });
+  const joinResponse = waitForStudentJoin(page);
+  await joinButton.click();
+  await joinResponse;
+
+  const examAnswer = page.getByTestId("student-exam-answer");
+  await expect(examAnswer).toBeVisible({ timeout: 30_000 });
+  await expect(examAnswer).toBeEnabled({ timeout: 30_000 });
+
+  // Same settle rule as joinStudentSession: the hydration autosave may already be done.
+  await expect
+    .poll(
+      async () => {
+        const text = await page.getByTestId("student-autosave-status").textContent();
+        return text?.match(/saved/i) != null || text?.trim() === "";
+      },
+      { timeout: 15_000 },
+    )
+    .toBe(true);
+}
+
+/** Teacher declines a device-rejoin request (the roster "Not them" button). */
+export async function teacherDeclineRejoin(
+  browser: Browser,
+  liveSessionId: string,
+  deviceId: string,
+): Promise<void> {
+  const teacherContext = await browser.newContext({ storageState: e2eAuthFile });
+  try {
+    const res = await teacherContext.request.delete(
+      `/api/forms/live-sessions/${liveSessionId}/participants/${encodeURIComponent(deviceId)}/rejoin-request`,
+    );
+    expect(res.ok(), `decline rejoin failed (${res.status()})`).toBeTruthy();
+  } finally {
+    await teacherContext.close();
+  }
+}
+
+export async function teacherOverviewParticipants(
+  browser: Browser,
+  liveSessionId: string,
+): Promise<{ anonymousSessionId: string; displayName: string; rejoinRequestedAt: string | null }[]> {
+  const teacherContext = await browser.newContext({ storageState: e2eAuthFile });
+  try {
+    const res = await teacherContext.request.get(
+      `/api/forms/live-sessions/${liveSessionId}/overview`,
+    );
+    expect(res.ok(), `overview failed (${res.status()})`).toBeTruthy();
+    const body = (await res.json()) as {
+      participants: { anonymousSessionId: string; displayName: string; rejoinRequestedAt?: string | null }[];
+    };
+    return body.participants.map((p) => ({
+      anonymousSessionId: p.anonymousSessionId,
+      displayName: p.displayName,
+      rejoinRequestedAt: p.rejoinRequestedAt ?? null,
+    }));
+  } finally {
+    await teacherContext.close();
+  }
+}
+
+/**
+ * Report a tab leave for a student through the test's request fixture — the same
+ * call the page beacons on pagehide, made deterministic for navigation-based specs.
+ */
+export async function studentReportTabLeave(
+  request: APIRequestContext,
+  input: { liveSessionId: string; deviceId: string; displayName: string },
+): Promise<void> {
+  const res = await request.post(`/api/public/live-sessions/${input.liveSessionId}/tab-leave`, {
+    data: { deviceId: input.deviceId, displayName: input.displayName },
+  });
+  expect(res.ok(), `tab-leave failed (${res.status()})`).toBeTruthy();
+}

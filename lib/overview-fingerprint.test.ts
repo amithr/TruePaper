@@ -74,6 +74,12 @@ describe("overviewFingerprint", () => {
     expect(overviewFingerprint(offline)).not.toBe(overviewFingerprint(synced));
   });
 
+  it("changes when a device-rejoin request appears (otherwise the 304 hides it)", () => {
+    const requested = base();
+    requested.rows[0].rejoinRequestedAt = "2026-06-30T10:06:00Z";
+    expect(overviewFingerprint(requested)).not.toBe(overviewFingerprint(base()));
+  });
+
   it("changes when the time bucket advances (bounded status freshness)", () => {
     const later = base();
     later.timeBucket = 101;

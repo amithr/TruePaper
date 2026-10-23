@@ -296,6 +296,33 @@
       "rejoinPlaceholder": "ABCD 1234",
       "rejoin": "Rejoin"
     },
+    "welcomeBack": {
+      "title": "Welcome back, {name}",
+      "saved": "Your answers are saved — {answered} of {total} answered.",
+      "savedNoCount": "Your answers are saved.",
+      "continue": "Continue",
+      "notYou": "Not you? Start fresh"
+    },
+    "rejoinDevice": {
+      "title": "Looks like {name} already started on another device",
+      "detail": "{answered} of {total} answered · last active {ago}",
+      "detailNoTime": "{answered} of {total} answered",
+      "continue": "Continue that attempt",
+      "startNew": "No, I'm a different {name} — start new",
+      "startNewPlain": "Start a new attempt",
+      "ambiguousTitle": "More than one {name} is in this session",
+      "ambiguousHint": "Ask your teacher for your personal rejoin code, or start a new attempt.",
+      "waitingTitle": "Waiting for your teacher to let you in",
+      "waitingHint": "Your teacher can see you're back on a new device. Your saved answers will load as soon as they let you in.",
+      "cancel": "Cancel",
+      "declinedTitle": "Your teacher didn't approve this",
+      "declinedHint": "Check with your teacher, or start a new attempt.",
+      "expiredTitle": "That request expired",
+      "expiredHint": "Ask again, or start a new attempt.",
+      "tryAgain": "Ask again",
+      "movedTitle": "This exam continued on another device",
+      "movedHint": "Your answers are safe on the other device. You can close this tab."
+    },
     "teacher": {
       "dashboardLink": "Dashboard",
       "previewTitle": "Student preview",
@@ -455,7 +482,8 @@
         "gradingHint": "Your answers are saved. You can keep this tab open — your score will appear here when grading is done.",
         "youEarned": "You earned {score}.",
         "paused": "Paused",
-        "pausedHint": "Keep this tab visible. Your teacher will let you back in."
+        "pausedHint": "Keep this tab visible. Your teacher will let you back in.",
+        "pausedHintBack": "You're back and your answers are saved. Your teacher will let you in."
       },
       "raiseHand": "Raise hand",
       "raiseHandLower": "Lower hand",
@@ -489,6 +517,9 @@
       "paused": "This exam is paused until your teacher allows you to continue.",
       "resumed": "Your teacher allowed you to continue. You can answer again.",
       "tabHiddenPaused": "The exam was paused because this page was hidden. Wait for your teacher to let you continue.",
+      "welcomeBackPaused": "You're back — your answers are safe. Your teacher will let you in shortly.",
+      "movedToAnotherDevice": "This exam continued on another device.",
+      "rejoinRequested": "Request sent — waiting for your teacher.",
       "screenCapturePaused": "The exam was paused because screen capture was attempted. Wait for your teacher to let you continue.",
       "screenCaptureBlocked": "Screen capture is not allowed during the exam.",
       "screenshotShortcut": "Screenshot shortcuts are discouraged during the exam. Your work is watermarked.",
@@ -613,6 +644,7 @@
       "progressScoreAria": "{earned} of {total} points earned",
       "answeredShort": "{a}/{n} ans.",
       "statusWaiting": "Left the tab — waiting to re-enter",
+      "statusRejoinRequested": "Back on a new device — waiting to be let in",
       "statusIdleOn": "Idle {m}m on Q{n}",
       "statusIdle": "Idle {m}m",
       "statusWorkingOn": "Working on Q{n}",
@@ -632,6 +664,7 @@
       "stop": "Stop session",
       "delete": "Delete session",
       "letIn": "Let in",
+      "notThem": "Not them",
       "remove": "Remove"
     },
     "errors": {
@@ -639,6 +672,7 @@
       "stop": "Could not stop session.",
       "delete": "Could not delete session.",
       "resume": "Could not resume student.",
+      "declineRejoin": "Could not decline that rejoin request.",
       "removeStudent": "Could not remove student exam.",
       "loadExamList": "Failed to load student exams.",
       "load": "Failed to load.",

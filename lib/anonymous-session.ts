@@ -5,6 +5,15 @@ export function isValidAnonymousSessionId(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
 }
 
+/** The stored id, or null — never creates one (so a stale active exam can be checked first). */
+export function peekStoredAnonymousSessionId(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const existing = window.localStorage.getItem(STORAGE_KEY)?.trim();
+  return existing && isValidAnonymousSessionId(existing) ? existing : null;
+}
+
 export function getOrCreateAnonymousSessionId(): string {
   if (typeof window === "undefined") {
     return "";
