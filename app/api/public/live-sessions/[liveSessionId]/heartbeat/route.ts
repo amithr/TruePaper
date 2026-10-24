@@ -24,7 +24,7 @@ type Body = {
 
 export async function POST(request: Request, { params }: Params) {
   const { liveSessionId } = await params;
-  const body = (await request.json()) as Body;
+  const body = (await request.json().catch(() => ({}))) as Body;
   const deviceId = body.deviceId?.trim() ?? "";
   const isTyping = Boolean(body.isTyping);
   const interaction = body.interaction === undefined ? true : Boolean(body.interaction);

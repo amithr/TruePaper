@@ -5,6 +5,7 @@ import { parseResponseConfig } from "@/lib/response-types/registry";
 import { normalizeResponseType } from "@/lib/response-types/types";
 import { isValidResumeCodeFormat, normalizeResumeCode } from "@/lib/resume-code";
 import { fetchSessionDeliveryMode } from "@/lib/offline/delivery-mode";
+import { fetchSessionHost } from "@/lib/session-host";
 import { createSupabaseAnonServiceClient } from "@/lib/supabase/anon-service";
 
 type LookupPayload = {
@@ -124,6 +125,7 @@ export async function GET(request: Request) {
     const deliveryMode = payload.liveSessionId
       ? await fetchSessionDeliveryMode(supabase, payload.liveSessionId)
       : "live";
+    const host = payload.liveSessionId ? await fetchSessionHost(supabase, payload.liveSessionId) : null;
 
     return NextResponse.json({
       liveSessionId: payload.liveSessionId,
@@ -136,6 +138,7 @@ export async function GET(request: Request) {
       closesAt: payload.closesAt,
       deliveryMode,
       form,
+      host,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Configuration error.";

@@ -469,6 +469,7 @@
       "handInStillBlank": "{k} of {n} still blank",
       "handInConfirmTitle": "You still have {k} blank — hand in anyway?",
       "handInHint": "Your answers are already saved — handing in just tells your teacher you're done.",
+      "hostedBy": "Hosted by {name}",
       "resumeHintPrefix": "Lost connection? Rejoin with your resume code",
       "resumeHintAsk": "Lost connection? Ask your teacher for your resume code.",
       "submitted": "Submitted",
@@ -1345,6 +1346,7 @@
     }
   },
   "feedback": {
+    "fromTeacher": "Feedback from {name}",
     "title": "Your teacher says",
     "placeholder": "Your teacher can leave comments here as you work. Check back in a moment.",
     "composer": {

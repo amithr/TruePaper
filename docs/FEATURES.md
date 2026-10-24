@@ -232,6 +232,7 @@ Three ways back into an unfinished attempt (migration `20261023120000_device_rej
 - **Plan & usage:** see [Billing](#billing-stripe) — tier picker + embedded Stripe checkout (`components/billing/BillingSection.tsx`); usage counts = forms, sessions in the last 120 days (`lib/teacher-usage.ts`), finished anonymous submissions on the teacher's forms (RLS-scoped).
 - **Delete account:** inline alertdialog, type `DELETE` (uk: `ВИДАЛИТИ`) to enable → `DELETE /api/teacher/account` `{confirm:true}`: removes the teacher's objects in `form-assets` + `avatars`, then RPC `delete_my_account()` (SECURITY DEFINER: deletes the caller's forms and sessions, then their `auth.users` row — there is no service-role key on the server), then signs out and goes home.
 - Pre-migration DBs: the page renders with no photo and recommended defaults; the write routes answer 503 with the migration name.
+- **Where the photo shows** (`components/TeacherAvatar.tsx`, initials on the brand gradient as the fallback; `profiles.avatar_url` rides on `getSessionUser` → `ClientSessionData.profile.avatar_url`): the top bar's **Settings** pill (so the account entry point is the teacher's face), the dashboard greeting card, and — for students — the exam header ("Hosted by {name}") and live-feedback bubbles ("Feedback from {name}"). Students get the host through `get_live_session_host(session)` (`20261024130000_session_host.sql`, SECURITY DEFINER: display name + photo only), returned as `host` by `GET /api/public/join` and `GET /api/public/resume` and cached with the offline session shell (`CachedExamSession.host`). A missing RPC just omits the host.
 
 ### Billing (Stripe)
 
@@ -692,6 +693,7 @@ Run migrations in **filename order**. Latest migration wins for RPC definitions.
 | `20260718130000_autograde_short_math_tf.sql` | Finish autograde also scores `shortAnswer`, `trueFalse`, `mathInput` from `response_config` |
 | `20260719120000_presence_focus_question.sql` | `live_session_presence.focus_question_id`; heartbeat/touch accept optional focus UUID for teacher watch typing chip |
 | `20260807120000_student_response_config.sql` | join/resume/review RPCs include per-question `responseConfig` with answer keys stripped (canvas background flag, sizes, matching pairs reach students) |
+| `20261024130000_session_host.sql` | `get_live_session_host()` — host name + photo for the student exam header / feedback bubbles |
 | `20261024120000_billing.sql` | `billing_subscriptions` (own-row RLS), `live_session_student_capacity()` join-time cap |
 | `20261023130000_teacher_settings.sql` | `profiles.avatar_url`, `avatars` storage bucket + owner policies, `teacher_defaults` table (own-row RLS), `delete_my_account()` |
 | `20261023120000_device_rejoin_transfer.sql` | `live_session_device_transfers` (requests + tombstones, teacher SELECT RLS), moved-device BEFORE INSERT trigger, rejoin lookup/request/cancel/decline RPCs, Let in approves transfers, state/response RPCs report `movedToAnotherDevice` / `rejoinRequest`, register RPC regains the post-submit guard |
@@ -973,4 +975,4 @@ Setup (`e2e/global-setup.ts`) creates a marked form (`E2E Live Exam` / descripti
 - Duplicate README setup steps here (link to `README.md` for install/deploy basics).
 - Document every component — only entry points and non-obvious wiring.
 
-*Last reviewed: 2026-10-24 (Stripe billing with student-count tiers).*
+*Last reviewed: 2026-10-24 (Stripe billing; teacher photo placements).*

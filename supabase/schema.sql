@@ -3372,3 +3372,39 @@ $$;
 revoke all on function public.live_session_student_capacity(uuid, text) from public;
 grant execute on function public.live_session_student_capacity(uuid, text) to anon, authenticated, service_role;
 
+
+-- ---------------------------------------------------------------------------
+-- Session host (see 20261024130000_session_host.sql)
+-- ---------------------------------------------------------------------------
+
+create or replace function public.get_live_session_host(p_live_session_id uuid)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  r record;
+begin
+  select p.display_name, p.avatar_url into r
+  from public.form_sessions fs
+  join public.profiles p on p.id = fs.created_by
+  where fs.id = p_live_session_id
+  limit 1;
+
+  if not found then
+    return jsonb_build_object('ok', false);
+  end if;
+
+  return jsonb_build_object(
+    'ok', true,
+    'displayName', coalesce(nullif(trim(r.display_name), ''), ''),
+    'avatarUrl', r.avatar_url
+  );
+end;
+$$;
+
+revoke all on function public.get_live_session_host(uuid) from public;
+grant execute on function public.get_live_session_host(uuid) to anon, authenticated, service_role;
+

@@ -3,6 +3,8 @@
 import { Settings } from "lucide-react";
 
 import { BrandMark } from "@/components/BrandMark";
+import { TeacherAvatar } from "@/components/TeacherAvatar";
+import { useOptionalTeacherSession } from "@/components/TeacherSessionProvider";
 import { HelpTipsToggle } from "@/components/HelpTipsToggle";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
@@ -25,6 +27,7 @@ type Props = {
 export function TeacherTopBar({ showStudentJoin = true, showSettings = true }: Props) {
   const t = useTranslations();
   const router = useLocaleRouter();
+  const session = useOptionalTeacherSession();
 
   const logout = async () => {
     await requestJson<{ ok: true }>("/api/auth/logout", { method: "POST" });
@@ -68,7 +71,16 @@ export function TeacherTopBar({ showStudentJoin = true, showSettings = true }: P
             title={t("nav.settings")}
             data-testid="topbar-settings"
           >
-            <Settings aria-hidden className="h-4 w-4" />
+            {session?.profile ? (
+              <TeacherAvatar
+                size="xs"
+                name={session.profile.display_name}
+                email={session.user.email}
+                avatarUrl={session.profile.avatar_url}
+              />
+            ) : (
+              <Settings aria-hidden className="h-4 w-4" />
+            )}
             <span className="hidden text-sm sm:inline">{t("nav.settings")}</span>
           </LocaleLink>
         ) : null}

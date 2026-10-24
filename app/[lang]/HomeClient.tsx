@@ -113,6 +113,7 @@ import { LIVE_PRESENCE_KEEPALIVE_MS } from "@/lib/participant-status";
 import { LiveCountdown } from "@/components/LiveCountdown";
 import { cacheExamSession, loadCachedExamSession } from "@/lib/offline/session-cache";
 import { type ActiveExam, clearActiveExam, loadActiveExam, saveActiveExam } from "@/lib/active-exam";
+import type { SessionHost } from "@/lib/session-host";
 import { resolveJoinEntry } from "@/lib/join-entry";
 import { fetchRejoinCandidate, type RejoinCandidate } from "@/lib/fetch-rejoin-candidate";
 import { useRejoinRequestPoll, type RejoinRequestStatus } from "@/lib/use-rejoin-request-poll";
@@ -149,6 +150,7 @@ type JoinApiResponse = {
   closesAt: string;
   deliveryMode?: DeliveryMode;
   form: Form;
+  host?: SessionHost | null;
 };
 
 type ResumeApiResponse = {
@@ -162,6 +164,7 @@ type ResumeApiResponse = {
   closesAt: string;
   deliveryMode?: DeliveryMode;
   form: Form;
+  host?: SessionHost | null;
 };
 
 type TeacherLiveBanner = {
@@ -178,6 +181,8 @@ type JoinedLiveSession = {
   opensAt: string;
   closesAt: string;
   deliveryMode: DeliveryMode;
+  /** The teacher running the session, for the header and feedback bubbles. */
+  host: SessionHost | null;
 };
 
 function formatCountdown(ms: number): string {
@@ -2250,6 +2255,7 @@ export default function HomeClient({
         opensAt: data.opensAt,
         closesAt: data.closesAt,
         deliveryMode: data.deliveryMode ?? "live",
+        host: data.host ?? null,
       });
       setLiveTeacherFeedbackEnabledLive(data.form.liveTeacherFeedbackEnabled);
       if (data.resumeCode) {
@@ -2262,6 +2268,7 @@ export default function HomeClient({
         displayName: isValidLiveSessionDisplayName(displayName) ? displayName : data.displayName,
         form: data.form,
         deliveryMode: data.deliveryMode ?? "live",
+        host: data.host ?? null,
       });
       saveActiveExam({
         liveSessionId: data.liveSessionId,
@@ -2307,6 +2314,7 @@ export default function HomeClient({
       opensAt: data.opensAt,
       closesAt: data.closesAt,
       deliveryMode: data.deliveryMode ?? "live",
+      host: data.host ?? null,
     });
     setLiveTeacherFeedbackEnabledLive(data.form.liveTeacherFeedbackEnabled);
     if (deviceIdForJoin) {
@@ -2317,6 +2325,7 @@ export default function HomeClient({
         displayName,
         form: data.form,
         deliveryMode: data.deliveryMode ?? "live",
+        host: data.host ?? null,
       });
       if (!teacherPreview) {
         saveActiveExam({
@@ -2415,6 +2424,7 @@ export default function HomeClient({
               opensAt: restoring.opensAt,
               closesAt: restoring.closesAt,
               deliveryMode: cached.deliveryMode,
+              host: cached.host ?? null,
             });
             setLiveTeacherFeedbackEnabledLive(cached.form.liveTeacherFeedbackEnabled);
             setActiveExamDisplayName(displayName);
@@ -3767,6 +3777,7 @@ export default function HomeClient({
             {joinedSession ? (
               <StudentExamHeader
                 title={studentExamForm.title || t("common.untitledForm")}
+                host={joinedSession.host}
                 syncStatus={studentSyncStatus}
                 dots={studentExamQuestions.map((q, index) => ({
                   id: q.id,
@@ -3837,6 +3848,7 @@ export default function HomeClient({
                       <StudentExamQuestion
                         key={question.id}
                         question={question}
+                        host={joinedSession?.host ?? null}
                         index={index}
                         answer={effectiveExamAnswers[question.id]}
                         answered={answered}

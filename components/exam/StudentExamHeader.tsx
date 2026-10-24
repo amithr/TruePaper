@@ -6,6 +6,8 @@ import {
   getSessionDurationMinutes,
   isNoTimeLimitSession,
 } from "@/lib/session-window";
+import { TeacherAvatar } from "@/components/TeacherAvatar";
+import type { SessionHost } from "@/lib/session-host";
 import type { SyncStatus } from "@/lib/sync-status";
 import { focusRing } from "@/lib/ui";
 
@@ -26,6 +28,8 @@ type Props = {
   sessionOpen: boolean;
   examFinished: boolean;
   formatCountdown: (ms: number) => string;
+  /** The teacher running the session: "Hosted by …" with their photo. */
+  host?: SessionHost | null;
 };
 
 function urgencyFromFraction(fractionLeft: number): "ok" | "amber" | "red" {
@@ -49,6 +53,7 @@ export function StudentExamHeader({
   sessionOpen,
   examFinished,
   formatCountdown,
+  host = null,
 }: Props) {
   const t = useTranslations();
   const sync =
@@ -72,9 +77,17 @@ export function StudentExamHeader({
       <div className="tp-exam-header__inner">
         <div className="tp-exam-header__identity">
           <p className="tp-exam-header__title">{title || t("common.untitledForm")}</p>
-          <p className="tp-exam-header__sync" data-kind={sync.kind} data-testid="student-sync-status">
-            <span aria-hidden className="tp-exam-header__sync-dot" />
-            {sync.label}
+          <p className="tp-exam-header__meta">
+            {host?.displayName ? (
+              <span className="tp-exam-header__host" data-testid="exam-host">
+                <TeacherAvatar size="xs" name={host.displayName} avatarUrl={host.avatarUrl} />
+                {t("home.exam.hostedBy", { name: host.displayName })}
+              </span>
+            ) : null}
+            <span className="tp-exam-header__sync" data-kind={sync.kind} data-testid="student-sync-status">
+              <span aria-hidden className="tp-exam-header__sync-dot" />
+              {sync.label}
+            </span>
           </p>
         </div>
 

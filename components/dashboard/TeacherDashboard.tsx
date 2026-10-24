@@ -8,6 +8,7 @@ import { DashboardFormLibrary } from "@/components/dashboard/DashboardFormLibrar
 import { DashboardLazySection } from "@/components/dashboard/DashboardLazySection";
 import { DashboardPastSessions } from "@/components/dashboard/DashboardPastSessions";
 import { DashboardRunningSessions } from "@/components/dashboard/DashboardRunningSessions";
+import { TeacherAvatar } from "@/components/TeacherAvatar";
 import { TeacherTopBar } from "@/components/TeacherTopBar";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { dashboardWelcomeName } from "@/lib/dashboard-welcome";
@@ -24,6 +25,7 @@ export type DashboardTeacherProfile = {
   id: string;
   role: "teacher";
   display_name: string | null;
+  avatar_url?: string | null;
 };
 
 type Props = {
@@ -117,14 +119,25 @@ export function TeacherDashboard({
         <TeacherTopBar />
 
         <section data-tour="welcome" className="tp-card-accent p-6 sm:p-8 tp-anim-fade-up">
-          <p className={ui.sectionTitle}>{t("dashboard.eyebrow")}</p>
-          <h1 className="mt-1 text-3xl font-semibold tracking-tight">
-            {t("dashboard.helloPrefix")}
-            <span className="text-[var(--tp-brand)]">{name}</span>
-          </h1>
-          <p className="mt-2 max-w-2xl text-[var(--tp-text-secondary)]">
-            {t("dashboard.welcomeSubtitle")}
-          </p>
+          <div className="flex items-start gap-4">
+            <TeacherAvatar
+              size="lg"
+              name={profile.display_name}
+              email={user.email}
+              avatarUrl={profile.avatar_url}
+              className="mt-1 hidden sm:inline-flex"
+            />
+            <div className="min-w-0">
+              <p className={ui.sectionTitle}>{t("dashboard.eyebrow")}</p>
+              <h1 className="mt-1 text-3xl font-semibold tracking-tight">
+                {t("dashboard.helloPrefix")}
+                <span className="text-[var(--tp-brand)]">{name}</span>
+              </h1>
+              <p className="mt-2 max-w-2xl text-[var(--tp-text-secondary)]">
+                {t("dashboard.welcomeSubtitle")}
+              </p>
+            </div>
+          </div>
           <nav
             aria-label={t("dashboard.sectionsAria")}
             className="mt-5 flex flex-wrap items-center gap-2"

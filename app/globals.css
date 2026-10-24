@@ -8855,3 +8855,54 @@ code,
   background: var(--tp-danger-soft);
   color: var(--tp-danger-text-strong);
 }
+
+/* Teacher avatar sizes + photo fill (components/TeacherAvatar.tsx) */
+.tp-avatar--xs {
+  width: 1.5rem;
+  height: 1.5rem;
+  font-size: 0.6rem;
+}
+
+.tp-avatar--md {
+  width: 3rem;
+  height: 3rem;
+  font-size: 1rem;
+}
+
+.tp-avatar--lg {
+  width: 4rem;
+  height: 4rem;
+  font-size: 1.35rem;
+}
+
+.tp-avatar {
+  overflow: hidden;
+  flex: none;
+}
+
+.tp-avatar__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tp-exam-header__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  margin: 0.2rem 0 0;
+}
+
+.tp-exam-header__meta .tp-exam-header__sync {
+  margin: 0;
+}
+
+.tp-exam-header__host {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: #475569;
+  white-space: nowrap;
+}

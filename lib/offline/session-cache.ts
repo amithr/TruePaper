@@ -18,6 +18,7 @@ export async function cacheExamSession(input: {
   displayName: string;
   form: Form;
   deliveryMode?: DeliveryMode;
+  host?: { displayName: string; avatarUrl: string | null } | null;
 }): Promise<{ ok: boolean; bytes: number; overBudget: boolean }> {
   const bytes = estimatePayloadBytes(input.form);
   const overBudget = bytes > EXAM_SHELL_BUDGET_BYTES;
@@ -30,6 +31,7 @@ export async function cacheExamSession(input: {
     form: input.form,
     deliveryMode: input.deliveryMode ?? "live",
     cachedAt: Date.now(),
+    host: input.host ?? null,
   };
   await idbPut("session_cache", record);
   return { ok: true, bytes, overBudget };

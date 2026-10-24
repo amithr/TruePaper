@@ -1,9 +1,13 @@
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 
+import { isMissingColumnError } from "@/lib/is-missing-db-column";
+
 export type Profile = {
   id: string;
   role: "teacher" | "student";
   display_name: string | null;
+  /** Public URL of the profile photo (Settings → Profile), if any. */
+  avatar_url: string | null;
 };
 
 export async function getSessionUser(
@@ -18,11 +22,19 @@ export async function getSessionUser(
     return null;
   }
 
-  const { data: profile } = await supabase
+  let profile: { id: string; role: string; display_name: string | null; avatar_url?: string | null } | null = null;
+  const withAvatar = await supabase
     .from("profiles")
-    .select("id, role, display_name")
+    .select("id, role, display_name, avatar_url")
     .eq("id", user.id)
     .maybeSingle();
+  if (withAvatar.error && isMissingColumnError(withAvatar.error, "avatar_url")) {
+    // Pre-migration database: no photos yet.
+    const legacy = await supabase.from("profiles").select("id, role, display_name").eq("id", user.id).maybeSingle();
+    profile = legacy.data;
+  } else {
+    profile = withAvatar.data;
+  }
 
   if (!profile) {
     return { user, profile: null };
@@ -36,6 +48,7 @@ export async function getSessionUser(
       id: profile.id,
       role,
       display_name: profile.display_name,
+      avatar_url: typeof profile.avatar_url === "string" ? profile.avatar_url : null,
     },
   };
 }

@@ -6,6 +6,7 @@ import { RaiseHandButton } from "@/components/RaiseHandButton";
 import { StudentResponseDispatcher } from "@/components/response-types/StudentResponseDispatcher";
 import type { Question } from "@/lib/forms";
 import type { TeacherFeedbackStore } from "@/lib/response-types/feedback";
+import type { SessionHost } from "@/lib/session-host";
 
 type Props = {
   question: Question;
@@ -26,6 +27,8 @@ type Props = {
   onFocusQuestion?: () => void;
   onChoiceChange: (value: string) => void;
   onTextChange: (value: string) => void;
+  /** Names the teacher on live feedback bubbles. */
+  host?: SessionHost | null;
 };
 
 export function StudentExamQuestion({
@@ -46,6 +49,7 @@ export function StudentExamQuestion({
   onFocusQuestion,
   onChoiceChange,
   onTextChange,
+  host = null,
 }: Props) {
   const raiseHandExtra: ReactNode =
     showRaiseHand && onToggleRaiseHand ? (
@@ -73,6 +77,7 @@ export function StudentExamQuestion({
         showLiveFeedbackFeature={showLiveFeedbackFeature}
         feedbackStore={feedbackStore}
         showSavedTick={showSavedTick}
+        host={host}
         headerExtra={raiseHandExtra}
         onAnswerChange={onTextChange}
         onChoiceChange={onChoiceChange}

@@ -16,6 +16,7 @@ import { ExamMarkdown } from "@/components/ExamMarkdown";
 import { FormAssetImage } from "@/components/FormAssetImage";
 import { StudentTeacherFeedbackCard } from "@/components/StudentTeacherFeedbackCard";
 import type { Question } from "@/lib/forms";
+import type { SessionHost } from "@/lib/session-host";
 import {
   parseResponseValue,
   serializeResponseValue,
@@ -52,6 +53,8 @@ import { DrawingCanvas } from "@/components/DrawingCanvas";
 import type { ReactNode } from "react";
 
 type Props = {
+  /** The teacher running the session, for feedback bubbles. */
+  host?: SessionHost | null;
   question: Question;
   index: number;
   answer: string | undefined;
@@ -75,6 +78,7 @@ function marksPluralForm(locale: string, n: number): "one" | "few" | "many" | "o
 }
 
 export function StudentResponseDispatcher({
+  host = null,
   question,
   index,
   answer,
@@ -360,7 +364,7 @@ export function StudentResponseDispatcher({
           {quickNudge ? (
             <p className="tp-exam-nudge">{quickNudge}</p>
           ) : null}
-          {wholeMessage ? <StudentTeacherFeedbackCard message={wholeMessage} /> : null}
+          {wholeMessage ? <StudentTeacherFeedbackCard message={wholeMessage} host={host} /> : null}
           {canvasAnnotation.length > 0 && value.type === "photoHandwritten" && value.imageDataUrl ? (
             <div>
               <p className="mb-2 text-xs font-medium text-[var(--tp-text-secondary)]">

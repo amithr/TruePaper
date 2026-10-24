@@ -7,6 +7,7 @@ export type ClientSessionProfile = {
   id: string;
   role: "teacher" | "student";
   display_name: string | null;
+  avatar_url?: string | null;
 };
 export type ClientSessionData = {
   user: ClientSessionUser;
@@ -24,6 +25,7 @@ export function toClientSessionData(session: {
           id: session.profile.id,
           role: session.profile.role,
           display_name: session.profile.display_name,
+          avatar_url: session.profile.avatar_url ?? null,
         }
       : null,
   };

@@ -10,6 +10,8 @@ export type CachedExamSession = {
   form: Form;
   deliveryMode: DeliveryMode;
   cachedAt: number;
+  /** The teacher running the session (name + photo), when the server told us. */
+  host?: { displayName: string; avatarUrl: string | null } | null;
 };
 
 export type LocalAnswerRecord = {

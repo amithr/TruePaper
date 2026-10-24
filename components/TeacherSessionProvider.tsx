@@ -17,6 +17,11 @@ export function TeacherSessionProvider({ session, children }: Props) {
   );
 }
 
+/** The session when rendered inside the dashboard layout, else null (never throws). */
+export function useOptionalTeacherSession(): ClientSessionData | null {
+  return useContext(TeacherSessionContext);
+}
+
 /** Teacher session from the dashboard server layout (no client `/api/auth/session`). */
 export function useTeacherSession(): ClientSessionData {
   const session = useContext(TeacherSessionContext);

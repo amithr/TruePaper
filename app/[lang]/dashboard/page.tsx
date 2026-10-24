@@ -68,6 +68,7 @@ export default async function TeacherDashboardPage({ params }: Props) {
         id: profile.id,
         role: "teacher",
         display_name: profile.display_name,
+        avatar_url: profile.avatar_url,
       }}
       initialRunning={sessions}
       initialSuspensions={suspensionsBySession}
