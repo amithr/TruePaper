@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 
 import { NextResponse } from "next/server";
 
-import { loadBillingRow } from "@/lib/billing/store";
-import { billingStateFromRow } from "@/lib/billing/subscription-state";
+import { loadBillingState } from "@/lib/billing/store";
+import { FREE_STATE } from "@/lib/billing/subscription-state";
 import { countAnsweredQuestions } from "@/lib/count-answered-questions";
 import { parseQuestionGrades, sumEarnedPoints, sumPossiblePoints } from "@/lib/exam-grades";
 import { isMissingColumnError, isMissingRelationError } from "@/lib/is-missing-db-column";
@@ -245,8 +245,7 @@ export async function GET(request: Request, { params }: Params) {
 
   // Plan cap for the roster header ("12 / 35 students"). Own-row RLS; a missing
   // table (pre-billing) reads as the free tier.
-  const billing = await loadBillingRow(supabase, session.user.id).catch(() => ({ row: null }));
-  const billingState = billingStateFromRow(billing.row, nowMs);
+  const billingState = await loadBillingState(supabase, session.user.id).catch(() => FREE_STATE);
 
   const { data: questionRows, error: qError } = await supabase
     .from("questions")

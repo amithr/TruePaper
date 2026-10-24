@@ -188,20 +188,30 @@ export function BillingSection({ initial, configured, publishableKey, usage, onE
         ) : null}
       </div>
 
-      {!configured ? (
+      {billing.source === "billing_off" ? (
+        <p className={`${ui.alertSuccess} mt-4`} role="status" data-testid="billing-off-notice">
+          {t("billing.offNotice")}
+        </p>
+      ) : billing.source === "override" ? (
+        <p className={`${ui.alertSuccess} mt-4`} role="status" data-testid="billing-override-notice">
+          {t("billing.overrideNotice", { plan: current })}
+        </p>
+      ) : !configured ? (
         <p className={`${ui.alertWarning} mt-4`} role="status">
           {t("billing.notConfigured")}
         </p>
       ) : null}
 
-      <div className="mt-5">
-        <PlanPicker billing={billing} configured={configured} busyPlan={busyPlan} onChoose={(p) => void choose(p)} />
-        {armedFree ? (
-          <p className="mt-2 text-[0.8125rem] text-[var(--tp-text-secondary)]" role="status">
-            {t("billing.downgradeConfirm")}
-          </p>
-        ) : null}
-      </div>
+      {billing.source !== "billing_off" && billing.source !== "override" ? (
+        <div className="mt-5">
+          <PlanPicker billing={billing} configured={configured} busyPlan={busyPlan} onChoose={(p) => void choose(p)} />
+          {armedFree ? (
+            <p className="mt-2 text-[0.8125rem] text-[var(--tp-text-secondary)]" role="status">
+              {t("billing.downgradeConfirm")}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {checkout && publishableKey ? (
         <div className="mt-5">

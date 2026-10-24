@@ -8,6 +8,7 @@ export type ClientSessionProfile = {
   role: "teacher" | "student";
   display_name: string | null;
   avatar_url?: string | null;
+  is_admin?: boolean;
 };
 export type ClientSessionData = {
   user: ClientSessionUser;
@@ -26,6 +27,7 @@ export function toClientSessionData(session: {
           role: session.profile.role,
           display_name: session.profile.display_name,
           avatar_url: session.profile.avatar_url ?? null,
+          is_admin: session.profile.is_admin === true,
         }
       : null,
   };

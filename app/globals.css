@@ -8906,3 +8906,117 @@ code,
   color: #475569;
   white-space: nowrap;
 }
+
+/* ——————————————————————————————————————————————————————————————
+   Admin (/dashboard/admin)
+   —————————————————————————————————————————————————————————————— */
+.tp-pill--admin {
+  border-color: var(--tp-brand);
+  color: var(--tp-brand);
+}
+
+.tp-admin-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: 0.75rem 1.25rem;
+}
+
+.tp-admin-users {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--tp-border);
+}
+
+.tp-admin-user-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.85rem;
+  width: 100%;
+  padding: 0.75rem 0.5rem;
+  border: 0;
+  border-bottom: 1px solid var(--tp-border);
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  color: var(--tp-text);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.tp-admin-user-row:hover {
+  background: var(--tp-bg-subtle);
+}
+
+.tp-admin-user-row__name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.tp-admin-user-row__meta {
+  display: block;
+  font-size: 0.8125rem;
+  color: var(--tp-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.tp-admin-user-row__plan {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.tp-admin-user-row__note {
+  color: var(--tp-amber);
+  font-size: 0.75rem;
+}
+
+.tp-admin-user-row__activity {
+  font-size: 0.75rem;
+  line-height: 1.4;
+  text-align: right;
+  color: var(--tp-text-secondary);
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .tp-admin-user-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .tp-admin-user-row__plan,
+  .tp-admin-user-row__activity {
+    grid-column: 2;
+    text-align: left;
+    white-space: normal;
+  }
+}
+
+.tp-admin-detail {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+  gap: 1.25rem 2rem;
+}
+
+.tp-admin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.tp-admin-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--tp-border);
+}
+
+.tp-admin-list__meta {
+  font-size: 0.75rem;
+  color: var(--tp-text-muted);
+}

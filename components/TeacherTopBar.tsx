@@ -1,6 +1,6 @@
 "use client";
 
-import { Settings } from "lucide-react";
+import { Settings, ShieldCheck } from "lucide-react";
 
 import { BrandMark } from "@/components/BrandMark";
 import { TeacherAvatar } from "@/components/TeacherAvatar";
@@ -61,6 +61,18 @@ export function TeacherTopBar({ showStudentJoin = true, showSettings = true }: P
               <path d="m11 6 6 6-6 6" />
             </svg>
             {t("nav.studentJoin")}
+          </LocaleLink>
+        ) : null}
+        {session?.profile?.is_admin ? (
+          <LocaleLink
+            href="/dashboard/admin"
+            className={`tp-pill tp-pill--admin ${focusRing}`}
+            aria-label={t("nav.admin")}
+            title={t("nav.admin")}
+            data-testid="topbar-admin"
+          >
+            <ShieldCheck aria-hidden className="h-4 w-4" />
+            <span className="hidden text-sm sm:inline">{t("nav.admin")}</span>
           </LocaleLink>
         ) : null}
         {showSettings ? (

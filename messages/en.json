@@ -64,6 +64,7 @@
     "studentJoin": "Student join",
     "dashboard": "Dashboard",
     "settings": "Settings",
+    "admin": "Admin",
     "studentJoinAria": "Student join page",
     "breadcrumbAria": "Breadcrumb",
     "liveSession": "Live session",
@@ -1118,6 +1119,8 @@
     "title": "Your plan",
     "sub": "Plans are sized by how many students can take one live session at the same time. Free covers a small class; upgrade when a session needs more seats.",
     "notConfigured": "Billing isn't set up on this server yet — all sessions use the Free tier.",
+    "offNotice": "Billing is switched off by the administrator — every plan feature is free right now.",
+    "overrideNotice": "You're on a complimentary {plan} plan, set by the administrator.",
     "perMonth": "/month",
     "freePrice": "Free",
     "studentsPerSession": "Up to {n} students per session",
@@ -1171,6 +1174,76 @@
       "aria": "{count} of {limit} students allowed on your plan",
       "full": "Session full — upgrade for more seats",
       "near": "Almost full — {left} seats left"
+    }
+  },
+  "admin": {
+    "title": "Admin",
+    "eyebrow": "Administration",
+    "sub": "Platform-wide controls and a view into every account. Changes here apply immediately.",
+    "overview": {
+      "users": "accounts",
+      "teachers": "teachers",
+      "paid": "paying",
+      "forms": "forms",
+      "sessions": "sessions",
+      "sessionsWeek": "sessions this week",
+      "submissions": "submissions"
+    },
+    "billing": {
+      "eyebrow": "Billing",
+      "title": "Charge for plans",
+      "hint": "On: teachers are capped by their plan and can upgrade through Stripe. Off: nobody is charged and every session has no student cap — existing subscriptions keep renewing in Stripe until cancelled.",
+      "on": "Teachers are billed by plan",
+      "off": "Everything is free right now",
+      "saveFailed": "Could not update the billing switch."
+    },
+    "users": {
+      "eyebrow": "Accounts",
+      "title": "Users",
+      "searchLabel": "Search accounts",
+      "searchPlaceholder": "Search by email or name",
+      "count": "{shown} of {total}",
+      "empty": "No accounts match.",
+      "loadFailed": "Could not load accounts.",
+      "colUser": "User",
+      "colPlan": "Plan",
+      "colActivity": "Activity",
+      "you": "You",
+      "adminBadge": "Admin",
+      "roleStudent": "Student",
+      "formsSessions": "{forms} forms · {sessions} sessions",
+      "lastSession": "Last session {date}",
+      "neverRan": "Never ran a session",
+      "joined": "Joined {date}",
+      "lastSignIn": "Last sign-in {date}",
+      "more": "Show more"
+    },
+    "user": {
+      "back": "All users",
+      "loadFailed": "Could not load this account.",
+      "planOverride": "Complimentary plan",
+      "planOverrideHint": "Grants the plan without charging. Replaces whatever Stripe says for this teacher.",
+      "planOverrideNone": "None — use their subscription",
+      "adminAccess": "Admin access",
+      "adminAccessHint": "Can open this page, flip the billing switch and look into any account.",
+      "adminSelf": "You can't change your own admin access.",
+      "stripe": "Stripe",
+      "stripeNone": "No subscription on record.",
+      "stripeStatus": "{plan} · {status}",
+      "renews": "Renews {date}",
+      "endsOn": "Ends {date}",
+      "customer": "Customer {id}",
+      "forms": "Forms",
+      "formsEmpty": "No forms yet.",
+      "formMeta": "{questions} questions · {sessions} sessions · {date}",
+      "sessions": "Recent sessions",
+      "sessionsEmpty": "No sessions yet.",
+      "sessionMeta": "{participants} students · {submitted} handed in · {date}",
+      "saved": "Saved",
+      "saveFailed": "Could not save."
+    },
+    "errors": {
+      "notConfigured": "The admin tables aren't in the database yet — apply the latest migration."
     }
   },
   "help": {

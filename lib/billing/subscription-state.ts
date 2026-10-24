@@ -14,6 +14,8 @@ export type BillingState = {
   cancelAtPeriodEnd: boolean;
   hasCustomer: boolean;
   subscriptionId: string | null;
+  /** Where the entitlement comes from (admin switch / complimentary plan / Stripe). */
+  source?: "stripe" | "override" | "billing_off";
 };
 
 export type BillingRow = {

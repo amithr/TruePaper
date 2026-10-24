@@ -247,6 +247,16 @@ Student-count tiers, enforced per live session (concurrent roster size). **Free 
 - **State:** `billing_subscriptions` (one row per teacher; own-row RLS for the teacher's routes, service role for the webhook) mirrors the Stripe subscription incl. `student_limit`; `lib/billing/subscription-state.ts` derives the entitlement (`active`/`trialing`, `past_due` with a 3-day grace; anything else = Free). `POST /api/billing/webhook` verifies the signature and mirrors `customer.subscription.*` events (`lib/billing/store.ts`). `GET /api/billing/status` returns the entitlement.
 - **Enforcement:** `POST /api/public/live-sessions/[id]/register` calls `live_session_student_capacity(session, device)` (SECURITY DEFINER; reads the owner's row, counts the session's rows; a device that already has a row is always allowed). Over the cap → **409** `code: "session_full"`; the student sees "This session is full ({n} students)…" and stays on the join form. Pre-billing DBs (missing RPC) skip the check. The teacher's session page shows a **{count} / {limit} students** chip (amber at 80%, red when full) linking to Settings → Plan; the overview payload carries `session.studentLimit` / `session.plan` (folded into the ETag fingerprint).
 
+### Admin (`/dashboard/admin`)
+
+Admins only (`profiles.is_admin`; non-admins get a 404). The first admin is seeded by email in `20261024140000_admin.sql`; others are granted from the user panel. Entry point: a **Admin** pill in `TeacherTopBar` when `session.profile.is_admin`.
+
+- **Charge for plans** (`app_settings.billing_enabled`, `PUT /api/admin/settings`): off = nobody is charged and no session has a student cap (entitlement reads as School); the teacher's Plan section shows "Billing is switched off…" and hides the picker, `POST /api/billing/subscriptions` answers 409 `billing_off`. Existing Stripe subscriptions keep renewing until cancelled.
+- **Accounts** (`GET /api/admin/users?q=&offset=` → `admin_list_users`; `GET /api/admin/users/[id]` → `admin_get_user`): search by email/name; per-account profile, effective plan, Stripe row, forms (question + session counts) and the last 30 sessions (students / handed in). Read-only apart from two controls (`PATCH /api/admin/users/[id]`): **Complimentary plan** (`profiles.plan_override` → `admin_set_plan_override`; beats Stripe; the teacher's Plan section says so and hides the picker) and **Admin access** (`admin_set_admin`; you can't change your own).
+- **Headline counts** (`GET /api/admin/overview` → `admin_get_overview`).
+- All cross-account reads/writes are SECURITY DEFINER RPCs that call `admin_assert()` (`is_admin()` on the caller); table RLS stays owner-only. `lib/admin/api.ts` gates the routes on the server too.
+- **Entitlement order** (`lib/billing/entitlement.ts` `effectiveBillingState`, mirrored by `live_session_student_capacity` in SQL): billing off → complimentary plan → Stripe. `BillingState.source` says which applied.
+
 ### Onboarding (teacher-only)
 
 Two complementary, teacher-scoped aids (students never see either):
@@ -693,6 +703,7 @@ Run migrations in **filename order**. Latest migration wins for RPC definitions.
 | `20260718130000_autograde_short_math_tf.sql` | Finish autograde also scores `shortAnswer`, `trueFalse`, `mathInput` from `response_config` |
 | `20260719120000_presence_focus_question.sql` | `live_session_presence.focus_question_id`; heartbeat/touch accept optional focus UUID for teacher watch typing chip |
 | `20260807120000_student_response_config.sql` | join/resume/review RPCs include per-question `responseConfig` with answer keys stripped (canvas background flag, sizes, matching pairs reach students) |
+| `20261024140000_admin.sql` | `profiles.is_admin` / `plan_override`, `app_settings.billing_enabled`, admin RPCs, capacity RPC honours the switch + overrides; seeds the first admin |
 | `20261024130000_session_host.sql` | `get_live_session_host()` — host name + photo for the student exam header / feedback bubbles |
 | `20261024120000_billing.sql` | `billing_subscriptions` (own-row RLS), `live_session_student_capacity()` join-time cap |
 | `20261023130000_teacher_settings.sql` | `profiles.avatar_url`, `avatars` storage bucket + owner policies, `teacher_defaults` table (own-row RLS), `delete_my_account()` |
@@ -801,6 +812,15 @@ Templates CRUD, clone, org settings, updates feed.
 | POST / DELETE | `/teacher/avatar` | Upload or remove the profile photo |
 | PUT | `/teacher/defaults` | Save exam defaults (`teacher_defaults`) |
 | DELETE | `/teacher/account` | Delete the account (`{confirm:true}`) |
+
+### Admin — `app/api/admin/`
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/admin/overview` | Counts + billing switch |
+| PUT | `/admin/settings` | `{ billingEnabled }` |
+| GET | `/admin/users` | Search / page accounts (`q`, `limit`, `offset`) |
+| GET / PATCH | `/admin/users/[userId]` | Account detail; `{ planOverride?, isAdmin? }` |
 
 ### Billing — `app/api/billing/`
 
@@ -922,7 +942,6 @@ Setup (`e2e/global-setup.ts`) creates a marked form (`E2E Live Exam` / descripti
 | `SUPABASE_JWT_SECRET` | E2E / Realtime JWT | Mint student realtime tokens |
 | `E2E_TEACHER_EMAIL` | E2E | Playwright teacher login |
 | `E2E_TEACHER_PASSWORD` | E2E | Playwright teacher login |
-| `NEXT_PUBLIC_E2E_AUTOSAVE` | E2E | Faster autosave in tests |
 | `NEXT_PUBLIC_AIR_ALERT_ENABLED` | No | `1` = Ukraine air-alert pause |
 | `STRIPE_SECRET_KEY` | Billing | Stripe server key (plans stay Free-only without it) |
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Billing | Payment Element in the browser |
@@ -975,4 +994,4 @@ Setup (`e2e/global-setup.ts`) creates a marked form (`E2E Live Exam` / descripti
 - Duplicate README setup steps here (link to `README.md` for install/deploy basics).
 - Document every component — only entry points and non-obvious wiring.
 
-*Last reviewed: 2026-10-24 (Stripe billing; teacher photo placements).*
+*Last reviewed: 2026-10-24 (Stripe billing; teacher photo placements; admin area).*

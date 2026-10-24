@@ -4,7 +4,7 @@ import type Stripe from "stripe";
 import { ensureCustomer } from "@/lib/billing/customer";
 import { isPlanId, type PlanId } from "@/lib/billing/plans";
 import { ensurePlanPriceId } from "@/lib/billing/prices";
-import { loadBillingRow, syncSubscription } from "@/lib/billing/store";
+import { loadBillingRow, loadBillingState, syncSubscription } from "@/lib/billing/store";
 import { getStripe, isBillingConfigured } from "@/lib/billing/stripe";
 import { pendingClientSecret } from "@/lib/billing/subscription-state";
 import { getSessionUser } from "@/lib/request-auth";
@@ -45,6 +45,11 @@ export async function POST(request: Request) {
   const plan: PlanId = body.plan;
 
   try {
+    const current = await loadBillingState(supabase, session.user.id);
+    if (current.source === "billing_off") {
+      return NextResponse.json({ error: "Billing is switched off.", code: "billing_off" }, { status: 409 });
+    }
+
     const stripe = getStripe();
     const { row } = await loadBillingRow(supabase, session.user.id);
     const existingId = row?.stripe_subscription_id ?? null;

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type Stripe from "stripe";
 
+import { effectiveBillingState, loadBillingContext } from "@/lib/billing/entitlement";
 import { billingStateFromRow, rowFromStripeSubscription, type BillingRow, type BillingState } from "@/lib/billing/subscription-state";
 import { isMissingRelationError } from "@/lib/is-missing-db-column";
 
@@ -28,9 +29,10 @@ export async function loadBillingRow(
   return { row: (data as BillingRow | null) ?? null, tableMissing: false };
 }
 
+/** The teacher's effective entitlement: Stripe row + admin switch + complimentary plan. */
 export async function loadBillingState(supabase: SupabaseClient, userId: string): Promise<BillingState> {
-  const { row } = await loadBillingRow(supabase, userId);
-  return billingStateFromRow(row);
+  const [{ row }, ctx] = await Promise.all([loadBillingRow(supabase, userId), loadBillingContext(supabase, userId)]);
+  return effectiveBillingState(row, ctx);
 }
 
 /** Remember the Stripe customer before any subscription exists. */
