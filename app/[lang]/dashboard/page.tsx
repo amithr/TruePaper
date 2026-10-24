@@ -3,9 +3,10 @@ import { notFound } from "next/navigation";
 import { TeacherDashboard } from "@/components/dashboard/TeacherDashboard";
 import { isLocale } from "@/lib/i18n/config";
 import { getCachedRequestSession } from "@/lib/cached-request-session";
-import { isMissingColumnError } from "@/lib/is-missing-db-column";
+import { isMissingColumnError, isMissingRelationError } from "@/lib/is-missing-db-column";
 import { fetchActiveTeacherSessions } from "@/lib/teacher-dashboard-server";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import { teacherDefaultsFromRow, type TeacherDefaultsRow } from "@/lib/teacher-defaults";
 
 type Props = {
   params: Promise<{ lang: string }>;
@@ -46,6 +47,20 @@ export default async function TeacherDashboardPage({ params }: Props) {
     tourCompleted = Boolean(tourRow?.onboarding_tour_completed_at);
   }
 
+  // Settings → Exam defaults seed the Start popover for forms that have never run.
+  // A missing table (pre-migration) means the recommended defaults.
+  let defaultsRow: TeacherDefaultsRow | null = null;
+  const defaultsRes = await supabase
+    .from("teacher_defaults")
+    .select("duration_minutes, delivery_mode, accept_late_sync, live_feedback")
+    .eq("user_id", auth.user.id)
+    .maybeSingle();
+  if (!defaultsRes.error) {
+    defaultsRow = (defaultsRes.data as TeacherDefaultsRow | null) ?? null;
+  } else if (!isMissingRelationError(defaultsRes.error, "teacher_defaults")) {
+    throw new Error(defaultsRes.error.message);
+  }
+
   return (
     <TeacherDashboard
       user={{ id: auth.user.id, email: auth.user.email }}
@@ -57,6 +72,7 @@ export default async function TeacherDashboardPage({ params }: Props) {
       initialRunning={sessions}
       initialSuspensions={suspensionsBySession}
       tourCompleted={tourCompleted}
+      teacherDefaults={teacherDefaultsFromRow(defaultsRow)}
     />
   );
 }

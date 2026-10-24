@@ -17,7 +17,9 @@ export function isMissingColumnError(
   if (m.includes("does not exist")) {
     return true;
   }
-  return err.code === "42703";
+  // PostgREST wording for a write that names an unknown column:
+  // `Could not find the 'x' column of 't' in the schema cache` (PGRST204).
+  return err.code === "42703" || err.code === "PGRST204" || m.includes("could not find the");
 }
 
 /**

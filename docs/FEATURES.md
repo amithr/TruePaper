@@ -101,7 +101,7 @@ flowchart LR
 - Cookie session via `@supabase/ssr` — `lib/supabase/server.ts`, refreshed in `proxy.ts`.
 - **Static home/join:** `app/[lang]/page.tsx` and `app/[lang]/join/page.tsx` are statically generated; guests skip server auth. Signed-in users hydrate via `GET /api/auth/session` in `lib/use-client-session-hydration.ts` (only when a Supabase auth cookie is present).
 - **Teacher home redirect:** `proxy.ts` sends teachers from plain `/[lang]` to `/[lang]/dashboard` before RSC (skips loading `HomeClient` for the common case). Builder (`?form=`) and join query params bypass the redirect — `lib/home-url-intent.ts` → `hasTeacherHomeIntentFromSearchParams`.
-- `profiles` table: `role` is `'teacher'` or `'student'`; OAuth signups default to teacher (`20260524100000_oauth_signup_defaults.sql`).
+- `profiles` table: `role` is `'teacher'` or `'student'`; OAuth signups default to teacher (`20260524100000_oauth_signup_defaults.sql`); `avatar_url` + `teacher_defaults` come from `20261023130000_teacher_settings.sql` (see [Settings](#settings-dashboardsettings)).
 - API routes use `getSessionUser()` from `lib/request-auth.ts`.
 - RLS: teachers own `forms` / `questions`; session owner manages live session data.
 
@@ -222,6 +222,16 @@ Three ways back into an unfinished attempt (migration `20261023120000_device_rej
 - Browse: `app/[lang]/dashboard/templates/page.tsx`
 - APIs under `app/api/library/` — templates, org settings, clone to form
 - Domain: `lib/library/`
+
+### Settings (`/dashboard/settings`)
+
+- `app/[lang]/dashboard/settings/page.tsx` (server: session, `profiles.avatar_url`, `teacher_defaults`, usage counts) → `components/settings/TeacherSettings.tsx`. Reached from the **Settings** pill in `TeacherTopBar` (`showSettings` hides it on the page itself). Layout: sticky identity card + section nav (active section follows scroll via IntersectionObserver) beside the section cards; single column under 800px. CSS `tp-settings-*` in `app/globals.css`. Migration `20261023130000_teacher_settings.sql`.
+- **Profile:** photo (`components/settings/AvatarUploader.tsx` → `POST`/`DELETE /api/teacher/avatar`; bucket `avatars`, `{userId}/avatar.{ext}`, 2 MB jpeg/png/webp, owner write / public read; `profiles.avatar_url` carries a cache-busted public URL; initials fallback via `avatarInitials`), display name (`PATCH /api/teacher/profile`, same 1–120 rule as registration; Save is dirty-gated and shows "Saved ✓"), read-only email, and **Send a reset link** (`POST /api/auth/password-reset` → Supabase recovery email → `/auth/callback?next=/reset-password` → `app/[lang]/reset-password/page.tsx` → `POST /api/auth/password` with the registration password policy).
+- **Language:** two radio cards using the same `useSwitchLocale()` hook as the top-bar `LanguageToggle` (`lib/i18n/use-switch-locale.ts`).
+- **Exam defaults** (`teacher_defaults`, `lib/teacher-defaults.ts`, `PUT /api/teacher/defaults`): time limit chips (30/45/60/90/No limit), delivery mode, **Accept answers saved offline after time runs out** (dimmed outside Live), **Live teacher feedback**, plus two locked "Always on" rows documenting the paste block and tab-switch flag. Recommended = 45 min · Live · late sync on · feedback on. Used by: the dashboard Start popover for forms with no `lastSessionDefaults` (`DashboardFormLibrary` `teacherDefaults` prop) and `POST /api/forms` (new forms get `live_teacher_feedback_enabled` from the teacher's default).
+- **Plan & usage:** Free plan placeholder; counts = forms, sessions in the last 120 days (`lib/teacher-usage.ts`), finished anonymous submissions on the teacher's forms (RLS-scoped). Upgrade is disabled.
+- **Delete account:** inline alertdialog, type `DELETE` (uk: `ВИДАЛИТИ`) to enable → `DELETE /api/teacher/account` `{confirm:true}`: removes the teacher's objects in `form-assets` + `avatars`, then RPC `delete_my_account()` (SECURITY DEFINER: deletes the caller's forms and sessions, then their `auth.users` row — there is no service-role key on the server), then signs out and goes home.
+- Pre-migration DBs: the page renders with no photo and recommended defaults; the write routes answer 503 with the migration name.
 
 ### Onboarding (teacher-only)
 
@@ -669,6 +679,7 @@ Run migrations in **filename order**. Latest migration wins for RPC definitions.
 | `20260718130000_autograde_short_math_tf.sql` | Finish autograde also scores `shortAnswer`, `trueFalse`, `mathInput` from `response_config` |
 | `20260719120000_presence_focus_question.sql` | `live_session_presence.focus_question_id`; heartbeat/touch accept optional focus UUID for teacher watch typing chip |
 | `20260807120000_student_response_config.sql` | join/resume/review RPCs include per-question `responseConfig` with answer keys stripped (canvas background flag, sizes, matching pairs reach students) |
+| `20261023130000_teacher_settings.sql` | `profiles.avatar_url`, `avatars` storage bucket + owner policies, `teacher_defaults` table (own-row RLS), `delete_my_account()` |
 | `20261023120000_device_rejoin_transfer.sql` | `live_session_device_transfers` (requests + tombstones, teacher SELECT RLS), moved-device BEFORE INSERT trigger, rejoin lookup/request/cancel/decline RPCs, Let in approves transfers, state/response RPCs report `movedToAnotherDevice` / `rejoinRequest`, register RPC regains the post-submit guard |
 
 </details>
@@ -686,6 +697,8 @@ Run migrations in **filename order**. Latest migration wins for RPC definitions.
 | POST | `/logout` | Clear session |
 | GET | `/session` | Current user + profile |
 | POST | `/onboarding-tour/complete` | Mark teacher first-login tour seen |
+| POST | `/auth/password-reset` | Email the signed-in teacher a recovery link (lands on `/reset-password`) |
+| POST | `/auth/password` | Set a new password for the recovery session |
 
 ### Forms (teacher) — `app/api/forms/`
 
@@ -762,6 +775,15 @@ GET — IBM Plex woff bytes for client-side PDF generation (allowlisted faces, i
 ### Library — `app/api/library/`
 
 Templates CRUD, clone, org settings, updates feed.
+
+### Teacher — `app/api/teacher/`
+
+| Method | Path | Purpose |
+|---|---|---|
+| PATCH | `/teacher/profile` | Display name / avatar URL (Settings) |
+| POST / DELETE | `/teacher/avatar` | Upload or remove the profile photo |
+| PUT | `/teacher/defaults` | Save exam defaults (`teacher_defaults`) |
+| DELETE | `/teacher/account` | Delete the account (`{confirm:true}`) |
 
 ### Teacher — `app/api/teacher/sessions`
 
@@ -922,4 +944,4 @@ Setup (`e2e/global-setup.ts`) creates a marked form (`E2E Live Exam` / descripti
 - Duplicate README setup steps here (link to `README.md` for install/deploy basics).
 - Document every component — only entry points and non-obvious wiring.
 
-*Last reviewed: 2026-10-23 (student rejoin: welcome-back card + teacher-approved device transfer).*
+*Last reviewed: 2026-10-23 (student rejoin + teacher settings page).*

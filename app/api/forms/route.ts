@@ -164,9 +164,26 @@ export async function POST(request: Request) {
   const title = body.title?.trim() || UNTITLED_FORM_TITLE;
   const description = body.description?.trim() || "";
 
+  // Settings → Exam defaults → "Live teacher feedback" is the default for new forms.
+  // No row (or no table yet) keeps the column's own default (off).
+  let liveFeedback = false;
+  const defaultsRes = await supabase
+    .from("teacher_defaults")
+    .select("live_feedback")
+    .eq("user_id", session.user.id)
+    .maybeSingle();
+  if (!defaultsRes.error && defaultsRes.data) {
+    liveFeedback = (defaultsRes.data as { live_feedback?: boolean | null }).live_feedback === true;
+  }
+
   const { data, error } = await supabase
     .from("forms")
-    .insert({ title, description, created_by: session.user.id })
+    .insert({
+      title,
+      description,
+      created_by: session.user.id,
+      live_teacher_feedback_enabled: liveFeedback,
+    })
     .select(
       "id, title, description, description_image_path, created_by, live_teacher_feedback_enabled",
     )
@@ -183,7 +200,7 @@ export async function POST(request: Request) {
       description: data.description ?? "",
       descriptionImagePath: data.description_image_path ?? null,
       createdBy: data.created_by,
-      liveTeacherFeedbackEnabled: false,
+      liveTeacherFeedbackEnabled: data.live_teacher_feedback_enabled === true,
       questions: [],
     } satisfies Form,
   });

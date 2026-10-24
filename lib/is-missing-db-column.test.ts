@@ -33,4 +33,13 @@ describe("isMissingColumnError", () => {
     expect(isMissingColumnError({ code: "42703", message: "column fr.rejoin does not exist" }, "rejoin")).toBe(true);
     expect(isMissingColumnError({ code: "42703", message: "column fr.rejoin does not exist" }, "other")).toBe(false);
   });
+
+  it("recognises PostgREST's wording for a write naming an unknown column", () => {
+    expect(
+      isMissingColumnError(
+        { code: "PGRST204", message: "Could not find the 'avatar_url' column of 'profiles' in the schema cache" },
+        "avatar_url",
+      ),
+    ).toBe(true);
+  });
 });

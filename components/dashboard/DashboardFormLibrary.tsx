@@ -29,12 +29,15 @@ import { stashPendingBuilderForm } from "@/lib/pending-builder-form";
 import { ui } from "@/lib/ui";
 import { requestJson, RequestJsonError } from "@/lib/request-json";
 import { startLiveSession } from "@/lib/start-live-session";
+import { RECOMMENDED_TEACHER_DEFAULTS, type TeacherDefaults } from "@/lib/teacher-defaults";
 import { Copy, Link2, Trash2, Files } from "lucide-react";
 
 const FORM_LIBRARY_PAGE_SIZE = 5;
 
 type Props = {
   onError: (message: string) => void;
+  /** Settings → Exam defaults; used when a form has no last-session defaults. */
+  teacherDefaults?: TeacherDefaults;
 };
 
 type OpenPopover = { formId: string; kind: FormLibraryPopover } | null;
@@ -57,7 +60,10 @@ function seedSessionState(forms: Form[]) {
   return { durations, noTimeLimit, deliveryMode, acceptLateSync };
 }
 
-export function DashboardFormLibrary({ onError }: Props) {
+export function DashboardFormLibrary({ onError, teacherDefaults }: Props) {
+  const fallback = teacherDefaults ?? RECOMMENDED_TEACHER_DEFAULTS;
+  const fallbackDuration = fallback.durationMinutes ?? 45;
+  const fallbackNoLimit = fallback.durationMinutes === null;
   const router = useRouter();
   const t = useTranslations();
   const [origin] = useState(() => (typeof window !== "undefined" ? window.location.origin : ""));
@@ -161,8 +167,8 @@ export function DashboardFormLibrary({ onError }: Props) {
   }, [onError, t]);
 
   const startSessionForForm = async (formId: string) => {
-    const minutes = sessionDurations[formId] ?? 45;
-    const noTimeLimit = noTimeLimitByForm[formId] === true;
+    const minutes = sessionDurations[formId] ?? fallbackDuration;
+    const noTimeLimit = noTimeLimitByForm[formId] ?? fallbackNoLimit;
     setStartingFormId(formId);
     try {
       const form = forms.find((f) => f.id === formId);
@@ -181,8 +187,8 @@ export function DashboardFormLibrary({ onError }: Props) {
       }
       const created = await startLiveSession(formId, {
         ...(noTimeLimit ? { noTimeLimit: true } : { durationMinutes: minutes }),
-        deliveryMode: deliveryModeByForm[formId] ?? "live",
-        acceptLateSync: acceptLateSyncByForm[formId] !== false,
+        deliveryMode: deliveryModeByForm[formId] ?? fallback.deliveryMode,
+        acceptLateSync: acceptLateSyncByForm[formId] ?? fallback.acceptLateSync,
       });
       router.push(`/dashboard/sessions/${created.liveSessionId}`);
     } catch (e) {
@@ -428,10 +434,10 @@ export function DashboardFormLibrary({ onError }: Props) {
                     autogradeCount={form.autogradeCount ?? 0}
                     lastRunAt={form.lastRunAt ?? null}
                     origin={origin}
-                    durationMinutes={sessionDurations[form.id] ?? 45}
-                    noTimeLimit={noTimeLimitByForm[form.id] === true}
-                    deliveryMode={deliveryModeByForm[form.id] ?? "live"}
-                    acceptLateSync={acceptLateSyncByForm[form.id] !== false}
+                    durationMinutes={sessionDurations[form.id] ?? fallbackDuration}
+                    noTimeLimit={noTimeLimitByForm[form.id] ?? fallbackNoLimit}
+                    deliveryMode={deliveryModeByForm[form.id] ?? fallback.deliveryMode}
+                    acceptLateSync={acceptLateSyncByForm[form.id] ?? fallback.acceptLateSync}
                     liveTeacherFeedbackEnabled={liveFeedbackByForm[form.id] === true}
                     starting={startingFormId === form.id}
                     menuItems={formRowMenuItems(form)}

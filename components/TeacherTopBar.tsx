@@ -1,5 +1,7 @@
 "use client";
 
+import { Settings } from "lucide-react";
+
 import { BrandMark } from "@/components/BrandMark";
 import { HelpTipsToggle } from "@/components/HelpTipsToggle";
 import { LanguageToggle } from "@/components/LanguageToggle";
@@ -11,6 +13,8 @@ import { focusRing, ui } from "@/lib/ui";
 type Props = {
   /** Hide the "Student join" shortcut (e.g. on screens where it's redundant). */
   showStudentJoin?: boolean;
+  /** Hide the Settings shortcut (on the settings page itself). */
+  showSettings?: boolean;
 };
 
 /**
@@ -18,7 +22,7 @@ type Props = {
  * dashboard, live session, and watch screens so the top bar never disappears as
  * the teacher drills in. Page-specific actions live in the page header below this.
  */
-export function TeacherTopBar({ showStudentJoin = true }: Props) {
+export function TeacherTopBar({ showStudentJoin = true, showSettings = true }: Props) {
   const t = useTranslations();
   const router = useLocaleRouter();
 
@@ -54,6 +58,18 @@ export function TeacherTopBar({ showStudentJoin = true }: Props) {
               <path d="m11 6 6 6-6 6" />
             </svg>
             {t("nav.studentJoin")}
+          </LocaleLink>
+        ) : null}
+        {showSettings ? (
+          <LocaleLink
+            href="/dashboard/settings"
+            className={`tp-pill ${focusRing}`}
+            aria-label={t("nav.settings")}
+            title={t("nav.settings")}
+            data-testid="topbar-settings"
+          >
+            <Settings aria-hidden className="h-4 w-4" />
+            <span className="hidden text-sm sm:inline">{t("nav.settings")}</span>
           </LocaleLink>
         ) : null}
         <button

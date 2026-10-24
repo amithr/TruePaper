@@ -1,16 +1,8 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
-
-import {
-  LOCALE_EXPLICIT_COOKIE,
-  LOCALES,
-  LOCALE_SHORT,
-  type Locale,
-} from "@/lib/i18n/config";
-import { useLocale, useTranslations } from "@/lib/i18n/I18nProvider";
-import { switchLocaleInPath } from "@/lib/i18n/navigation";
+import { LOCALES, LOCALE_SHORT } from "@/lib/i18n/config";
+import { useTranslations } from "@/lib/i18n/I18nProvider";
+import { useSwitchLocale } from "@/lib/i18n/use-switch-locale";
 import { focusRing } from "@/lib/ui";
 
 type Props = {
@@ -24,33 +16,8 @@ type Props = {
  * once the URL contains the new locale prefix.
  */
 export function LanguageToggle({ className }: Props) {
-  const locale = useLocale();
   const t = useTranslations();
-  const router = useRouter();
-  const pathname = usePathname();
-  const [, startTransition] = useTransition();
-  const [explicitLocaleCookieTick, setExplicitLocaleCookieTick] = useState(0);
-
-  useEffect(() => {
-    if (explicitLocaleCookieTick === 0) {
-      return;
-    }
-    document.cookie = `${LOCALE_EXPLICIT_COOKIE}=1; path=/; max-age=${60 * 60 * 24 * 365}; samesite=lax`;
-  }, [explicitLocaleCookieTick]);
-
-  const choose = (next: Locale) => {
-    if (next === locale) {
-      return;
-    }
-    setExplicitLocaleCookieTick((tick) => tick + 1);
-    const search = typeof window !== "undefined" ? window.location.search : "";
-    const hash = typeof window !== "undefined" ? window.location.hash : "";
-    const target = switchLocaleInPath((pathname ?? `/${locale}`) + search + hash, next);
-    startTransition(() => {
-      router.replace(target);
-      router.refresh();
-    });
-  };
+  const { locale, choose } = useSwitchLocale();
 
   return (
     <div

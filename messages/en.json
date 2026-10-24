@@ -63,6 +63,7 @@
     "templateLibrary": "Template library",
     "studentJoin": "Student join",
     "dashboard": "Dashboard",
+    "settings": "Settings",
     "studentJoinAria": "Student join page",
     "breadcrumbAria": "Breadcrumb",
     "liveSession": "Live session",
@@ -98,6 +99,17 @@
     "savePreferences": "Save preferences"
   },
   "auth": {
+    "resetPassword": {
+      "title": "Choose a new password",
+      "subtitle": "You followed a reset link — set the password you'll sign in with from now on.",
+      "newPassword": "New password",
+      "confirmPassword": "Confirm new password",
+      "submit": "Save new password",
+      "submitting": "Saving…",
+      "success": "Password updated. Taking you to your dashboard…",
+      "failed": "Could not update your password.",
+      "expired": "That reset link has expired. Request a new one from Settings, or sign in."
+    },
     "eyebrowTeacher": "Teacher",
     "login": {
       "title": "Welcome back",
@@ -1001,6 +1013,102 @@
     "duplicate": "Duplicate",
     "duplicated": "Copy created: {title}",
     "duplicatedNoImages": "Copy created: {title}. Images weren’t copied — add them again if you need them."
+  },
+  "settings": {
+    "title": "Settings",
+    "identity": {
+      "eyebrow": "Account",
+      "roleTeacher": "Teacher",
+      "planFree": "Free plan"
+    },
+    "nav": {
+      "aria": "Settings sections",
+      "profile": "Profile",
+      "language": "Language",
+      "defaults": "Exam defaults",
+      "plan": "Plan",
+      "danger": "Delete account"
+    },
+    "profile": {
+      "eyebrow": "Profile",
+      "title": "How you appear",
+      "photoTitle": "Profile photo",
+      "photoHint": "Shown next to your name on the dashboard and on student join screens. Without one, students see your initials.",
+      "photoUpload": "Upload photo",
+      "photoReplace": "Replace photo",
+      "photoRemove": "Remove",
+      "photoSpec": "JPG, PNG or WebP, up to 2 MB. Square images work best. Drag a file onto the circle or click Upload.",
+      "photoDropAria": "Profile photo drop zone",
+      "photoFailed": "Could not upload that photo.",
+      "displayName": "Display name",
+      "displayNamePlaceholder": "e.g. Ms. Rivera",
+      "displayNameHint": "Shown on your dashboard greeting and to students as the session host.",
+      "emailLabel": "Email",
+      "emailHint": "Used to sign in. Contact support to change it.",
+      "saveChanges": "Save changes",
+      "saved": "Saved",
+      "saveFailed": "Could not save your profile.",
+      "passwordNote": "Need a new password?",
+      "passwordLink": "Send a reset link",
+      "resetSent": "Reset link sent — check your email.",
+      "resetFailed": "Could not send a reset link."
+    },
+    "language": {
+      "eyebrow": "Language",
+      "title": "Interface language",
+      "enHint": "Dashboard, builder and student screens in English.",
+      "ukHint": "Панель, конструктор і екрани учнів українською.",
+      "note": "Students see the exam in the language you choose when you start a session. This setting is remembered on this device."
+    },
+    "defaults": {
+      "eyebrow": "Exam defaults",
+      "title": "How new sessions start",
+      "sub": "Pre-fills the Start panel for every form and sets live feedback on new forms. You can still change these per session.",
+      "durationLabel": "Time limit",
+      "durationHint": "Countdown shown to students; the session closes when it ends.",
+      "deliveryLabel": "Delivery mode",
+      "lateSyncLabel": "Accept answers saved offline after time runs out",
+      "lateSyncHint": "If a student was disconnected at the bell, work saved on their device still counts when it syncs. Live mode only.",
+      "feedbackLabel": "Live teacher feedback",
+      "feedbackHint": "Lets you send comments students see under text questions while they work.",
+      "pasteLabel": "Block paste in answer fields",
+      "pasteHint": "Students can type, dictate or use accessibility input, but cannot paste text into an exam.",
+      "tabLeaveLabel": "Flag tab switching",
+      "tabLeaveHint": "Leaving the exam tab pauses the student and shows a flag on your roster.",
+      "alwaysOn": "Always on",
+      "save": "Save defaults",
+      "reset": "Reset to recommended",
+      "saved": "Saved",
+      "saveFailed": "Could not save your defaults.",
+      "footnote": "Applies to sessions you start from now on."
+    },
+    "plan": {
+      "eyebrow": "Plan & usage",
+      "title": "Free",
+      "active": "Active",
+      "sub": "Unlimited forms and live sessions while TruePaper is in early access. Paid plans will add school-wide rosters and exports.",
+      "upgrade": "Upgrade",
+      "comingSoon": "Paid plans coming soon",
+      "usageForms": "forms",
+      "usageSessions": "sessions this term",
+      "usageStudents": "student submissions"
+    },
+    "danger": {
+      "eyebrow": "Danger zone",
+      "deleteTitle": "Delete account",
+      "deleteSub": "Permanently removes your profile, forms, sessions and every student submission. Closed sessions cannot be recovered.",
+      "deleteCta": "Delete account",
+      "confirmBody": "This cannot be undone. Deleting your account will:",
+      "bullet1": "Remove all forms, templates and uploaded images",
+      "bullet2": "End any running sessions and discard their submissions",
+      "bullet3": "Sign you out on every device",
+      "typePrompt": "Type {word} to confirm",
+      "word": "DELETE",
+      "confirmCta": "Permanently delete",
+      "deleting": "Deleting…",
+      "cancel": "Cancel",
+      "failed": "Could not delete your account."
+    }
   },
   "help": {
     "toggle": {

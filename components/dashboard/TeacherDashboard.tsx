@@ -11,6 +11,7 @@ import { DashboardRunningSessions } from "@/components/dashboard/DashboardRunnin
 import { TeacherTopBar } from "@/components/TeacherTopBar";
 import { useTranslations } from "@/lib/i18n/I18nProvider";
 import { dashboardWelcomeName } from "@/lib/dashboard-welcome";
+import type { TeacherDefaults } from "@/lib/teacher-defaults";
 import type { SuspendedStudentRow, TeacherSessionSummary } from "@/lib/teacher-sessions";
 import { ui } from "@/lib/ui";
 
@@ -32,6 +33,8 @@ type Props = {
   initialSuspensions: Record<string, SuspendedStudentRow[]>;
   /** First-login tour: false → the dashboard segment auto-runs once. */
   tourCompleted?: boolean;
+  /** Settings → Exam defaults; seeds Start popovers for forms that never ran. */
+  teacherDefaults?: TeacherDefaults;
 };
 
 export function TeacherDashboard({
@@ -40,6 +43,7 @@ export function TeacherDashboard({
   initialRunning,
   initialSuspensions,
   tourCompleted = true,
+  teacherDefaults,
 }: Props) {
   const t = useTranslations();
   const [loadError, setLoadError] = useState("");
@@ -191,7 +195,7 @@ export function TeacherDashboard({
             </div>
           }
         >
-          <DashboardFormLibrary onError={onError} />
+          <DashboardFormLibrary onError={onError} teacherDefaults={teacherDefaults} />
         </DashboardLazySection>
       </main>
     </div>
