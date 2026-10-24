@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
 
 import { TeacherSettings } from "@/components/settings/TeacherSettings";
+import { loadBillingState } from "@/lib/billing/store";
+import { isBillingConfigured } from "@/lib/billing/stripe";
 import { getCachedRequestSession } from "@/lib/cached-request-session";
 import { isLocale } from "@/lib/i18n/config";
 import { isMissingColumnError, isMissingRelationError } from "@/lib/is-missing-db-column";
@@ -63,6 +65,8 @@ export default async function TeacherSettingsPage({ params }: Props) {
       .not("finished_at", "is", null),
   ]);
 
+  const billing = await loadBillingState(supabase, userId);
+
   return (
     <TeacherSettings
       user={{ id: userId, email: auth.user.email ?? "" }}
@@ -73,6 +77,9 @@ export default async function TeacherSettingsPage({ params }: Props) {
         sessions: sessions.count ?? 0,
         students: students.count ?? 0,
       }}
+      billing={billing}
+      billingConfigured={isBillingConfigured()}
+      stripePublishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? null}
     />
   );
 }

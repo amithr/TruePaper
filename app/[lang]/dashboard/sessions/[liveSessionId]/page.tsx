@@ -581,6 +581,30 @@ export default function LiveSessionDetailPage() {
                   · {totalCount}
                 </span>
               </h2>
+              {typeof overview.session.studentLimit === "number" ? (
+                <LocaleLink
+                  href="/dashboard/settings#plan"
+                  className="tp-cap-chip"
+                  data-state={
+                    totalCount >= overview.session.studentLimit
+                      ? "full"
+                      : totalCount >= overview.session.studentLimit * 0.8
+                        ? "near"
+                        : undefined
+                  }
+                  aria-label={t("billing.capChip.aria", { count: totalCount, limit: overview.session.studentLimit })}
+                  title={
+                    totalCount >= overview.session.studentLimit
+                      ? t("billing.capChip.full")
+                      : totalCount >= overview.session.studentLimit * 0.8
+                        ? t("billing.capChip.near", { left: overview.session.studentLimit - totalCount })
+                        : undefined
+                  }
+                  data-testid="session-cap-chip"
+                >
+                  {t("billing.capChip.label", { count: totalCount, limit: overview.session.studentLimit })}
+                </LocaleLink>
+              ) : null}
               {/* Calm: renders nothing until someone has work that hasn't reached the server. */}
               {sessionRunning ? (
                 <RosterSyncSummary participants={overview.participants} nowMs={activityNowMs} />

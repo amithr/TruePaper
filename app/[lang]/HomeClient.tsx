@@ -1521,8 +1521,8 @@ export default function HomeClient({
             displayName: activeExamDisplayName,
           }),
         });
-        if (res.status === 403) {
-          const body = (await res.json()) as { error?: string };
+        if (res.status === 403 || res.status === 409) {
+          const body = (await res.json()) as { error?: string; code?: string; limit?: number | null };
           clearActiveExam();
           clearJoinFormFields();
           setJoinedSession(null);
@@ -1531,7 +1531,13 @@ export default function HomeClient({
           setStudentAnswersHydrated(false);
           setExamFinished(false);
           setExamSuspended(false);
-          setStatusMessage(body.error ?? t("home.status.alreadySubmitted"));
+          setStatusMessage(
+            body.code === "session_full"
+              ? typeof body.limit === "number"
+                ? t("home.status.sessionFull", { n: body.limit })
+                : t("home.status.sessionFullNoLimit")
+              : (body.error ?? t("home.status.alreadySubmitted")),
+          );
           return;
         }
         if (res.status === 410) {

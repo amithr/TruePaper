@@ -2,6 +2,7 @@ import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TeacherSettings, type TeacherSettingsProps } from "@/components/settings/TeacherSettings";
+import { FREE_STATE } from "@/lib/billing/subscription-state";
 import { RECOMMENDED_TEACHER_DEFAULTS } from "@/lib/teacher-defaults";
 import { renderWithI18n } from "@/lib/test/render-i18n";
 
@@ -34,6 +35,9 @@ function renderSettings(over: Partial<TeacherSettingsProps> = {}) {
       profile={{ displayName: "Maria Rivera", avatarUrl: null }}
       defaults={{ ...RECOMMENDED_TEACHER_DEFAULTS }}
       usage={{ forms: 12, sessions: 38, students: 914 }}
+      billing={FREE_STATE}
+      billingConfigured={false}
+      stripePublishableKey={null}
       {...over}
     />,
   );
@@ -111,9 +115,12 @@ describe("TeacherSettings", () => {
     );
   });
 
-  it("shows usage figures", () => {
+  it("shows usage figures and the plan picker (paid plans disabled without Stripe keys)", () => {
     renderSettings();
     expect(screen.getByText("914")).toBeInTheDocument();
     expect(screen.getByText("sessions this term")).toBeInTheDocument();
+    expect(screen.getByTestId("billing-current-plan")).toHaveTextContent("Free");
+    expect(screen.getByTestId("plan-choose-classroom")).toBeDisabled();
+    expect(screen.getByText(/isn't set up on this server/)).toBeInTheDocument();
   });
 });

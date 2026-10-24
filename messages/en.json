@@ -540,7 +540,9 @@
       "leftSession": "Left the session.",
       "inLiveSession": "You are in the live session.",
       "answersSaved": "Answers saved.",
-      "alreadySubmitted": "You have already submitted this exam and cannot rejoin."
+      "alreadySubmitted": "You have already submitted this exam and cannot rejoin.",
+      "sessionFull": "This session is full ({n} students). Ask your teacher to let you in another way.",
+      "sessionFullNoLimit": "This session is full. Ask your teacher to let you in another way."
     },
     "errors": {
       "loadForms": "Failed to load forms.",
@@ -1108,6 +1110,66 @@
       "deleting": "Deleting…",
       "cancel": "Cancel",
       "failed": "Could not delete your account."
+    }
+  },
+  "billing": {
+    "eyebrow": "Plan & usage",
+    "title": "Your plan",
+    "sub": "Plans are sized by how many students can take one live session at the same time. Free covers a small class; upgrade when a session needs more seats.",
+    "notConfigured": "Billing isn't set up on this server yet — all sessions use the Free tier.",
+    "perMonth": "/month",
+    "freePrice": "Free",
+    "studentsPerSession": "Up to {n} students per session",
+    "unlimitedStudents": "Unlimited students per session",
+    "plans": {
+      "free": { "name": "Free", "blurb": "A small class or a trial run." },
+      "classroom": { "name": "Classroom", "blurb": "One full class at a time." },
+      "department": { "name": "Department", "blurb": "Several classes, year groups, mock exams." },
+      "school": { "name": "School", "blurb": "Whole-school exams with no cap." }
+    },
+    "current": "Current plan",
+    "popular": "Most popular",
+    "choose": "Choose {plan}",
+    "switchTo": "Switch to {plan}",
+    "downgradeToFree": "Move to Free",
+    "downgradeConfirm": "Tap again to confirm",
+    "keepPlan": "Keep {plan}",
+    "renews": "Renews {date}",
+    "endsOn": "Ends {date} — then Free",
+    "pastDue": "Your last payment failed. Update your card to keep {plan}.",
+    "manage": "Manage billing",
+    "manageHint": "Card, invoices and cancellation open in Stripe.",
+    "opening": "Opening…",
+    "working": "One moment…",
+    "errors": {
+      "start": "Couldn't start checkout.",
+      "portal": "Couldn't open billing.",
+      "sync": "Couldn't confirm your plan. It will update shortly."
+    },
+    "checkout": {
+      "title": "Upgrade to {plan}",
+      "summary": "{price}/month · up to {n} students per session",
+      "summaryUnlimited": "{price}/month · unlimited students",
+      "pay": "Pay {price} and upgrade",
+      "paying": "Confirming…",
+      "loading": "Loading secure payment form…",
+      "ready": "Card details look good — you're one tap away.",
+      "incomplete": "Enter your card details to continue.",
+      "securedBy": "Processed securely by Stripe. Cancel any time from Manage billing.",
+      "cancel": "Not now",
+      "success": "You're on {plan}. Sessions can now have up to {n} students.",
+      "successUnlimited": "You're on {plan}. No student cap.",
+      "processing": "Payment received — your plan will update as soon as it clears.",
+      "failed": "That payment didn't go through. Nothing was charged.",
+      "switchDone": "You're now on {plan}.",
+      "downgradeDone": "Your plan ends on {date}. You'll be on Free after that.",
+      "resumed": "Cancellation undone — {plan} continues."
+    },
+    "capChip": {
+      "label": "{count} / {limit} students",
+      "aria": "{count} of {limit} students allowed on your plan",
+      "full": "Session full — upgrade for more seats",
+      "near": "Almost full — {left} seats left"
     }
   },
   "help": {

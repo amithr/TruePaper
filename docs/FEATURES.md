@@ -229,9 +229,22 @@ Three ways back into an unfinished attempt (migration `20261023120000_device_rej
 - **Profile:** photo (`components/settings/AvatarUploader.tsx` → `POST`/`DELETE /api/teacher/avatar`; bucket `avatars`, `{userId}/avatar.{ext}`, 2 MB jpeg/png/webp, owner write / public read; `profiles.avatar_url` carries a cache-busted public URL; initials fallback via `avatarInitials`), display name (`PATCH /api/teacher/profile`, same 1–120 rule as registration; Save is dirty-gated and shows "Saved ✓"), read-only email, and **Send a reset link** (`POST /api/auth/password-reset` → Supabase recovery email → `/auth/callback?next=/reset-password` → `app/[lang]/reset-password/page.tsx` → `POST /api/auth/password` with the registration password policy).
 - **Language:** two radio cards using the same `useSwitchLocale()` hook as the top-bar `LanguageToggle` (`lib/i18n/use-switch-locale.ts`).
 - **Exam defaults** (`teacher_defaults`, `lib/teacher-defaults.ts`, `PUT /api/teacher/defaults`): time limit chips (30/45/60/90/No limit), delivery mode, **Accept answers saved offline after time runs out** (dimmed outside Live), **Live teacher feedback**, plus two locked "Always on" rows documenting the paste block and tab-switch flag. Recommended = 45 min · Live · late sync on · feedback on. Used by: the dashboard Start popover for forms with no `lastSessionDefaults` (`DashboardFormLibrary` `teacherDefaults` prop) and `POST /api/forms` (new forms get `live_teacher_feedback_enabled` from the teacher's default).
-- **Plan & usage:** Free plan placeholder; counts = forms, sessions in the last 120 days (`lib/teacher-usage.ts`), finished anonymous submissions on the teacher's forms (RLS-scoped). Upgrade is disabled.
+- **Plan & usage:** see [Billing](#billing-stripe) — tier picker + embedded Stripe checkout (`components/billing/BillingSection.tsx`); usage counts = forms, sessions in the last 120 days (`lib/teacher-usage.ts`), finished anonymous submissions on the teacher's forms (RLS-scoped).
 - **Delete account:** inline alertdialog, type `DELETE` (uk: `ВИДАЛИТИ`) to enable → `DELETE /api/teacher/account` `{confirm:true}`: removes the teacher's objects in `form-assets` + `avatars`, then RPC `delete_my_account()` (SECURITY DEFINER: deletes the caller's forms and sessions, then their `auth.users` row — there is no service-role key on the server), then signs out and goes home.
 - Pre-migration DBs: the page renders with no photo and recommended defaults; the write routes answer 503 with the migration name.
+
+### Billing (Stripe)
+
+Student-count tiers, enforced per live session (concurrent roster size). **Free ≤ 10 students**, Classroom ≤ 35 ($9/mo), Department ≤ 150 ($29/mo), School unlimited ($79/mo) — `lib/billing/plans.ts`. Migration `20261024120000_billing.sql`.
+
+- **Config (env):** `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`, `SUPABASE_SERVICE_ROLE_KEY` (webhook only). Without the Stripe keys the picker shows the tiers with paid buttons disabled and everything runs on Free. Prices are created in the Stripe account on first use by lookup key (`lib/billing/prices.ts`, `truepaper_<plan>_monthly_v1`), so no price ids are configured. The `stripe` SDK pins the current API version (`2026-09-30.endive` at the time of writing; the period end lives on the subscription item, the invoice's `confirmation_secret` carries the client secret).
+- **Flow (Settings → Plan):** `components/billing/PlanPicker.tsx` → `POST /api/billing/subscriptions {plan}`:
+  - no subscription → `subscriptions.create` with `payment_behavior: default_incomplete` + `save_default_payment_method: on_subscription`; the response carries `clientSecret` and `components/billing/CheckoutForm.tsx` renders Stripe's **Payment Element** (app-themed `appearance`, inline validation, Pay button enabled only when the element reports `complete`, `confirmPayment({ redirect: "if_required" })`). On success the client calls `POST /api/billing/subscriptions/sync` so the plan flips immediately (the webhook is the backstop). Redirect-based methods return to `?billing=return`, which also syncs.
+  - existing subscription → price switched in place with `proration_behavior: always_invoice`; a `clientSecret` comes back only if the proration invoice needs the card.
+  - `free` → `cancel_at_period_end` (access until the period ends; the picker shows "Ends {date} — then Free"; choosing the paid plan again resumes it). The Free button asks for a second tap.
+  - **Manage billing** → `POST /api/billing/portal` (Stripe Customer Portal: card, invoices, cancellation).
+- **State:** `billing_subscriptions` (one row per teacher; own-row RLS for the teacher's routes, service role for the webhook) mirrors the Stripe subscription incl. `student_limit`; `lib/billing/subscription-state.ts` derives the entitlement (`active`/`trialing`, `past_due` with a 3-day grace; anything else = Free). `POST /api/billing/webhook` verifies the signature and mirrors `customer.subscription.*` events (`lib/billing/store.ts`). `GET /api/billing/status` returns the entitlement.
+- **Enforcement:** `POST /api/public/live-sessions/[id]/register` calls `live_session_student_capacity(session, device)` (SECURITY DEFINER; reads the owner's row, counts the session's rows; a device that already has a row is always allowed). Over the cap → **409** `code: "session_full"`; the student sees "This session is full ({n} students)…" and stays on the join form. Pre-billing DBs (missing RPC) skip the check. The teacher's session page shows a **{count} / {limit} students** chip (amber at 80%, red when full) linking to Settings → Plan; the overview payload carries `session.studentLimit` / `session.plan` (folded into the ETag fingerprint).
 
 ### Onboarding (teacher-only)
 
@@ -679,6 +692,7 @@ Run migrations in **filename order**. Latest migration wins for RPC definitions.
 | `20260718130000_autograde_short_math_tf.sql` | Finish autograde also scores `shortAnswer`, `trueFalse`, `mathInput` from `response_config` |
 | `20260719120000_presence_focus_question.sql` | `live_session_presence.focus_question_id`; heartbeat/touch accept optional focus UUID for teacher watch typing chip |
 | `20260807120000_student_response_config.sql` | join/resume/review RPCs include per-question `responseConfig` with answer keys stripped (canvas background flag, sizes, matching pairs reach students) |
+| `20261024120000_billing.sql` | `billing_subscriptions` (own-row RLS), `live_session_student_capacity()` join-time cap |
 | `20261023130000_teacher_settings.sql` | `profiles.avatar_url`, `avatars` storage bucket + owner policies, `teacher_defaults` table (own-row RLS), `delete_my_account()` |
 | `20261023120000_device_rejoin_transfer.sql` | `live_session_device_transfers` (requests + tombstones, teacher SELECT RLS), moved-device BEFORE INSERT trigger, rejoin lookup/request/cancel/decline RPCs, Let in approves transfers, state/response RPCs report `movedToAnotherDevice` / `rejoinRequest`, register RPC regains the post-submit guard |
 
@@ -763,6 +777,7 @@ GET — IBM Plex woff bytes for client-side PDF generation (allowlisted faces, i
 | `POST /live-sessions/[id]/heartbeat` | Presence + sync meta |
 | `GET /live-sessions/[id]/state` | Slim state poll |
 | `POST /live-sessions/[id]/finish` | Submit exam |
+| `POST /live-sessions/[id]/register` | Register presence; **409** `code: "session_full"` when the owner's plan cap is reached |
 | `POST /live-sessions/[id]/tab-leave` | Suspend |
 | *(register / responses PUT / tab-leave / finish / heartbeat)* | **410** `code: "moved_to_another_device"` once the attempt moved to another device |
 | `GET /live-sessions/[id]/feedback` | Read teacher feedback (legacy live) |
@@ -784,6 +799,16 @@ Templates CRUD, clone, org settings, updates feed.
 | POST / DELETE | `/teacher/avatar` | Upload or remove the profile photo |
 | PUT | `/teacher/defaults` | Save exam defaults (`teacher_defaults`) |
 | DELETE | `/teacher/account` | Delete the account (`{confirm:true}`) |
+
+### Billing — `app/api/billing/`
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/billing/status` | Entitlement for the signed-in teacher |
+| POST | `/billing/subscriptions` | Choose a plan (create / switch / cancel at period end); returns `clientSecret` when a payment must be confirmed |
+| POST | `/billing/subscriptions/sync` | Pull the subscription from Stripe after a confirmed payment |
+| POST | `/billing/portal` | Stripe Customer Portal session URL |
+| POST | `/billing/webhook` | Stripe → `billing_subscriptions` (signature-verified, service role) |
 
 ### Teacher — `app/api/teacher/sessions`
 
@@ -897,6 +922,10 @@ Setup (`e2e/global-setup.ts`) creates a marked form (`E2E Live Exam` / descripti
 | `E2E_TEACHER_PASSWORD` | E2E | Playwright teacher login |
 | `NEXT_PUBLIC_E2E_AUTOSAVE` | E2E | Faster autosave in tests |
 | `NEXT_PUBLIC_AIR_ALERT_ENABLED` | No | `1` = Ukraine air-alert pause |
+| `STRIPE_SECRET_KEY` | Billing | Stripe server key (plans stay Free-only without it) |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Billing | Payment Element in the browser |
+| `STRIPE_WEBHOOK_SECRET` | Billing | Signature check for `POST /api/billing/webhook` |
+| `SUPABASE_SERVICE_ROLE_KEY` | Billing (webhook) | Lets the webhook write `billing_subscriptions` without a user session |
 
 ---
 
@@ -944,4 +973,4 @@ Setup (`e2e/global-setup.ts`) creates a marked form (`E2E Live Exam` / descripti
 - Duplicate README setup steps here (link to `README.md` for install/deploy basics).
 - Document every component — only entry points and non-obvious wiring.
 
-*Last reviewed: 2026-10-23 (student rejoin + teacher settings page).*
+*Last reviewed: 2026-10-24 (Stripe billing with student-count tiers).*

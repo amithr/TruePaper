@@ -12,6 +12,8 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { BillingSection } from "@/components/billing/BillingSection";
+import { planName } from "@/components/billing/PlanPicker";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { AvatarUploader } from "@/components/settings/AvatarUploader";
 import { SettingsSwitch } from "@/components/settings/SettingsSwitch";
@@ -24,6 +26,7 @@ import { useSwitchLocale } from "@/lib/i18n/use-switch-locale";
 import { isValidLiveSessionDisplayName, normalizeLiveSessionDisplayName } from "@/lib/live-session-display-name";
 import type { DeliveryMode } from "@/lib/offline/config";
 import { requestJson } from "@/lib/request-json";
+import type { BillingState } from "@/lib/billing/subscription-state";
 import { avatarInitials } from "@/lib/teacher-avatar";
 import {
   DURATION_PRESETS,
@@ -38,6 +41,9 @@ export type TeacherSettingsProps = {
   profile: { displayName: string; avatarUrl: string | null };
   defaults: TeacherDefaults;
   usage: { forms: number; sessions: number; students: number };
+  billing: BillingState;
+  billingConfigured: boolean;
+  stripePublishableKey: string | null;
 };
 
 type SectionId = "profile" | "language" | "exam-defaults" | "plan" | "danger";
@@ -62,7 +68,15 @@ const DELIVERY_HELP_KEY = {
   hybrid: "formLibrary.deliveryHybridHelp",
 } as const;
 
-export function TeacherSettings({ user, profile, defaults: initialDefaults, usage }: TeacherSettingsProps) {
+export function TeacherSettings({
+  user,
+  profile,
+  defaults: initialDefaults,
+  usage,
+  billing,
+  billingConfigured,
+  stripePublishableKey,
+}: TeacherSettingsProps) {
   const t = useTranslations();
   const router = useLocaleRouter();
   const { locale, choose: chooseLocale } = useSwitchLocale();
@@ -251,7 +265,7 @@ export function TeacherSettings({ user, profile, defaults: initialDefaults, usag
                 <span className="tp-settings-badge tp-settings-badge--brand">
                   {t("settings.identity.roleTeacher")}
                 </span>
-                <span className="tp-settings-badge">{t("settings.identity.planFree")}</span>
+                <span className="tp-settings-badge">{planName(t, billing.plan)}</span>
               </div>
             </div>
 
@@ -521,40 +535,13 @@ export function TeacherSettings({ user, profile, defaults: initialDefaults, usag
             </section>
 
             {/* Plan & usage */}
-            <section id="plan" className="tp-card tp-settings-section" aria-labelledby="settings-plan-title">
-              <div className="tp-settings-plan">
-                <div>
-                  <p className={ui.sectionTitle}>{t("settings.plan.eyebrow")}</p>
-                  <h2 id="settings-plan-title" className="tp-settings-section__title flex flex-wrap items-center gap-2.5">
-                    {t("settings.plan.title")}
-                    <span className="tp-settings-badge tp-settings-badge--mint">{t("settings.plan.active")}</span>
-                  </h2>
-                  <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-[var(--tp-text-secondary)]">
-                    {t("settings.plan.sub")}
-                  </p>
-                  <div className="mt-4 flex flex-wrap items-center gap-2">
-                    <button type="button" className={ui.btnSecondary} disabled>
-                      {t("settings.plan.upgrade")}
-                    </button>
-                    <span className="text-[0.8125rem] text-[var(--tp-text-muted)]">{t("settings.plan.comingSoon")}</span>
-                  </div>
-                </div>
-                <dl className="tp-soft-panel tp-settings-usage">
-                  <div>
-                    <dd>{usage.forms}</dd>
-                    <dt>{t("settings.plan.usageForms")}</dt>
-                  </div>
-                  <div>
-                    <dd>{usage.sessions}</dd>
-                    <dt>{t("settings.plan.usageSessions")}</dt>
-                  </div>
-                  <div>
-                    <dd>{usage.students}</dd>
-                    <dt>{t("settings.plan.usageStudents")}</dt>
-                  </div>
-                </dl>
-              </div>
-            </section>
+            <BillingSection
+              initial={billing}
+              configured={billingConfigured}
+              publishableKey={stripePublishableKey}
+              usage={usage}
+              onError={setError}
+            />
 
             {/* Danger zone */}
             <section id="danger" className="tp-card tp-settings-section tp-settings-section--danger" aria-labelledby="settings-danger-title">

@@ -33,6 +33,27 @@ export async function POST(request: Request, { params }: Params) {
 
   try {
     const supabase = createSupabaseAnonServiceClient();
+
+    // Plan cap: Free allows 10 students per live session. A device that already has
+    // a row is always let through (reload / rejoin). Missing RPC = pre-billing DB.
+    const capacity = await supabase.rpc("live_session_student_capacity", {
+      p_live_session_id: liveSessionId,
+      p_device_id: deviceId,
+    });
+    if (!capacity.error) {
+      const cap = (capacity.data ?? {}) as { ok?: boolean; allowed?: boolean; limit?: number | null };
+      if (cap.ok && cap.allowed === false) {
+        return NextResponse.json(
+          {
+            error: "This session is full. Ask your teacher to let you in another way.",
+            code: "session_full",
+            limit: typeof cap.limit === "number" ? cap.limit : null,
+          },
+          { status: 409 },
+        );
+      }
+    }
+
     const { error } = await supabase.rpc("register_live_session_student_presence", {
       p_live_session_id: liveSessionId,
       p_device_id: deviceId,

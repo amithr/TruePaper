@@ -13,6 +13,10 @@ export type LiveSessionOverviewSession = {
   /** @deprecated Prefer previewQuestions — kept for older clients. */
   textQuestionIds: string[];
   previewQuestions: RosterPreviewQuestion[];
+  /** Plan cap on students per session (null = unlimited; absent on older servers). */
+  studentLimit?: number | null;
+  /** The plan that sets the cap ("free" | "classroom" | …). */
+  plan?: string;
 };
 
 export type LiveSessionOverviewParticipant = {

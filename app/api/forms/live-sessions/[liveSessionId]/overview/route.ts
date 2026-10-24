@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 
 import { NextResponse } from "next/server";
 
+import { loadBillingRow } from "@/lib/billing/store";
+import { billingStateFromRow } from "@/lib/billing/subscription-state";
 import { countAnsweredQuestions } from "@/lib/count-answered-questions";
 import { parseQuestionGrades, sumEarnedPoints, sumPossiblePoints } from "@/lib/exam-grades";
 import { isMissingColumnError, isMissingRelationError } from "@/lib/is-missing-db-column";
@@ -241,6 +243,11 @@ export async function GET(request: Request, { params }: Params) {
     }
   }
 
+  // Plan cap for the roster header ("12 / 35 students"). Own-row RLS; a missing
+  // table (pre-billing) reads as the free tier.
+  const billing = await loadBillingRow(supabase, session.user.id).catch(() => ({ row: null }));
+  const billingState = billingStateFromRow(billing.row, nowMs);
+
   const { data: questionRows, error: qError } = await supabase
     .from("questions")
     .select("id, points, question_type")
@@ -264,10 +271,11 @@ export async function GET(request: Request, { params }: Params) {
   // Conditional GET: if nothing that affects the payload changed since the
   // client's last fetch, skip parsing answers + building participants entirely.
   const serverNowIso = new Date(nowMs).toISOString();
-  const questionsSig = [...questions]
-    .sort((a, b) => a.id.localeCompare(b.id))
-    .map((q) => `${q.id}:${q.points}:${q.type}`)
-    .join(",");
+  const questionsSig =
+    [...questions]
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .map((q) => `${q.id}:${q.points}:${q.type}`)
+      .join(",") + `|cap:${billingState.studentLimit ?? "none"}`;
   const fingerprintPresence = new Map<string, OverviewFingerprintPresence>();
   for (const [device, pres] of presenceByDevice) {
     fingerprintPresence.set(device, {
@@ -368,6 +376,8 @@ export async function GET(request: Request, { params }: Params) {
         questionTotal,
         textQuestionIds,
         previewQuestions,
+        studentLimit: billingState.studentLimit,
+        plan: billingState.plan,
       },
       participants,
       // Authoritative server clock so the teacher's client can correct for local

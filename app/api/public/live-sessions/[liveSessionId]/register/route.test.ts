@@ -46,6 +46,44 @@ describe("POST /api/public/live-sessions/register", () => {
     });
   });
 
+  it("turns away the 11th student on the Free tier (409 session_full)", async () => {
+    rpc.mockImplementation((name: string) =>
+      Promise.resolve(
+        name === "live_session_student_capacity"
+          ? { data: { ok: true, allowed: false, limit: 10, count: 10, plan: "free" }, error: null }
+          : { error: null },
+      ),
+    );
+    const res = await POST(
+      new Request("http://localhost/api/register", {
+        method: "POST",
+        body: JSON.stringify({ deviceId: TEST_DEVICE_ID, displayName: TEST_DISPLAY_NAME }),
+      }),
+      { params: Promise.resolve({ liveSessionId: TEST_LIVE_SESSION_ID }) },
+    );
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: "session_full", limit: 10 });
+    expect(rpc).not.toHaveBeenCalledWith("register_live_session_student_presence", expect.anything());
+  });
+
+  it("lets a returning device through and skips the cap on a pre-billing database", async () => {
+    rpc.mockImplementation((name: string) =>
+      Promise.resolve(
+        name === "live_session_student_capacity"
+          ? { data: null, error: { message: "function live_session_student_capacity does not exist", code: "42883" } }
+          : { error: null },
+      ),
+    );
+    const res = await POST(
+      new Request("http://localhost/api/register", {
+        method: "POST",
+        body: JSON.stringify({ deviceId: TEST_DEVICE_ID, displayName: TEST_DISPLAY_NAME }),
+      }),
+      { params: Promise.resolve({ liveSessionId: TEST_LIVE_SESSION_ID }) },
+    );
+    expect(res.status).toBe(200);
+  });
+
   it("maps exam already submitted to 403", async () => {
     rpc.mockResolvedValue({ error: { message: "exam already submitted", code: "P0001" } });
 

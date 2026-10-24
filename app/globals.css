@@ -8675,3 +8675,183 @@ code,
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ——————————————————————————————————————————————————————————————
+   Billing: plan picker, embedded Stripe checkout, roster capacity chip
+   —————————————————————————————————————————————————————————————— */
+.tp-plan-grid {
+  display: grid;
+  /* 2×2 in the settings column, 4-across when there is room, 1-up on phones. */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr));
+  gap: 0.75rem;
+  padding-top: 0.6rem; /* room for the "Most popular" / "Current plan" flags */
+}
+
+.tp-plan-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  border-radius: var(--tp-radius-sm);
+  border: 1px solid var(--tp-border);
+  background: var(--tp-surface);
+  padding: 1.1rem 1rem 1rem;
+  box-shadow: var(--tp-shadow-sm);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.tp-plan-card[data-popular="true"] {
+  border-color: var(--tp-accent-border);
+}
+
+.tp-plan-card[data-current="true"] {
+  border-color: var(--tp-mint);
+  background: var(--tp-mint-soft);
+}
+
+.tp-plan-card__flag {
+  position: absolute;
+  top: -0.6rem;
+  left: 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 9999px;
+  padding: 0.1rem 0.55rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: var(--tp-accent);
+  color: #fff;
+}
+
+.tp-plan-card__flag--current {
+  background: var(--tp-mint);
+}
+
+.tp-plan-card__name {
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+
+.tp-plan-card__price {
+  font-family: var(--font-plex-mono), var(--font-mono-stack);
+  font-size: 1.5rem;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.tp-plan-card__per {
+  margin-left: 0.15rem;
+  font-family: var(--font-plex-sans), inherit;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: var(--tp-text-muted);
+}
+
+.tp-plan-card__seats {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--tp-text);
+}
+
+.tp-plan-card__blurb {
+  flex: 1;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--tp-text-secondary);
+}
+
+.tp-plan-card__cta {
+  margin-top: 0.5rem;
+  width: 100%;
+  justify-content: center;
+}
+
+.tp-checkout {
+  border-radius: var(--tp-radius-sm);
+  border: 1px solid var(--tp-accent-border);
+  background: var(--tp-surface);
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  box-shadow: var(--tp-shadow);
+}
+
+.tp-checkout__summary {
+  margin-top: 0.15rem;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.tp-checkout__loading {
+  font-size: 0.8125rem;
+  color: var(--tp-text-muted);
+}
+
+.tp-checkout__feedback {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 1.25rem;
+  font-size: 0.8125rem;
+  color: var(--tp-text-muted);
+}
+
+.tp-checkout__feedback[data-tone="ok"] {
+  color: var(--tp-success-text);
+}
+
+.tp-checkout__feedback[data-tone="error"] {
+  color: var(--tp-danger-text-strong);
+}
+
+.tp-checkout__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.tp-checkout__secure {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--tp-text-muted);
+}
+
+.tp-cap-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  border-radius: 9999px;
+  border: 1px solid var(--tp-border);
+  background: var(--tp-bg-subtle);
+  padding: 0.15rem 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--tp-text-secondary);
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.tp-cap-chip:hover {
+  border-color: var(--tp-border-strong);
+  color: var(--tp-text);
+}
+
+.tp-cap-chip[data-state="near"] {
+  border-color: var(--tp-warning-border);
+  background: var(--tp-amber-soft);
+  color: var(--tp-warning-text);
+}
+
+.tp-cap-chip[data-state="full"] {
+  border-color: var(--tp-danger-border);
+  background: var(--tp-danger-soft);
+  color: var(--tp-danger-text-strong);
+}
