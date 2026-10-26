@@ -9,7 +9,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { FormAssetImage } from "@/components/FormAssetImage";
 import { ExamMarkdown } from "@/components/ExamMarkdown";
-import { LoadingBar } from "@/components/LoadingBar";
 import { OverflowMenu, type OverflowMenuItem } from "@/components/OverflowMenu";
 import {
   canvasFeedbackKey,
@@ -31,6 +30,10 @@ import {
   type WatchLiveChipState,
 } from "@/components/watch/WatchStudentHeader";
 import { Download, Trash2 } from "lucide-react";
+
+import { LiveFeedbackToggle } from "@/components/LiveFeedbackToggle";
+import { PageLoadingState } from "@/components/PageLoadingState";
+import { useInitialLoadRetry } from "@/lib/use-initial-load-retry";
 import { useOfflineFeedback } from "@/lib/offline/use-offline-feedback";
 import { useFeedbackSyncStatus } from "@/lib/offline/use-feedback-sync-status";
 import { SyncStatusIndicator } from "@/components/SyncStatusIndicator";
@@ -328,6 +331,8 @@ export default function WatchStudentExamPage() {
     immediate: false,
     onRefresh: () => void refreshRef.current(),
   });
+
+  const { slow: initialLoadSlow } = useInitialLoadRetry(Boolean(snapshot), () => void refreshRef.current());
 
   // Student raise/lower hand notifies the overview channel — refresh the watch
   // snapshot so the typing/hand indicators clear without waiting for the poll.
@@ -742,13 +747,12 @@ export default function WatchStudentExamPage() {
                 { label: t("nav.studentExam") },
               ]}
             />
-            {loadError ? (
-              <p className="mt-6 tp-alert tp-alert-error">
-                {loadError}
-              </p>
-            ) : (
-              <LoadingBar className="mt-6 max-w-md" label={t("loading.studentExam")} />
-            )}
+            <PageLoadingState
+              label={t("loading.studentExam")}
+              error={loadError}
+              slow={initialLoadSlow}
+              onRetry={() => void refreshRef.current()}
+            />
           </div>
         </main>
       </div>
@@ -877,6 +881,22 @@ export default function WatchStudentExamPage() {
   };
 
   const overflowItems: OverflowMenuItem[] = [];
+  const setLiveFeedbackEnabled = (enabled: boolean) =>
+    setSnapshot((prev) => (prev ? { ...prev, form: { ...prev.form, liveTeacherFeedbackEnabled: enabled } } : prev));
+  if (s.sessionOpen) {
+    overflowItems.push({
+      type: "custom",
+      key: "live-feedback",
+      node: (
+        <LiveFeedbackToggle
+          variant="menu"
+          formId={snapshot.form.id}
+          enabled={snapshot.form.liveTeacherFeedbackEnabled}
+          onChanged={setLiveFeedbackEnabled}
+        />
+      ),
+    });
+  }
   if (st.hasJoined) {
     overflowItems.push({
       type: "custom",
@@ -1060,6 +1080,15 @@ export default function WatchStudentExamPage() {
           <p className="tp-alert tp-alert-success border px-4 py-3 text-sm text-emerald-900">
             {statusMessage}
           </p>
+        ) : null}
+
+        {s.sessionOpen && !st.finished ? (
+          <LiveFeedbackToggle
+            variant="banner"
+            formId={snapshot.form.id}
+            enabled={snapshot.form.liveTeacherFeedbackEnabled}
+            onChanged={setLiveFeedbackEnabled}
+          />
         ) : null}
 
         {allQuestions.length === 0 ? (

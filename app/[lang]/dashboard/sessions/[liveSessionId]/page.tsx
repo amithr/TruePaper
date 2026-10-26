@@ -9,9 +9,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { ExamPdfProgressToast, useExamPdfDownload } from "@/components/ExamPdfDownload";
-import { LoadingBar } from "@/components/LoadingBar";
 import { SaveTemplateModal } from "@/components/library/SaveTemplateModal";
+import { LiveFeedbackToggle } from "@/components/LiveFeedbackToggle";
 import { OverflowMenu, type OverflowMenuItem } from "@/components/OverflowMenu";
+import { PageLoadingState } from "@/components/PageLoadingState";
+import { useInitialLoadRetry } from "@/lib/use-initial-load-retry";
 import { RosterActivityThresholds } from "@/components/RosterActivityThresholds";
 import { RosterSyncSummary } from "@/components/RosterSyncSummary";
 import { SessionExamRoster } from "@/components/SessionExamRoster";
@@ -37,9 +39,9 @@ import { useRosterActivityThresholds } from "@/lib/use-roster-activity-threshold
 import { useLiveSessionAnswerDrafts } from "@/lib/use-live-session-answer-drafts";
 import { useLiveSessionOverviewRefresh } from "@/lib/use-live-session-overview-refresh";
 import { usePollingRefresh } from "@/lib/use-polling-refresh";
-import { useTranslations } from "@/lib/i18n/I18nProvider";
+import { useLocale, useTranslations } from "@/lib/i18n/I18nProvider";
 import { focusRing, ui } from "@/lib/ui";
-import { Bookmark, Download, RefreshCw, Square, Trash2 } from "lucide-react";
+import { Bookmark, Download, Presentation, RefreshCw, Square, Trash2 } from "lucide-react";
 
 import { messageForBackgroundRefreshError } from "@/lib/background-network-error";
 import { requestJson } from "@/lib/request-json";
@@ -59,6 +61,7 @@ function formatCountdown(ms: number): string {
 
 export default function LiveSessionDetailPage() {
   const t = useTranslations();
+  const locale = useLocale();
   const router = useRouter();
   const params = useParams();
   const liveSessionId = typeof params.liveSessionId === "string" ? params.liveSessionId : "";
@@ -168,6 +171,8 @@ export default function LiveSessionDetailPage() {
     onRefresh: refreshOverview,
   });
 
+  const { slow: initialLoadSlow } = useInitialLoadRetry(Boolean(overview), refreshOverview);
+
   useLiveSessionOverviewRefresh(
     Boolean(overview?.session.sessionOpen),
     liveSessionId,
@@ -191,8 +196,9 @@ export default function LiveSessionDetailPage() {
       });
       // Grading starts the moment a session ends: land on the needs-grading queue.
       toast.success(t("session.stoppedToast"));
+      // No router.refresh() here: it re-renders mid-navigation and can cancel the
+      // grading queue's first fetch, which used to leave it on the loading bar.
       router.replace(`/dashboard/sessions/${liveSessionId}/exam-list`);
-      router.refresh();
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : t("session.errors.stop"));
     } finally {
@@ -364,13 +370,12 @@ export default function LiveSessionDetailPage() {
                 { label: t("nav.liveSession") },
               ]}
             />
-            {loadError ? (
-              <p className="mt-6 tp-alert tp-alert-error">
-                {loadError}
-              </p>
-            ) : (
-              <LoadingBar className="mt-6 max-w-md" label={t("loading.session")} />
-            )}
+            <PageLoadingState
+              label={t("loading.session")}
+              error={loadError}
+              slow={initialLoadSlow}
+              onRetry={refreshOverview}
+            />
           </div>
         </main>
       </div>
@@ -409,6 +414,14 @@ export default function LiveSessionDetailPage() {
   const sessionOverflowItems: OverflowMenuItem[] = [
     {
       type: "button",
+      label: t("session.reviewWithClass"),
+      icon: Presentation,
+      onClick: () => {
+        window.open(`/${locale}/dashboard/sessions/${liveSessionId}/review`, "_blank", "noopener,noreferrer");
+      },
+    },
+    {
+      type: "button",
       label: t("session.downloadAllPdf"),
       onClick: () => void pdfDownload.start(),
       icon: Download,
@@ -425,6 +438,22 @@ export default function LiveSessionDetailPage() {
       icon: Bookmark,
       tooltip: t("templateLibrary.save.menuHint"),
       onClick: () => setSaveTemplateOpen(true),
+    },
+    {
+      type: "custom",
+      key: "live-feedback",
+      node: (
+        <LiveFeedbackToggle
+          variant="menu"
+          formId={overview.session.formId}
+          enabled={overview.session.liveTeacherFeedbackEnabled === true}
+          onChanged={(enabled) =>
+            setOverview((prev) =>
+              prev ? { ...prev, session: { ...prev.session, liveTeacherFeedbackEnabled: enabled } } : prev,
+            )
+          }
+        />
+      ),
     },
     { type: "divider", key: "session-action-div" },
     {

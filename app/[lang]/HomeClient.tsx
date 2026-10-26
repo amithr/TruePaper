@@ -1374,11 +1374,11 @@ export default function HomeClient({
     return () => window.clearTimeout(timeoutId);
   }, [studentAnswersHydrated, joinedLiveSessionId, anonymousSessionId, refreshLiveTeacherFeedback]);
 
+  // While feedback is off this only asks "is it on yet?" (every 15 s), so a teacher
+  // who enables it mid-session reaches students without a reload.
   usePollingRefresh({
-    enabled:
-      Boolean(joinedLiveSessionId && anonymousSessionId && studentAnswersHydrated) &&
-      isLiveTeacherFeedbackEnabled,
-    intervalMs: 5000,
+    enabled: Boolean(joinedLiveSessionId && anonymousSessionId && studentAnswersHydrated),
+    intervalMs: isLiveTeacherFeedbackEnabled ? 5000 : 15000,
     onRefresh: () => void refreshLiveTeacherFeedback(),
   });
 

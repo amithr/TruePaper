@@ -17,6 +17,8 @@ export type LiveSessionOverviewSession = {
   studentLimit?: number | null;
   /** The plan that sets the cap ("free" | "classroom" | …). */
   plan?: string;
+  /** Per-form live teacher feedback flag (toggleable mid-session). */
+  liveTeacherFeedbackEnabled?: boolean;
 };
 
 export type LiveSessionOverviewParticipant = {

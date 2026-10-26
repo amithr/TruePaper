@@ -15,6 +15,12 @@ type Options = {
    * (avoids a duplicate request right after first paint).
    */
   immediate?: boolean;
+  /**
+   * Also refresh when the tab becomes visible, the window regains focus, or the
+   * page is restored from the back/forward cache — so a list that changed while
+   * the teacher was elsewhere is current the moment they return.
+   */
+  refreshOnReturn?: boolean;
   onRefresh: () => void;
 };
 
@@ -24,6 +30,7 @@ export function usePollingRefresh({
   intervalMs,
   pollWhenHidden = false,
   immediate = true,
+  refreshOnReturn = false,
   onRefresh,
 }: Options): void {
   const onRefreshRef = useLatestRef(onRefresh);
@@ -44,6 +51,24 @@ export function usePollingRefresh({
       tick();
     }
     const id = window.setInterval(tick, intervalMs);
-    return () => window.clearInterval(id);
-  }, [enabled, intervalMs, pollWhenHidden, immediate, onRefreshRef]);
+
+    const onReturn = () => {
+      if (document.visibilityState === "visible") {
+        onRefreshRef.current();
+      }
+    };
+    if (refreshOnReturn) {
+      document.addEventListener("visibilitychange", onReturn);
+      window.addEventListener("focus", onReturn);
+      window.addEventListener("pageshow", onReturn);
+    }
+    return () => {
+      window.clearInterval(id);
+      if (refreshOnReturn) {
+        document.removeEventListener("visibilitychange", onReturn);
+        window.removeEventListener("focus", onReturn);
+        window.removeEventListener("pageshow", onReturn);
+      }
+    };
+  }, [enabled, intervalMs, pollWhenHidden, immediate, refreshOnReturn, onRefreshRef]);
 }

@@ -79,10 +79,13 @@ export function DashboardRunningSessions({
     });
   }, [initialSessions, initialSuspensions]);
 
+  // Always poll — an empty list must still notice a session started elsewhere (the
+  // builder, a quick-start link, another tab). Faster while sessions are running.
   usePollingRefresh({
-    enabled: sessions.length > 0,
-    intervalMs: 5000,
-    immediate: false,
+    enabled: true,
+    intervalMs: sessions.length > 0 ? 5000 : 15000,
+    immediate: true,
+    refreshOnReturn: true,
     onRefresh: () => void refreshActive(),
   });
 
@@ -162,6 +165,14 @@ export function DashboardRunningSessions({
           "_blank",
           "noopener,noreferrer",
         );
+      },
+    },
+    {
+      type: "button",
+      label: t("session.reviewWithClass"),
+      icon: Presentation,
+      onClick: () => {
+        window.open(`/${locale}/dashboard/sessions/${s.id}/review`, "_blank", "noopener,noreferrer");
       },
     },
     { type: "divider", key: `stop-div-${s.id}` },

@@ -79,7 +79,7 @@ export async function GET(request: Request, { params }: Params) {
 
   const { data: fs, error: fsError } = await supabase
     .from("form_sessions")
-    .select("id, join_code, opens_at, closes_at, form_id, forms ( title )")
+    .select("id, join_code, opens_at, closes_at, form_id, forms ( title, live_teacher_feedback_enabled )")
     .eq("id", liveSessionId)
     .eq("created_by", session.user.id)
     .maybeSingle();
@@ -92,8 +92,11 @@ export async function GET(request: Request, { params }: Params) {
     return NextResponse.json({ error: "Session not found." }, { status: 404 });
   }
 
-  const forms = fs.forms as { title: string } | { title: string }[] | null;
-  const formTitle = Array.isArray(forms) ? forms[0]?.title : forms?.title;
+  type FormBits = { title: string; live_teacher_feedback_enabled?: boolean | null };
+  const forms = fs.forms as FormBits | FormBits[] | null;
+  const formBits = Array.isArray(forms) ? forms[0] : forms;
+  const formTitle = formBits?.title;
+  const liveTeacherFeedbackEnabled = formBits?.live_teacher_feedback_enabled === true;
 
   const nowMs = Date.now();
   const windowOpen = sessionWindowOpen(fs.opens_at, fs.closes_at, nowMs);
@@ -274,7 +277,7 @@ export async function GET(request: Request, { params }: Params) {
     [...questions]
       .sort((a, b) => a.id.localeCompare(b.id))
       .map((q) => `${q.id}:${q.points}:${q.type}`)
-      .join(",") + `|cap:${billingState.studentLimit ?? "none"}`;
+      .join(",") + `|cap:${billingState.studentLimit ?? "none"}|fb:${liveTeacherFeedbackEnabled ? 1 : 0}`;
   const fingerprintPresence = new Map<string, OverviewFingerprintPresence>();
   for (const [device, pres] of presenceByDevice) {
     fingerprintPresence.set(device, {
@@ -377,6 +380,7 @@ export async function GET(request: Request, { params }: Params) {
         previewQuestions,
         studentLimit: billingState.studentLimit,
         plan: billingState.plan,
+        liveTeacherFeedbackEnabled,
       },
       participants,
       // Authoritative server clock so the teacher's client can correct for local

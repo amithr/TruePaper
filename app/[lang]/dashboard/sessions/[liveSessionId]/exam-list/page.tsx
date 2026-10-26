@@ -7,7 +7,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { ExamPdfProgressToast, useExamPdfDownload } from "@/components/ExamPdfDownload";
-import { LoadingBar } from "@/components/LoadingBar";
+import { PageLoadingState } from "@/components/PageLoadingState";
+import { useInitialLoadRetry } from "@/lib/use-initial-load-retry";
 import { SessionExamRoster } from "@/components/SessionExamRoster";
 import { SessionJoinShare } from "@/components/SessionJoinShare";
 import { TeacherTopBar } from "@/components/TeacherTopBar";
@@ -23,7 +24,7 @@ import { isNoTimeLimitSession } from "@/lib/session-window";
 import { useLiveSessionAnswerDrafts } from "@/lib/use-live-session-answer-drafts";
 import { useLiveSessionOverviewRefresh } from "@/lib/use-live-session-overview-refresh";
 import { usePollingRefresh } from "@/lib/use-polling-refresh";
-import { useTranslations } from "@/lib/i18n/I18nProvider";
+import { useLocale, useTranslations } from "@/lib/i18n/I18nProvider";
 import { focusRing, ui } from "@/lib/ui";
 import { messageForBackgroundRefreshError } from "@/lib/background-network-error";
 import { requestJson } from "@/lib/request-json";
@@ -40,6 +41,7 @@ function formatCountdown(ms: number): string {
 
 export default function SessionExamListPage() {
   const t = useTranslations();
+  const locale = useLocale();
   const router = useRouter();
   const params = useParams();
   const liveSessionId = typeof params.liveSessionId === "string" ? params.liveSessionId : "";
@@ -101,6 +103,8 @@ export default function SessionExamListPage() {
     onRefresh: () => void refreshOverview(),
   });
 
+  const { slow: initialLoadSlow } = useInitialLoadRetry(Boolean(overview), () => void refreshOverview());
+
   useLiveSessionOverviewRefresh(
     Boolean(overview?.session.sessionOpen),
     liveSessionId,
@@ -125,11 +129,12 @@ export default function SessionExamListPage() {
                 { label: t("session.examList.title") },
               ]}
             />
-            {loadError ? (
-              <p className="mt-6 tp-alert tp-alert-error">{loadError}</p>
-            ) : (
-              <LoadingBar className="mt-6 max-w-md" label={t("loading.studentExams")} />
-            )}
+            <PageLoadingState
+              label={t("loading.studentExams")}
+              error={loadError}
+              slow={initialLoadSlow}
+              onRetry={() => void refreshOverview()}
+            />
           </div>
         </main>
       </div>
@@ -188,6 +193,16 @@ export default function SessionExamListPage() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                window.open(`/${locale}/dashboard/sessions/${liveSessionId}/review`, "_blank", "noopener,noreferrer");
+              }}
+              className={`tp-btn-secondary text-sm ${focusRing}`}
+              data-testid="exam-list-review"
+            >
+              {t("session.reviewWithClass")}
+            </button>
             <button
               type="button"
               onClick={() => void pdfDownload.start()}
