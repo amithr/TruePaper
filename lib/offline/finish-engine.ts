@@ -18,14 +18,14 @@ function retryDelayMs(attempts: number): number {
 export async function drainFinishQueue(
   liveSessionId: string,
   deviceId: string,
-): Promise<{ finished: boolean; retryable: boolean }> {
+): Promise<{ finished: boolean; retryable: boolean; reviewToken: string | null }> {
   const item = await getPendingFinish(liveSessionId, deviceId);
   if (!item) {
-    return { finished: false, retryable: false };
+    return { finished: false, retryable: false, reviewToken: null };
   }
 
   if (item.lastAttemptAt && Date.now() - item.lastAttemptAt < retryDelayMs(item.attempts)) {
-    return { finished: false, retryable: true };
+    return { finished: false, retryable: true, reviewToken: null };
   }
 
   await markFinishAttempt(item);
@@ -39,13 +39,13 @@ export async function drainFinishQueue(
 
   if (result.ok) {
     await clearFinishItem(liveSessionId, deviceId);
-    return { finished: true, retryable: false };
+    return { finished: true, retryable: false, reviewToken: result.reviewToken ?? null };
   }
 
   if (!result.retryable) {
     await clearFinishItem(liveSessionId, deviceId);
-    return { finished: false, retryable: false };
+    return { finished: false, retryable: false, reviewToken: null };
   }
 
-  return { finished: false, retryable: true };
+  return { finished: false, retryable: true, reviewToken: null };
 }

@@ -219,9 +219,14 @@ export default function SessionExamListPage() {
 
         <section className="tp-card p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
-            <p className="text-sm text-[var(--tp-text-secondary)]">
-              {t("session.examList.description")}
-            </p>
+            <div className="space-y-1">
+              <p className="text-sm text-[var(--tp-text-secondary)]">
+                {t("session.examList.description")}
+              </p>
+              <p className="text-sm text-[var(--tp-text-muted)]" data-testid="exam-list-results-hint">
+                {t("session.examList.resultsHint")}
+              </p>
+            </div>
             {overview.participants.length > 0 ? (
               <div
                 role="group"

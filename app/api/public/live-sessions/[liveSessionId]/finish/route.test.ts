@@ -27,8 +27,10 @@ describe("POST /api/public/live-sessions/finish", () => {
     expect(res.status).toBe(400);
   });
 
-  it("finishes student response", async () => {
-    rpc.mockResolvedValue({ error: null });
+  it("finishes student response and returns the results token", async () => {
+    rpc
+      .mockResolvedValueOnce({ error: null })
+      .mockResolvedValueOnce({ data: "abcdefgh2345", error: null });
     const res = await POST(
       new Request("http://localhost/api/finish", {
         method: "POST",
@@ -42,5 +44,25 @@ describe("POST /api/public/live-sessions/finish", () => {
       p_device_id: TEST_DEVICE_ID,
       p_display_name: TEST_DISPLAY_NAME,
     });
+    expect(rpc).toHaveBeenCalledWith("claim_student_review_token", {
+      p_live_session_id: TEST_LIVE_SESSION_ID,
+      p_device_id: TEST_DEVICE_ID,
+    });
+    await expect(res.json()).resolves.toEqual({ ok: true, reviewToken: "ABCDEFGH2345" });
+  });
+
+  it("still finishes when the database cannot mint a token yet", async () => {
+    rpc
+      .mockResolvedValueOnce({ error: null })
+      .mockResolvedValueOnce({ data: null, error: { code: "42883", message: "function claim_student_review_token does not exist" } });
+    const res = await POST(
+      new Request("http://localhost/api/finish", {
+        method: "POST",
+        body: JSON.stringify({ deviceId: TEST_DEVICE_ID, displayName: TEST_DISPLAY_NAME }),
+      }),
+      { params: Promise.resolve({ liveSessionId: TEST_LIVE_SESSION_ID }) },
+    );
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ ok: true, reviewToken: null });
   });
 });

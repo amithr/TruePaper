@@ -56,7 +56,18 @@ export async function POST(request: Request, { params }: Params) {
       return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
-    return NextResponse.json({ ok: true });
+    // The hand-in screen links straight to the student's results. Best effort: a
+    // database without the token RPC yet just returns null and the screen copes.
+    let reviewToken: string | null = null;
+    const claimed = await supabase.rpc("claim_student_review_token", {
+      p_live_session_id: liveSessionId,
+      p_device_id: deviceId,
+    });
+    if (!claimed.error && typeof claimed.data === "string" && claimed.data.trim()) {
+      reviewToken = claimed.data.trim().toUpperCase();
+    }
+
+    return NextResponse.json({ ok: true, reviewToken });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Configuration error.";
     return NextResponse.json({ error: message }, { status: 500 });

@@ -17,7 +17,8 @@ import type { StudentAnswers } from "@/lib/forms";
 type Options = {
   liveSessionId: string | null;
   deviceId: string | null;
-  onFinished?: () => void;
+  /** Fires once the queued hand-in reached the server; the results token when the DB minted one. */
+  onFinished?: (reviewToken: string | null) => void;
   onPendingFinishRestored?: () => void;
 };
 
@@ -65,7 +66,7 @@ export function useOfflineFinishSubmit({
       const stillPending = await hasPendingFinish(liveSessionId, deviceId);
       setPendingFinishRaw(stillPending);
       if (result.finished) {
-        onFinishedRef.current?.();
+        onFinishedRef.current?.(result.reviewToken);
       }
       return result.finished;
     })();

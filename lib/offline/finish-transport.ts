@@ -3,6 +3,11 @@ import { requestJsonWithTimeout } from "@/lib/request-json";
 import type { SyncResult } from "@/lib/offline/types";
 import type { StudentAnswers } from "@/lib/forms";
 
+export type FinishSubmitResult = SyncResult & {
+  /** The student's results token, when the database already mints one at hand-in. */
+  reviewToken?: string | null;
+};
+
 const SUBMIT_TIMEOUT_MS = 20_000;
 
 export async function submitExamToServer(input: {
@@ -11,7 +16,7 @@ export async function submitExamToServer(input: {
   displayName: string;
   answers: StudentAnswers;
   submissionId: string;
-}): Promise<SyncResult> {
+}): Promise<FinishSubmitResult> {
   try {
     await requestJsonWithTimeout<{ ok: true }>(
       `/api/public/live-sessions/${input.liveSessionId}/responses`,
@@ -27,7 +32,7 @@ export async function submitExamToServer(input: {
       },
       SUBMIT_TIMEOUT_MS,
     );
-    await requestJsonWithTimeout<{ ok: true }>(
+    const finished = await requestJsonWithTimeout<{ ok: true; reviewToken?: string | null }>(
       `/api/public/live-sessions/${input.liveSessionId}/finish`,
       {
         method: "POST",
@@ -39,7 +44,7 @@ export async function submitExamToServer(input: {
       },
       SUBMIT_TIMEOUT_MS,
     );
-    return { ok: true };
+    return { ok: true, reviewToken: finished.reviewToken ?? null };
   } catch (e) {
     const message = e instanceof Error ? e.message : "Submit failed";
     return {

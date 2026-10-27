@@ -101,6 +101,8 @@ import { fetchStudentExamStatus } from "@/lib/fetch-student-exam-status";
 import { fetchStudentLiveTeacherFeedback } from "@/lib/fetch-student-live-feedback";
 import { hasLiveTeacherFeedbackContent } from "@/lib/live-teacher-feedback";
 import { requestJson, RequestJsonError } from "@/lib/request-json";
+import { clearLastResults, loadLastResults, saveLastResults } from "@/lib/last-results";
+import { StudentLastResultsCard } from "@/components/student/StudentLastResultsCard";
 import { stableStringifyStudentAnswers } from "@/lib/student-answers-json";
 import { usePollingRefresh } from "@/lib/use-polling-refresh";
 import { loadLocalAnswers, mergeAnswersLastWrite } from "@/lib/offline/answer-store";
@@ -296,7 +298,21 @@ export default function HomeClient({
 }: HomeClientProps) {
   const router = useRouter();
 
-  const goToSubmittedPage = useCallback(() => {
+  const lastHandInRef = useRef<{
+    liveSessionId: string;
+    deviceId: string;
+    displayName: string;
+    formTitle: string;
+  } | null>(null);
+  /**
+   * Hand-in is final: remember which exam it was (so the hand-in screen and
+   * /join can show "your results") before the active exam is forgotten.
+   */
+  const goToSubmittedPage = useCallback((reviewToken: string | null = null) => {
+    const handIn = lastHandInRef.current;
+    if (handIn) {
+      saveLastResults({ ...handIn, finishedAt: Date.now(), token: reviewToken });
+    }
     clearActiveExam();
     router.replace("/join/submitted");
   }, [router]);
@@ -977,6 +993,17 @@ export default function HomeClient({
   }, [activeFormId]);
 
   const joinedLiveSessionId = joinedSession?.liveSessionId ?? "";
+  useEffect(() => {
+    lastHandInRef.current =
+      joinedSession && anonymousSessionId && activeExamDisplayName
+        ? {
+            liveSessionId: joinedSession.liveSessionId,
+            deviceId: anonymousSessionId,
+            displayName: activeExamDisplayName,
+            formTitle: joinedSession.form.title,
+          }
+        : null;
+  }, [joinedSession, anonymousSessionId, activeExamDisplayName]);
   const isLiveTeacherFeedbackEnabled =
     liveTeacherFeedbackEnabledLive || joinedSession?.form.liveTeacherFeedbackEnabled === true;
   const deliveryMode = joinedSession?.deliveryMode ?? "live";
@@ -1041,9 +1068,9 @@ export default function HomeClient({
   const finishSubmit = useOfflineFinishSubmit({
     liveSessionId: joinedLiveSessionId || null,
     deviceId: anonymousSessionId || null,
-    onFinished: () => {
+    onFinished: (reviewToken) => {
       void offlineSync.acknowledgeSynced().catch(() => {});
-      goToSubmittedPage();
+      goToSubmittedPage(reviewToken);
     },
     onPendingFinishRestored,
   });
@@ -2270,6 +2297,7 @@ export default function HomeClient({
         deliveryMode: data.deliveryMode ?? "live",
         host: data.host ?? null,
       });
+      clearLastResults();
       saveActiveExam({
         liveSessionId: data.liveSessionId,
         joinCode: data.joinCode,
@@ -2328,6 +2356,7 @@ export default function HomeClient({
         host: data.host ?? null,
       });
       if (!teacherPreview) {
+        clearLastResults();
         saveActiveExam({
           liveSessionId: data.liveSessionId,
           joinCode: code,
@@ -2659,7 +2688,7 @@ export default function HomeClient({
           autosaveBannerClearRef.current = undefined;
         }
         setAutosaveStatus("");
-        goToSubmittedPage();
+        goToSubmittedPage(result.reviewToken ?? null);
         return;
       }
       if (result.retryable) {
@@ -2747,6 +2776,13 @@ export default function HomeClient({
   const examTotalQuestions = studentExamQuestions.length;
 
   const isJoinRoute = guestView === "join";
+  const [lastResults, setLastResults] = useState<ReturnType<typeof loadLastResults>>(null);
+  useEffect(() => {
+    if (!isJoinRoute) {
+      return;
+    }
+    deferEffect(() => setLastResults(loadLastResults()));
+  }, [isJoinRoute]);
   const inStudentExam =
     Boolean(joinedSession) && !examFinished && !isBuilderStudentPreview;
 
@@ -3115,6 +3151,7 @@ export default function HomeClient({
               </Link>
               <LanguageToggle />
             </div>
+            {lastResults && !joinedSession ? <StudentLastResultsCard entry={lastResults} /> : null}
             {joinSessionSection}
           </div>
         ) : null}

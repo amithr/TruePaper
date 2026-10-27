@@ -511,6 +511,21 @@
         "other": "{n} marks"
       }
     },
+    "results": {
+      "eyebrow": "Your results",
+      "waitingTitle": "Your teacher is marking it",
+      "waitingBody": "This page updates by itself — leave it open or come back later.",
+      "readyTitle": "Your results are ready",
+      "score": "{earned} out of {possible}",
+      "seeResults": "See your results",
+      "copyLink": "Copy results link",
+      "linkCopied": "Link copied",
+      "linkHint": "Save this link to see your results on another device.",
+      "lastExamTitle": "Your last exam",
+      "lastExamReady": "Results ready",
+      "lastExamWaiting": "Being marked",
+      "loadFailed": "Couldn't check your results right now."
+    },
     "submitted": {
       "title": "Exam submitted",
       "message": "Your answers have been saved. Your teacher will review them when the session ends.",
@@ -715,7 +730,8 @@
     "examList": {
       "title": "Student exams",
       "subtitle": "{formTitle} · Code {joinCode}",
-      "description": "Every student device in this session. Click a row to open that exam. The list refreshes automatically while the session is open."
+      "description": "Every student device in this session. Click a row to open that exam. The list refreshes automatically while the session is open.",
+      "resultsHint": "Students can open their results from their hand-in screen as soon as you mark them graded."
     },
     "watch": {
       "titleReview": "Review submission",

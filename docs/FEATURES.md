@@ -224,7 +224,7 @@ Three ways back into an unfinished attempt (migration `20261023120000_device_rej
 
 ### Review share links
 
-- Create: `POST .../participants/[deviceId]/review-link`
+- Create (teacher): `POST .../participants/[deviceId]/review-link`; students now get the same token themselves at hand-in (see [Results (after hand-in)](#results-after-hand-in)).
 - Public read: `GET /api/public/review/[token]` → `app/[lang]/review/[token]/page.tsx`
 
 ### Template library
@@ -324,8 +324,18 @@ Two complementary, teacher-scoped aids (students never see either):
   1. `PUT .../responses` (authoritative final save + `submissionId`)
   2. `POST .../finish` (sets `finished_at`, triggers MC autograde)
 - On retryable network failure → queued in `finish_queue` (IDB) and retried via `use-offline-finish-submit` + Background Sync.
-- After success → `app/[lang]/join/submitted/page.tsx`.
+- After success → `app/[lang]/join/submitted/page.tsx` (the hand-in screen, which also shows "your results" — see below). `goToSubmittedPage(reviewToken)` first writes `truepaper_last_results` (`lib/last-results.ts`: session, device, name, title, token) so the screen knows which exam it was.
 - Resume code (when known from load/rejoin) is shown muted under the hand-in panel; otherwise a calm “ask your teacher” hint.
+
+### Results (after hand-in)
+
+Students see their own results without the teacher sending anything. **Mark as graded is the release switch** (auto-graded exams release when the session is stopped); there is no separate "publish results" step.
+
+- **Token at hand-in:** `POST .../finish` calls `claim_student_review_token(session, device)` (`20261027120000_student_results_token.sql`, SECURITY DEFINER, the device's own *finished* row only; reuses an existing `student_review_token`, else mints one like the teacher's `ensure_student_review_token`) and returns `{ ok, reviewToken }`. Pre-migration the RPC is missing and `reviewToken` is `null`; nothing else changes. The offline finish path (`finish-transport` → `finish-engine` → `use-offline-finish-submit` `onFinished(reviewToken)`) carries it through.
+- **Lazy claim:** `POST /api/public/live-sessions/[id]/review-token { deviceId }` → same RPC (used when the token didn't arrive with the finish: offline hand-in, exam ended by the teacher, migration applied later). `components/student/use-student-results-token.ts` calls it once and stores the token.
+- **Hand-in screen** (`app/[lang]/join/submitted/page.tsx`): "Exam submitted" as before, then `components/student/StudentResultsCard.tsx` driven by `GET /api/public/review/[token]` — "Your teacher is marking it" (polls every 15 s while visible, `usePollingRefresh` + `refreshOnReturn`) until `graded && !sessionOpen`, then the score ring + "{earned} out of {possible}" + **See your results** → `/review/<token>`. **Copy results link** is always offered (the token is the only way back from another device). No stored hand-in → the old static card.
+- **`/join` later on the same device:** a "Your last exam" card (`StudentLastResultsCard`) above the join form with the same compact card; cleared when a new exam is joined.
+- **Teacher side:** one hint on the grading-queue header (`session.examList.resultsHint`); `StudentReviewShare` (copy a student's link from the watch page) stays for the lost-phone case.
 
 ### What students cannot do
 
@@ -430,7 +440,7 @@ flowchart TD
 | `lib/offline/use-offline-finish-submit.ts` | Deferred exam submit queue + drain in `HomeClient.tsx` |
 | `lib/offline/finish-queue.ts` | Pending finish rows in IDB (`finish_queue` store) |
 | `lib/offline/finish-engine.ts` | Finish drain with backoff |
-| `lib/offline/finish-transport.ts` | Bounded PUT + POST `/finish` |
+| `lib/offline/finish-transport.ts` | Bounded PUT + POST `/finish` (returns `reviewToken`) |
 | `lib/offline/feedback-queue.ts` | Teacher feedback rows in IDB (`feedback_queue` store); edit/remove-while-queued |
 | `lib/offline/feedback-engine.ts` | Feedback drain (same backoff); flags exhausted/rejected items `failed`, never drops |
 | `lib/offline/feedback-transport.ts` | Idempotent `PUT .../feedback-items` upload |
@@ -634,6 +644,7 @@ Run migrations in **filename order**. Latest migration wins for RPC definitions.
 | `save_live_session_student_response` | Idempotent answer save (5-arg with `submission_id`) |
 | `get_live_session_student_response` | Student poll: answers, suspend, finish, feedback |
 | `finish_live_session_student_response` | Student submit |
+| `claim_student_review_token` | Student's own results token after hand-in (finished row only; mints if absent) |
 | `lookup_join_code` | Resolve join code |
 | `lookup_student_resume_code` | Resolve resume code |
 | `lookup_live_session_rejoin_candidate` | Same-name unfinished attempt on another device (counts, last active; no device id) |
@@ -713,6 +724,7 @@ Run migrations in **filename order**. Latest migration wins for RPC definitions.
 | `20260718130000_autograde_short_math_tf.sql` | Finish autograde also scores `shortAnswer`, `trueFalse`, `mathInput` from `response_config` |
 | `20260719120000_presence_focus_question.sql` | `live_session_presence.focus_question_id`; heartbeat/touch accept optional focus UUID for teacher watch typing chip |
 | `20260807120000_student_response_config.sql` | join/resume/review RPCs include per-question `responseConfig` with answer keys stripped (canvas background flag, sizes, matching pairs reach students) |
+| `20261027120000_student_results_token.sql` | `claim_student_review_token()` — students mint their own results token at hand-in |
 | `20261024140000_admin.sql` | `profiles.is_admin` / `plan_override`, `app_settings.billing_enabled`, admin RPCs, capacity RPC honours the switch + overrides; seeds the first admin |
 | `20261024130000_session_host.sql` | `get_live_session_host()` — host name + photo for the student exam header / feedback bubbles |
 | `20261024120000_billing.sql` | `billing_subscriptions` (own-row RLS), `live_session_student_capacity()` join-time cap |
@@ -799,7 +811,8 @@ GET — IBM Plex woff bytes for client-side PDF generation (allowlisted faces, i
 | `GET/PUT /live-sessions/[id]/responses` | Read / save answers |
 | `POST /live-sessions/[id]/heartbeat` | Presence + sync meta |
 | `GET /live-sessions/[id]/state` | Slim state poll |
-| `POST /live-sessions/[id]/finish` | Submit exam |
+| `POST /live-sessions/[id]/finish` | Submit exam; returns `reviewToken` (null pre-migration) |
+| `POST /live-sessions/[id]/review-token` | Claim the device's own results token after hand-in |
 | `POST /live-sessions/[id]/register` | Register presence; **409** `code: "session_full"` when the owner's plan cap is reached |
 | `POST /live-sessions/[id]/tab-leave` | Suspend |
 | *(register / responses PUT / tab-leave / finish / heartbeat)* | **410** `code: "moved_to_another_device"` once the attempt moved to another device |
